@@ -1,0 +1,2 @@
+# TODO (Phase 0): Traefik + TLS, Keycloak-ийг Postgres backend руу шилжүүлэх,
+# resource limit, restart policy нэмнэ. §10.1-ийг үзнэ үү.
