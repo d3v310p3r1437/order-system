@@ -37,3 +37,10 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 
 ## Одоогийн Phase
 Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэнгүй: `docs/plan.md` §8.
+
+**RLS/transaction spike (§6.3) дууссан** — Prisma + request-scoped
+`AsyncLocalStorage` transaction загвар (`RlsMiddleware` → `set_config('app.user_id', …)`)
+ажиллаж байгааг `GET /debug/branches` дээр баталгаажуулсан. Дэлгэрэнгүй ба
+мэдэгдэж буй trade-off: `docs/adr/001-rls-transaction-pattern.md`. Дараагийн
+ажил: JwtAuthGuard, custom customer-auth, Keycloak claim mapper (§6.2),
+дараа нь `DebugController`-ыг устгах/хязгаарлах.

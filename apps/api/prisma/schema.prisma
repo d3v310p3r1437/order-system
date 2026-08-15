@@ -1,0 +1,106 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────
+// Phase 1: Branches, Users, Roles, RBAC, Audit log
+// docs/plan.md §6.1 (RBAC матриц) ба §6.3 (RLS/transaction загвар)-ийн дагуу
+// ─────────────────────────────────────────────────────────
+
+enum RoleName {
+  SUPER_ADMIN       // Супер админ — бүх салбар
+  OWNER             // Дэлгүүрийн эзэн — бүх салбар (харах голчлон)
+  ALL_BRANCH_MANAGER // Бүх-салбарын менежер — бүх салбарын үйл ажиллагаа
+  BRANCH_ADMIN      // Салбарын админ — 1 салбар
+  BRANCH_MANAGER    // Салбарын менежер — 1 салбар
+  SALESPERSON       // Худалдагч — 1 салбар
+  CUSTOMER          // Харилцагч
+}
+
+enum AuthProvider {
+  CUSTOMER_AUTH // утасны дугаар, custom auth модуль (§6.2)
+  KEYCLOAK      // и-мэйл, ажилтан/эрх бүхий хэрэглэгч (§6.2)
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userBranchRoles UserBranchRole[]
+
+  @@map("branches")
+}
+
+model User {
+  id            String       @id @default(uuid())
+  // Харилцагчид: утасны дугаар (E.164). Ажилтанд: null байж болно.
+  phone         String?      @unique
+  // Ажилтан/эрх бүхий хэрэглэгчид: и-мэйл. Харилцагчид: null байж болно.
+  email         String?      @unique
+  passwordHash  String?      // зөвхөн CUSTOMER_AUTH-д ашиглана (Keycloak өөрөө удирддаг)
+  authProvider  AuthProvider
+  // Keycloak талын хэрэглэгчийн ID (KEYCLOAK үед)
+  keycloakSub   String?      @unique
+  fullName      String?
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  userBranchRoles UserBranchRole[]
+  auditLogs       AuditLog[]
+
+  @@map("users")
+}
+
+// Хэрэглэгч + Салбар + Дүр — олон-салбарын RBAC-ийн цөм
+// (жиш: нэг худалдагч зөвхөн 1 мөртэй, супер админ мөрөөр нь бүх салбарт биш,
+//  харин "хамрах хүрээ" (scope) нь role-оороо тодорхойлогдоно — доорх тайлбар)
+model UserBranchRole {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // SUPER_ADMIN, OWNER, ALL_BRANCH_MANAGER мөрүүдэд branchId NULL байж болно
+  // (§6.1: "бүх салбар" гэсэн scope-ыг илэрхийлнэ)
+  branchId String?
+  branch   Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  role     RoleName
+  createdAt DateTime @default(now())
+
+  @@unique([userId, branchId, role])
+  @@map("user_branch_roles")
+}
+
+// §7 модуль #15 — суурь аудит лог (Phase 1). UI Phase 6-д нэмэгдэнэ.
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String   // жиш: "order.status_changed", "product.updated"
+  tableName  String
+  recordId   String
+  beforeData Json?
+  afterData  Json?
+  branchId   String?  // тухайн үйлдэл ямар салбартай холбоотойг хадгална
+  createdAt  DateTime @default(now())
+
+  @@index([tableName, recordId])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
