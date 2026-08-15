@@ -51,27 +51,39 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: psql суулгах (app_runtime role үүсгэхэд хэрэгтэй)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: Node суулгах
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "24"
 
       - name: pnpm суулгах
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: pnpm cache тохируулах
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "pnpm"
 
       - name: Dependency суулгах (root, бүх workspace)
         run: pnpm install --frozen-lockfile
+
+      # ⚠️ ЧУХАЛ: apps/api/package.json-ий "postinstall" script нь `pnpm
+      # install`-ийн үед аль хэдийн prisma generate-ийг дуудсан байх ёстой,
+      # гэвч pnpm-ийн ирээдүйн хувилбар (v10+) lifecycle script-ийг
+      # анхдагчаар блоклодог тул энд ТОДОРХОЙ ДАВХАР дуудна —
+      # үүнгүйгээр @prisma/client-ийн бодит төрлүүд (Prisma.TransactionClient
+      # гэх мэт) үүсэхгүй, бүх ашиглалт eslint-д "any" болж, lint шат
+      # худал улаан гардаг байсан (2026-08-15 debug: prisma generate
+      # дутуу байснаас болж 68 unsafe-any алдаа гарч байсан).
+      - name: Prisma client generate хийх (generate-гүйгээр бүх төрөл "any" болж, lint худал унана)
+        working-directory: apps/api
+        run: pnpm exec prisma generate
 
       # ⚠️ ЧУХАЛ: superuser (app) холболтоор app_runtime role-г үүсгэнэ.
       # Үүнгүйгээр APP_DATABASE_URL байхгүй тул RLS тестүүд утгагүй болно
