@@ -21,7 +21,9 @@ export class RlsMiddleware implements NestMiddleware {
   ) {}
 
   use(req: Request, res: Response, next: NextFunction) {
-    const userId = req.header('x-debug-user-id')?.trim() || null;
+    // prod-д header-ийг огт үл тоомсорлоно — зөвхөн dev/spike орчинд ашиглана.
+    const userId =
+      process.env.NODE_ENV !== 'production' ? req.header('x-debug-user-id')?.trim() || null : null;
 
     let finishResponse: () => void;
     const responseFinished = new Promise<void>((resolve) => {
