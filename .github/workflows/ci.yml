@@ -13,8 +13,12 @@ defaults:
 env:
   # Migration/CLI-д зориулсан superuser холболт (зөвхөн CI/dev-д ашиглана)
   DATABASE_URL: postgresql://app:app_ci_password@localhost:5432/order_system
-  # Апп runtime-ийн хязгаарлагдмал холболт — RLS-ийг бодитоор турших гол шалтгаан
-  APP_DATABASE_URL: postgresql://app_runtime:app_runtime_ci_password@localhost:5432/order_system
+  # Апп runtime-ийн хязгаарлагдмал холболт — RLS-ийг бодитоор турших гол шалтгаан.
+  # ⚠️ Нууц үг нь infra/create-app-runtime-role.sql-ийн CREATE ROLE-д
+  # hardcode хийсэн 'changeme_runtime_dev_only'-той ЗААВАЛ таарах ёстой
+  # (яг адилхан локал .env/apps/api/.env-д ашигладагтай) — эс бөгөөс
+  # E2E тест "Authentication failed... app_runtime" алдаагаар унана.
+  APP_DATABASE_URL: postgresql://app_runtime:changeme_runtime_dev_only@localhost:5432/order_system
   REDIS_URL: redis://localhost:6379
   JWT_SECRET: ci_only_dummy_secret_do_not_use_in_prod
   JWT_ACCESS_EXPIRY: 15m
