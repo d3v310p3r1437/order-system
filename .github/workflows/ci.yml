@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # Migration/CLI-д зориулсан superuser холболт (зөвхөн CI/dev-д ашиглана)
+  DATABASE_URL: postgresql://app:app_ci_password@localhost:5432/order_system
+  # Апп runtime-ийн хязгаарлагдмал холболт — RLS-ийг бодитоор турших гол шалтгаан
+  APP_DATABASE_URL: postgresql://app_runtime:app_runtime_ci_password@localhost:5432/order_system
+  REDIS_URL: redis://localhost:6379
+  JWT_SECRET: ci_only_dummy_secret_do_not_use_in_prod
+  JWT_ACCESS_EXPIRY: 15m
+  KEYCLOAK_URL: http://localhost:8080
+  KEYCLOAK_REALM: order-system
+  NODE_ENV: test
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_ci_password
+          POSTGRES_DB: order_system
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: psql суулгах (app_runtime role үүсгэхэд хэрэгтэй)
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Node суулгах
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: pnpm суулгах
+        uses: pnpm/action-setup@v4
+
+      - name: pnpm cache тохируулах
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+
+      - name: Dependency суулгах (root, бүх workspace)
+        run: pnpm install --frozen-lockfile
+
+      # ⚠️ ЧУХАЛ: superuser (app) холболтоор app_runtime role-г үүсгэнэ.
+      # Үүнгүйгээр APP_DATABASE_URL байхгүй тул RLS тестүүд утгагүй болно
+      # (superuser холболтоор туршвал бүх policy тойрогдоно — docs/adr/001-г үзнэ үү).
+      - name: app_runtime role үүсгэх (RLS-ийг бодитоор турших зайлшгүй нөхцөл)
+        run: |
+          PGPASSWORD=app_ci_password psql -h localhost -U app -d order_system \
+            -f infra/create-app-runtime-role.sql
+          # Баталгаажуулалт: superuser/bypassrls аль аль нь заавал "f" байх ёстой,
+          # эс бөгөөс дараагийн бүх RLS тест худал "ногоон" гарна.
+          RESULT=$(PGPASSWORD=app_ci_password psql -h localhost -U app -d order_system -tAc \
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = 'app_runtime'")
+          if [ "$RESULT" != "f" ]; then
+            echo "::error::app_runtime нь superuser/bypassrls эрхтэй байна — RLS тест итгэмжгүй!"
+            exit 1
+          fi
+
+      - name: Prisma migration ажиллуулах (superuser холболтоор)
+        working-directory: apps/api
+        run: pnpm exec prisma migrate deploy
+
+      - name: Lint
+        working-directory: apps/api
+        run: pnpm run lint
+
+      - name: Unit тест
+        working-directory: apps/api
+        run: pnpm run test
+
+      - name: E2E тест (бодит Postgres/Redis/RLS-тэй)
+        working-directory: apps/api
+        run: pnpm run test:e2e
+
+      - name: Prod build (§10.2, custom output зам гэх мэт алдааг барина)
+        working-directory: apps/api
+        run: pnpm run build
+
+      - name: Build дараах smoke test — сервер бодитоор асаж байгааг шалгах
+        working-directory: apps/api
+        run: |
+          node dist/src/main.js &
+          SERVER_PID=$!
+          for i in $(seq 1 15); do
+            BODY=$(curl -sf http://localhost:3000/health || true)
+            if [ "$BODY" = '{"status":"ok"}' ]; then
+              echo "✅ Сервер амжилттай асаж, /health-ээс зөв хариу өглөө"
+              kill $SERVER_PID
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Сервер 15 секундэд /health-ээс зөв хариу ({\"status\":\"ok\"}) өгсөнгүй"
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1

@@ -7,12 +7,13 @@ import { AuthCustomerModule } from './auth-customer/auth-customer.module.js';
 import { AuditInterceptor } from './common/audit.interceptor.js';
 import { RlsMiddleware } from './common/rls.middleware.js';
 import { DebugController } from './debug/debug.controller.js';
+import { HealthController } from './health/health.controller.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
 @Module({
   imports: [PrismaModule, RedisModule, AuthModule, AuthCustomerModule],
-  controllers: [AppController, DebugController],
+  controllers: [AppController, DebugController, HealthController],
   providers: [
     AppService,
     RlsMiddleware,
@@ -21,6 +22,6 @@ import { RedisModule } from './redis/redis.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RlsMiddleware).forRoutes('*');
+    consumer.apply(RlsMiddleware).exclude('health').forRoutes('*');
   }
 }
