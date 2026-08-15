@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient, type Prisma } from '../../generated/prisma/client.js';
 import { RequestContextService } from '../common/request-context.js';
@@ -7,7 +12,10 @@ import { RequestContextService } from '../common/request-context.js';
 // `app_runtime` (RLS-д хамрагдсан, superuser БИШ) холболтоор дамжина.
 // Migration/DDL зөвхөн superuser `app` холболтоор (DATABASE_URL) хийгдэнэ.
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PrismaService.name);
 
   constructor(private readonly requestContext: RequestContextService) {
