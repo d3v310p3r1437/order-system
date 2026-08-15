@@ -287,7 +287,7 @@ SET LOCAL app.accessible_branches = $3;
 - [ ] **Custom customer-auth модуль** (утасны дугаар + нууц үг) — §6.2 загварын дагуу
 - [ ] Хоёр эх үүсвэрээс ирсэн JWT-г нэг стандарт `JwtAuthGuard`-аар баталгаажуулах
 - [ ] RBAC guard-ыг §6.1 матрицын дагуу бичих
-- [ ] **(шинэ) Суурь аудит лог:** бүх mutation (create/update/delete) endpoint дээр `AuditInterceptor` — хэн, хэзээ, ямар хүснэгт, өмнөх/дараах утга (JSON diff) хадгална
+- [x] **(шинэ) Суурь аудит лог:** бүх mutation (create/update/delete) endpoint дээр `AuditInterceptor` — хэн, хэзээ, ямар хүснэгт, өмнөх/дараах утга (JSON diff) хадгална
 - [ ] **(шинэ) SMS gateway vendor үнэлгээ:** Монголын 2-3 нийлүүлэгчийг (жиш. Mobicom/Unitel corporate API, 3rd-party aggregator) харьцуулж сонгох, `SmsProvider` абстракц interface бичих (бодит интеграц Phase 7-д)
 - [ ] **(шинэ)** Mobile апп: нэвтрэлтийн дэлгэц дээр **"Утасны дугаараар (харилцагч) / И-мэйлээр (ажилтан)"** сонголт эсвэл автоматаар таних логик — асуудал #4
 - [ ] Admin-web: салбар удирдах хуудас, нэвтрэлтийн дэлгэц

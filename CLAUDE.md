@@ -58,6 +58,21 @@ Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэ�
   `pnpm --filter api test` болон `test:e2e` анх удаа хоёулаа бүрэн
   ажиллаж эхлэв; `test/auth.e2e-spec.ts` нэмэгдсэн (register→me,
   RLS-гүй debug endpoint, 5→6 дахь оролдлогын throttle)
+- **Суурь аудит лог дууссан** (§4.4, §7 модуль #15): `src/common/audit.decorator.ts`
+  (`@Audit(tableName, { action?, recordId? })`) + `src/common/audit.interceptor.ts`
+  (`APP_INTERCEPTOR`, `app.module.ts`) — зөвхөн `@Audit`-аар тэмдэглэсэн
+  mutation endpoint дээр, зөвхөн амжилттай хариулт буцсаны дараа,
+  `getTx()`-тэй ижил transaction дотор бичнэ. `/auth/customer/register`,
+  `/auth/customer/login` дээр жишээ тавьсан (`recordId` — шинэ
+  accessToken-ийн JWT `sub`-аас, verify биш зөвхөн decode).
+  ⚠️ **Чухал заль:** Prisma-гийн `.create()` дотроо `INSERT...RETURNING`
+  хийдэг тул audit_logs-ын `audit_select` policy-гоор харагдахгүй мөр
+  (жиш: эрхгүй харилцагч өөрийн бүртгэлийн үеийн audit мөрөө REGISTER-ийн
+  ДАРАА ч харах эрхгүй) RETURNING шатандаа "violates row-level security
+  policy" алдаа шидэх нь бий — тиймээс `audit.interceptor.ts` RETURNING
+  шаардахгүй `tx.$executeRaw` INSERT ашигладаг. **RLS-тэй хүснэгтэд
+  Prisma-гийн `.create()/.update()`-ийг ирээдүйд ашиглахдаа энэ зальтай
+  тулгарвал мөн адил raw INSERT/UPDATE руу шилжүүл.**
 - Дараагийн ажил: `RolesGuard`/`@Roles()` (§6.1 матрицыг код болгох),
   `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах, refresh token
   revocation store (хэрэгцээ гарвал)
