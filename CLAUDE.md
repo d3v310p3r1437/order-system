@@ -9,6 +9,13 @@
 Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 + custom phone-auth (customer auth) + MinIO + Meilisearch + Flutter + React.
 
+> ⚠️ **Prisma-г 6.x дээр PIN хийсэн (7.x-рүү бүү шинэчил)** —
+> `docs/adr/003-prisma-6-pin.md`-г үзнэ үү. `package.json` JSON тул
+> comment бичих боломжгүй тул энд бичиж байна: Prisma 7-ийн WASM query
+> compiler нь Jest/CJS build tooling-тай (dynamic import, ESM-only гарц)
+> давтан зөрчилдсөн тул 6.19.x руу бууруулсан. ADR-д заасан нөхцөл
+> хангагдах хүртэл `prisma`/`@prisma/client`-ийг `^7`-руу бүү өсгө.
+
 ## Гол командууд
 - `docker compose -f infra/docker-compose.dev.yml up -d` — dev сервисүүд асаах
 - `pnpm install` — root dependency суулгах
@@ -47,6 +54,10 @@ Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэ�
   `src/auth-customer` (register/login/refresh, Redis login-throttle),
   `src/auth` (`TokenVerifierService`, `GET /auth/me`), Keycloak realm
   bootstrap (`infra/keycloak/setup-realm.sh`, idempotent)
+- **Prisma 6.x руу бууруулсан** (`docs/adr/003-prisma-6-pin.md`) —
+  `pnpm --filter api test` болон `test:e2e` анх удаа хоёулаа бүрэн
+  ажиллаж эхлэв; `test/auth.e2e-spec.ts` нэмэгдсэн (register→me,
+  RLS-гүй debug endpoint, 5→6 дахь оролдлогын throttle)
 - Дараагийн ажил: `RolesGuard`/`@Roles()` (§6.1 матрицыг код болгох),
   `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах, refresh token
   revocation store (хэрэгцээ гарвал)

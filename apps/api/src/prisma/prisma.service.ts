@@ -4,13 +4,16 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient, type Prisma } from '../../generated/prisma/client.js';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { RequestContextService } from '../common/request-context.js';
 
 // §6.3 ADR (docs/adr/001-rls-transaction-pattern.md): бүх query
 // `app_runtime` (RLS-д хамрагдсан, superuser БИШ) холболтоор дамжина.
 // Migration/DDL зөвхөн superuser `app` холболтоор (DATABASE_URL) хийгдэнэ.
+//
+// docs/adr/003-prisma-6-pin.md: Prisma 6.x классик `prisma-client-js`
+// generator ашигладаг тул driver adapter (@prisma/adapter-pg) шаардлагагүй —
+// datasources.db.url-аар шууд холбогдоно.
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -20,7 +23,7 @@ export class PrismaService
 
   constructor(private readonly requestContext: RequestContextService) {
     super({
-      adapter: new PrismaPg({ connectionString: process.env.APP_DATABASE_URL }),
+      datasources: { db: { url: process.env.APP_DATABASE_URL } },
     });
   }
 

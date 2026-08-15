@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../../generated/prisma/client.js';
+import type { Prisma } from '@prisma/client';
 
 export interface RlsRequestContext {
   // §6.3: хүсэлтийн туршид нээлттэй байх RLS-д хамрагдсан transaction client.

@@ -3,14 +3,17 @@
 
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
+// docs/adr/003-prisma-6-pin.md: default output (node_modules/.prisma/client,
+// @prisma/client-ээр import) ашиглана — custom "output" зам заавал tsc/nest
+// build-ийн outDir руу хуулагддаггүй pre-built .js/native binary агуулдаг
+// тул runtime-д MODULE_NOT_FOUND өгдөг байсан.
 generator client {
-  provider     = "prisma-client"
-  output       = "../generated/prisma"
-  moduleFormat = "cjs"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ─────────────────────────────────────────────────────────
