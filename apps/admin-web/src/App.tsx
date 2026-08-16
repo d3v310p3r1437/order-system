@@ -1,35 +1,63 @@
 import { useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { LoginScreen } from "@/components/LoginScreen";
-import { Dashboard } from "@/components/Dashboard";
-
-interface StaffSession {
-  accessToken: string;
-  email: string;
-}
+import { Layout } from "@/components/Layout";
+import { AuthProvider, type StaffSession } from "@/lib/auth-context";
+import { DashboardPage } from "@/pages/DashboardPage";
+import { CategoriesPage } from "@/pages/CategoriesPage";
+import { ProductsPage } from "@/pages/ProductsPage";
+import { ProductDetailPage } from "@/pages/ProductDetailPage";
+import { InventoryPage } from "@/pages/InventoryPage";
 
 function App() {
-  // §Даалгавар 9: access token-г зөвхөн in-memory React state-д хадгална
+  // §ADR 004: access token-г зөвхөн in-memory React state-д хадгална
   // (localStorage БИШ) — XSS эрсдэлээс сэргийлнэ. Session персист хийх нь
   // дараагийн Phase-д нэмэгдэнэ (одоогоор хуудас refresh хийвэл дахин
   // нэвтрэх шаардлагатай).
   const [session, setSession] = useState<StaffSession | null>(null);
 
-  if (!session) {
-    return (
-      <LoginScreen
-        onLoginSuccess={(accessToken, email) =>
-          setSession({ accessToken, email })
-        }
-      />
-    );
-  }
-
   return (
-    <Dashboard
-      accessToken={session.accessToken}
-      email={session.email}
-      onLogout={() => setSession(null)}
-    />
+    <BrowserRouter>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            session ? (
+              <Navigate to="/dashboard" replace />
+            ) : (
+              <LoginScreen
+                onLoginSuccess={(accessToken, email) =>
+                  setSession({ accessToken, email })
+                }
+              />
+            )
+          }
+        />
+
+        <Route
+          element={
+            session ? (
+              <AuthProvider session={session} onLogout={() => setSession(null)}>
+                <Layout />
+              </AuthProvider>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        >
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/categories" element={<CategoriesPage />} />
+          <Route path="/products" element={<ProductsPage />} />
+          <Route path="/products/:id" element={<ProductDetailPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+        </Route>
+
+        <Route
+          path="*"
+          element={<Navigate to={session ? "/dashboard" : "/login"} replace />}
+        />
+      </Routes>
+    </BrowserRouter>
   );
 }
 

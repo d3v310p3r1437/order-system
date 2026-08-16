@@ -57,8 +57,9 @@ request-scoped transaction pattern-тай нэг дор ажиллах ёсто�
 
 ## Одоогийн Phase
 Phase 2 — Каталог ба агуулах (1-р ба 2-р хэсэг: схем + CRUD API +
-"бэлэн/захиалгаар" override логик + нийтэд харагдах availability endpoint
-дууссан, MinIO/Meilisearch/UI хараахан эхлээгүй). Дэлгэрэнгүй: `docs/plan.md` §8.
+"бэлэн/захиалгаар" override логик + нийтэд харагдах availability endpoint +
+admin-web UI дууссан, MinIO/Meilisearch/Mobile UI хараахан эхлээгүй).
+Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -161,8 +162,46 @@ Phase 2 — Каталог ба агуулах (1-р ба 2-р хэсэг: сх�
   хүснэгтээс redact хийсэн утга нийтэд харуулах) гарвал ЭНЭ ADR-ыг
   заавал уншиж, шинэ функц зохиохоос өмнө байгаа функцүүдийг эхлээд
   шалга.
+- **Admin-web: каталог/агуулахын UI дууссан**: `react-router-dom` (protected
+  route-ууд: `/login`, `/dashboard`, `/categories`, `/products`,
+  `/products/:id`, `/inventory` — токенгүй бол `/login` руу redirect).
+  `src/lib/auth-context.tsx` (`AuthProvider`/`useAuth`) — session (accessToken,
+  ADR 004-ийн дагуу in-memory хэвээр) + `GET /auth/me`-ээс role татаж
+  context-оор дамжуулна, 401 гарвал автоматаар гарна. `src/lib/roles.ts`-д
+  backend-ийн `@Roles()` decorator-уудтай ЯГ ТААРСАН UX-only role
+  constant-ууд (`CATEGORY_WRITE_ROLES` гэх мэт) — жинхэнэ хамгаалалт
+  үргэлж backend RBAC guard + RLS, frontend талд эрх дахин тооцоолохгүй,
+  зөвхөн ирсэн role-оор товч харуулж/нуудаг. `Layout` (nav + header дэх
+  email/role/Гарах). Ангилал/Бүтээгдэхүүн/Variant **гурванд нь адилхан**:
+  Нэмэх/Засах dialog (slug нэрнээс автомат санал болгодог ч засварлаж
+  болно), **Устгах товч ЗОРИУДАА байхгүй** (variant/inventory-той foreign
+  key зөрчилдөх эрсдэлтэй) — зөвхөн "Идэвхгүй болгох" `isActive` toggle.
+  `/products/:id`-ийн `InventoryPanel`: `GET /branches`-ээс ирсэн (RLS-ээр
+  аль хэдийн шүүгдсэн) жагсаалт 1-ээс олон бол л салбар сонгох dropdown
+  харуулна; quantity ЗӨВХӨН +N/-N delta (`QuantityAdjuster` →
+  `PATCH .../adjust-quantity`); branchPrice/preOrder override
+  `OverrideField`-ээр (унтраасан=variant-ийн анхны утгыг өвлөнө гэдгийг UI
+  дээр тод бичсэн); тооцоолсон IN_STOCK/PRE_ORDER/OUT_OF_STOCK badge
+  (`AvailabilityBadge`) нь `GET /products/:id?branchId=`-ээс ирсэн
+  `computeAvailabilityStatus()`-ийн үр дүнг ШУУД харуулна — frontend талд
+  availability логикийг ДАХИН БИЧЭЭГҮЙ (ADR 005-ийн "ганц газар л шийднэ"
+  зарчим frontend-д ч мөн хамаарна). Vitest + React Testing Library суурь
+  тавьсан (`apps/admin-web/src/**/__tests__`, `vite.config.ts`-ийн `test`
+  талбар), CI-д (`ci.yml`) admin-web lint/test/build алхам нэмэгдэв (өмнө
+  нь admin-web CI-д огт ороогүй байсан тул шинэ тестүүд CI дээр хэзээ ч
+  ажиллахгүй байх эрсдэлтэй байсан).
+  ⚠️ **Шинэ бэкенд endpoint нэмэгдсэн:** admin-web-ийн салбар сонгох
+  dropdown-д зориулж минимал `GET /branches` (`src/branch/`, зөвхөн уншихад
+  зориулсан, CUD алга) нэмэв — branches RLS (`branches_select`,
+  `20260815082257_enable_rls_policies`) аль хэдийн бэлэн байсан тул шинэ
+  SECURITY DEFINER функц ШААРДААГҮЙ. Бүрэн CRUD "салбар удирдах хуудас"
+  ЭНЭ даалгаварт ХАМААРАХГҮЙ, доор "Дараагийн ажил"-д хэвээр байна.
 - Дараагийн ажил: MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
-  admin-web/mobile-ийн каталог/агуулах UI, `DebugController`-ыг устгах/
-  SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
-  гарвал), admin-web-ийн салбар удирдах хуудас (Branch.district/lat/lng-г
-  ашиглаж газрын зураг дээр харуулах боломжтой боллоо)
+  **Mobile-ийн каталог/агуулах UI** (admin-web хийгдсэн, Flutter тал
+  хараахан эхлээгүй), `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах,
+  refresh token revocation store (хэрэгцээ гарвал), admin-web-ийн салбар
+  удирдах хуудас (CUD, Branch.district/lat/lng-г ашиглаж газрын зураг дээр
+  харуулах боломжтой боллоо — одоо зөвхөн уншихад зориулсан
+  `GET /branches` байгаа), admin-web session persist (ADR 004-ийн
+  "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
+  шаардлагатай хэвээр).
