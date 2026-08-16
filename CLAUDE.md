@@ -163,7 +163,8 @@ geolocation Phase 3b-д). Дэлгэрэнгүй: `docs/plan.md` §8.
   дэлгэрэнгүй бичив — ирээдүйд ижил хэрэгцээ (RLS-ээр хориглогдсон
   хүснэгтээс redact хийсэн утга нийтэд харуулах) гарвал ЭНЭ ADR-ыг
   заавал уншиж, шинэ функц зохиохоос өмнө байгаа функцүүдийг эхлээд
-  шалга.
+  шалга. (Энэ бол ADR 005-ийн "READ" бүлэг — Phase 3a-д WRITE-д зориулсан
+  тусдаа бүлэг нэмэгдсэн, доорх Phase 3a тэмдэглэлийг үз.)
 - **Admin-web: каталог/агуулахын UI дууссан**: `react-router-dom` (protected
   route-ууд: `/login`, `/dashboard`, `/categories`, `/products`,
   `/products/:id`, `/inventory` — токенгүй бол `/login` руу redirect).
@@ -219,12 +220,18 @@ geolocation Phase 3b-д). Дэлгэрэнгүй: `docs/plan.md` §8.
   `inventory_items_update` RLS-ийг join-оор өргөтгөж шийдэх оролдлого
   БОДИТООР АЖИЛЛАХГҮЙ болохыг `EXPLAIN (ANALYZE)`-аар нотолсон (Postgres
   policy quals-ыг "(update_using) AND (select_using)" гэж AND-аар
-  нэгтгэсэн байгааг шууд харсан). Тиймээс ADR 005-ийн "SECURITY DEFINER
-  зөвхөн READ+redact-д" хамрах хүрээнээс ухамсартайгаар давж, зөвшөөрлийг
-  ӨӨРӨӨ дотроо шалгаад бичдэг WRITE зориулалттай SECURITY DEFINER функц
+  нэгтгэсэн байгааг шууд харсан).
+  **`docs/adr/005-security-definer-pattern.md`-ийг ЭНЭ нээлтээр шинэчилж,
+  анхны "зөвхөн READ+redact" хязгаарлалтын хажууд шинэ "## WRITE тохиолдол"
+  бүлэг + тусдаа WRITE зөвтгөлийн шалгуур (READ-ээс илүү хатуу, учир нь
+  RLS бүхэлдээ тойрогддог) нэмсэн** — зөвшөөрлийг ӨӨРӨӨ дотроо шалгаад
+  бичдэг WRITE зориулалттай SECURITY DEFINER функц
   (`app_adjust_inventory_for_order`, migration
-  `add_order_inventory_adjustment_function`) ашигласан — ирээдүйд ижил
-  "унших эрхгүй ч бичих ёстой" тохиолдол гарвал ЭНЭ зарчмыг баримтал.
+  `add_order_inventory_adjustment_function`) ашигласан. **Ирээдүйд ижил
+  "унших эрхгүй ч бичих ёстой" тохиолдол гарвал шинэ SECURITY DEFINER
+  функц зохиохоос ӨМНӨ энэ шинэчилсэн ADR 005-ыг БҮХЭЛД нь (READ ба WRITE
+  хоёр бүлэг) заавал уншиж, өөрийн хэрэгцээ аль ангилалд багтахыг эхлээд
+  тодорхойл.**
   ⚠️ **Чухал заль (SAVEPOINT):** RlsMiddleware хэдийн бүх хүсэлтийг нэг
   interactive transaction-д ороосон байдаг (ADR 001) тул OrderService
   `prisma.$transaction`-ыг дахин дуудаж чадахгүй (interactive
