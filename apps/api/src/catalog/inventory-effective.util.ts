@@ -51,10 +51,19 @@ export function resolveEffectivePreOrder(
   };
 }
 
+// `item` нь null/undefined байж болно — тухайн салбарт энэ variant-ийн
+// InventoryItem мөр огт үүсээгүй (жиш: салбар энэ бараа огт захиалж
+// байгаагүй) тохиолдлыг илэрхийлнэ. Callee (ProductService) rows.length
+// === 0-г тусад нь шалгаж OUT_OF_STOCK буцаах шаардлагагүй болгохын тулд
+// "мөр байхгүй" гэдгийг ЭНД, ганц газар л шийднэ — эс бөгөөс ижил
+// шийдвэр хоёр газар (util + дуудагч) давхардаж бичигдэх эрсдэлтэй.
 export function computeAvailabilityStatus(
-  item: StockSource & PreOrderOverrideSource,
+  item: (StockSource & PreOrderOverrideSource) | null | undefined,
   variant: PreOrderDefaultSource,
 ): AvailabilityResult {
+  if (!item) {
+    return { status: 'OUT_OF_STOCK', leadDays: null };
+  }
   if (item.quantity > 0) {
     return { status: 'IN_STOCK', leadDays: null };
   }

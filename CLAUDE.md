@@ -152,6 +152,15 @@ Phase 2 — Каталог ба агуулах (1-р ба 2-р хэсэг: сх�
   ProductService.findOne() дотор ГАНЦ л газар (inventory-effective.util.ts)
   гаргаж, ЗӨВХӨН `{status, leadDays}`-ийг HTTP хариунд оруулна (quantity/
   branchId бодит утга серверийн санах ойгоос цааш хэзээ ч гарахгүй).
+  InventoryItem мөр огт байхгүй тохиолдлыг `computeAvailabilityStatus()`
+  өөрөө (`item: ... | null | undefined`) OUT_OF_STOCK болгож шийддэг —
+  дуудагч тал (ProductService) тусад нь "0 мөр" гэж шалгахгүй, ганц
+  газар л шийднэ. Хэзээ шинэ SECURITY DEFINER функц зөвтгөгдөх, хэзээ
+  байгааг дахин ашиглах ёстой гэдэг зарчмыг **`docs/adr/005-security-definer-pattern.md`**-д
+  дэлгэрэнгүй бичив — ирээдүйд ижил хэрэгцээ (RLS-ээр хориглогдсон
+  хүснэгтээс redact хийсэн утга нийтэд харуулах) гарвал ЭНЭ ADR-ыг
+  заавал уншиж, шинэ функц зохиохоос өмнө байгаа функцүүдийг эхлээд
+  шалга.
 - Дараагийн ажил: MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   admin-web/mobile-ийн каталог/агуулах UI, `DebugController`-ыг устгах/
   SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ

@@ -85,4 +85,23 @@ describe('computeAvailabilityStatus', () => {
       ),
     ).toEqual({ status: 'OUT_OF_STOCK', leadDays: null });
   });
+
+  // GET /products/:id?branchId= — тухайн салбарт энэ variant-ийн
+  // InventoryItem мөр огт үүсээгүй (жиш: салбар энэ барааг огт
+  // захиалж байгаагүй) тохиолдол. app_inventory_snapshot_for_variant()
+  // SQL функц 0 мөр буцаавал ProductService.computeVariantAvailability
+  // энд `null`-ийг дамжуулдаг — алдаа шидэхгүй, эелдэгээр OUT_OF_STOCK.
+  it('item null (InventoryItem мөр огт байхгүй) бол OUT_OF_STOCK, алдаа шидэхгүй', () => {
+    expect(computeAvailabilityStatus(null, variant)).toEqual({
+      status: 'OUT_OF_STOCK',
+      leadDays: null,
+    });
+  });
+
+  it('item undefined ч мөн адил OUT_OF_STOCK', () => {
+    expect(computeAvailabilityStatus(undefined, variant)).toEqual({
+      status: 'OUT_OF_STOCK',
+      leadDays: null,
+    });
+  });
 });
