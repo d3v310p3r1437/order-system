@@ -52,7 +52,25 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const beforeDataPromise = this.captureBeforeData(req, metadata.tableName);
+    // captureBeforeData-г ЭНД ШУУД (concatMap-ийн амжилттай замд хүрэхээс
+    // өмнө) эхлүүлдэг тул handler алдаа шидвэл (жиш: RLS-ээр хориглогдсон
+    // мөрийг update хийхээр оролдох үед .update() P2025 шидэх, харин
+    // captureBeforeData-ийн raw SELECT өөрөө амжилттай хоосон массив
+    // буцаадаг) concatMap-ийн callback ер нь дуудагдахгүй тул
+    // beforeDataPromise хэзээ ч уншигдахгүй үлдэж болзошгүй. Хэрэв
+    // captureBeforeData ӨӨРӨӨ (raw SQL) алдаа шидвэл ийм тохиолдолд
+    // uncaught rejection болохоос сэргийлж, шууд .catch()-оор атгана —
+    // "before" snapshot унших нь амжилтгүй болсноор ЭСЭН мутаци/хариуг
+    // 500 болгож унагаах ёсгүй тул null болгож зөөлрүүлнэ.
+    const beforeDataPromise = this.captureBeforeData(
+      req,
+      metadata.tableName,
+    ).catch((err: unknown) => {
+      this.logger.warn(
+        `captureBeforeData амжилтгүй боллоо (${req.method} ${req.url}): ${String(err)}`,
+      );
+      return null;
+    });
 
     return next.handle().pipe(
       concatMap(async (responseBody: unknown) => {

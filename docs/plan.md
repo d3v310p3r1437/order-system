@@ -306,12 +306,52 @@ SET LOCAL app.accessible_branches = $3;
 ### Phase 2 — Каталог ба агуулах (2-3 долоо хоног)
 (v1.0-той бараг адил, доор нэмэлт)
 
-- [ ] Бүтээгдэхүүн, ангилал, вариант схем + CRUD API (§6.1 матрицын эрхээр хязгаарласан)
+- [x] Бүтээгдэхүүн, ангилал, вариант схем + CRUD API (§6.1 матрицын эрхээр
+      хязгаарласан): `Category`/`Product`/`ProductVariant`/`InventoryItem`
+      Prisma model + migration (`add_catalog_inventory`,
+      `enable_catalog_inventory_rls` — өмнөх `app_current_user_id()`/
+      `app_has_global_scope()`/`app_can_manage_branch()` функцүүдийг л дахин
+      ашигласан, шинэ SECURITY DEFINER функц нэмээгүй). `RolesGuard`/
+      `@Roles()` (§6.1 матрицыг эцэст нь код болгосон — өмнө нь "дараагийн
+      ажил" гэж CLAUDE.md-д тэмдэглэгдсэн байсан) endpoint бүрт, DTO
+      validation (class-validator), InventoryItem-ийн тоо хэмжээ өөрчлөх нь
+      atomic `{ increment: delta }` (+ DB CHECK constraint `quantity >= 0`
+      race-safe хамгаалалт).
+- [x] **(2-р хэсэг)** Каталог/агуулахын схем өргөтгөл + "бэлэн/захиалгаар"
+      логик + салбарын байршил (migration `add_branch_geo_and_catalog_fields`):
+      `Branch.district`/`latitude`/`longitude`; `Category`-д `slug`
+      (unique)/`description`/`displayOrder`/`isActive`; `Product`-д `slug`
+      (unique)/`brand`; `ProductVariant`-д `sku` (unique)/`unit`/`basePrice`
+      (өмнөх `price`-ийн нэрийг өөрчилсөн)/`costPrice`/`barcode`/`isActive`/
+      `defaultPreOrderEnabled`/`defaultPreOrderLeadDays`; `InventoryItem`-д
+      `branchPrice`/`preOrderEnabledOverride`/`preOrderLeadDaysOverride`
+      (override) + `lowStockThreshold`-ийн анхны утга 5 болсон. Дундын
+      override-resolve util (`src/catalog/inventory-effective.util.ts`):
+      `resolveEffectivePrice`/`resolveEffectivePreOrder`/
+      `computeAvailabilityStatus` (`IN_STOCK`/`PRE_ORDER`/`OUT_OF_STOCK`).
+      "Нийтэд харагдах" `GET /products/:id` (`?branchId=`-аар сонгосон 1
+      салбарын, өгөөгүй бол бүх салбараар аггрегатласан) endpoint нь
+      InventoryItem-ийн бодит мөрийг (quantity, branchId-ийн жагсаалт)
+      ХЭЗЭЭ Ч илгээхгүй, зөвхөн тооцоолсон `{status, leadDays}`-ийг
+      буцаана — CUSTOMER ч дуудна (RLS-д мөргөлдөхгүй, учир нь шинэ
+      `app_inventory_snapshot_for_variant()` SECURITY DEFINER функц зөвхөн
+      серверийн санах ойд зориулсан түүхий баганыг буцаадаг, HTTP хариунд
+      квант/салбар шууд гардаггүй; migration `add_public_availability_lookup_function`).
 - [ ] MinIO зураг байршуулах endpoint
 - [ ] Meilisearch индексжилтийн pipeline
-- [ ] Салбар тус бүрийн нөөцийн хүснэгт, дутагдлын сэрэмжлүүлэг
+- [x] Салбар тус бүрийн нөөцийн хүснэгт, дутагдлын сэрэмжлүүлэг:
+      `InventoryItem.lowStockThreshold` талбар нэмэгдсэн (сэрэмжлүүлэг
+      ИЛГЭЭХ мэдэгдлийн урсгал өөрөө Phase 4-ийн мэдэгдлийн модультай хамт
+      хэрэгжинэ — энд зөвхөн өгөгдлийн загвар).
 - [ ] Admin-web + Mobile: каталог/агуулах UI (Phase 0.5-ийн дизайны дагуу)
-- [ ] **(шинэ)** Аудит лог: бүтээгдэхүүн/нөөцийн өөрчлөлт бүрт бичигдэж байгааг баталгаажуулах тест
+- [x] **(шинэ)** Аудит лог: бүтээгдэхүүн/нөөцийн өөрчлөлт бүрт бичигдэж
+      байгааг баталгаажуулах тест (`test/catalog-inventory.e2e-spec.ts`)
+- [x] **(2-р хэсэг)** §6.1 матрицын дагуу дор хаяж 3 дүр (SUPER_ADMIN,
+      BRANCH_MANAGER өөр 2 өөр салбарт, CUSTOMER)-ээр inventory харагдац
+      ялгаатай болохыг e2e тестээр батлав (`test/catalog-inventory.e2e-spec.ts`),
+      мөн Branch-ийн шинэ геолокацийн талбар, "нийтэд харагдах" availability
+      endpoint (IN_STOCK/PRE_ORDER/OUT_OF_STOCK, quantity/branchId
+      алдагдаагүй эсэх) — e2e-ээр давхар баталгаажуулав.
 
 ### Phase 3a — Сагс ба захиалгын үндсэн урсгал (2 долоо хоног) — **v1.0-ийн Phase 3-аас задарсан**
 

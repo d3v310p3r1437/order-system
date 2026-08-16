@@ -40,12 +40,16 @@ model Branch {
   id        String   @id @default(uuid())
   name      String
   address   String?
+  district  String?
+  latitude  Float?
+  longitude Float?
   phone     String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   userBranchRoles UserBranchRole[]
+  inventoryItems  InventoryItem[]
 
   @@map("branches")
 }
@@ -105,5 +109,97 @@ model AuditLog {
   @@index([tableName, recordId])
   @@index([userId])
   @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────
+// Phase 2, 1-р хэсэг: Каталог ба агуулах (docs/plan.md §7 модуль #3, #4)
+// ─────────────────────────────────────────────────────────
+
+// Ангилал — эцэг ангилалтайгаа (parentId) өөртэйгөө self-relation.
+// Каталог бүхэлдээ нэвтэрсэн бүх хэрэглэгчид (харилцагч ч) харагдана
+// (§6.1 матриц "Бүтээгдэхүүн/каталог" мөр) — RLS: enable_catalog_inventory_rls.
+model Category {
+  id           String   @id @default(uuid())
+  name         String
+  slug         String   @unique
+  description  String?
+  displayOrder Int      @default(0)
+  isActive     Boolean  @default(true)
+  parentId     String?
+  parent       Category?  @relation("CategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[] @relation("CategoryParent")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  brand       String?
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  variants ProductVariant[]
+
+  @@index([categoryId])
+  @@map("products")
+}
+
+model ProductVariant {
+  id                      String   @id @default(uuid())
+  productId               String
+  product                 Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name                    String // жиш: хэмжээ/өнгө ("XL, улаан")
+  sku                     String   @unique
+  unit                    String   @default("ширхэг")
+  basePrice               Decimal  @db.Decimal(12, 2)
+  costPrice               Decimal? @db.Decimal(12, 2)
+  barcode                 String?
+  isActive                Boolean  @default(true)
+  // Салбарын InventoryItem дээр override-гүй бол ашиглагдах анхны утга
+  // (inventory-effective.util.ts-ийн resolveEffectivePreOrder-г үз).
+  defaultPreOrderEnabled  Boolean  @default(false)
+  defaultPreOrderLeadDays Int?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  inventoryItems InventoryItem[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+// Салбар тус бүрийн нөөц. Харилцагч ХАРАХГҮЙ (§6.1: нөөцийн тоо нууц) —
+// RLS: app_can_manage_branch(branchId) эсвэл global scope-той дүрд л
+// SELECT/CRUD зөвшөөрнө. Тоо хэмжээ өөрчлөх нь InventoryService-ийн
+// adjustQuantity (delta, atomic increment) аргаар л хийгдэнэ.
+model InventoryItem {
+  id                        String         @id @default(uuid())
+  variantId                 String
+  variant                   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  branchId                  String
+  branch                    Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  quantity                  Int            @default(0)
+  lowStockThreshold         Int            @default(5)
+  // ProductVariant-ийн анхны утгыг дарж бичих (override) — NULL бол
+  // variant-ийн утгыг ашиглана (inventory-effective.util.ts).
+  branchPrice               Decimal?       @db.Decimal(12, 2)
+  preOrderEnabledOverride   Boolean?
+  preOrderLeadDaysOverride  Int?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  @@unique([variantId, branchId])
+  @@index([branchId])
+  @@map("inventory_items")
 }
 

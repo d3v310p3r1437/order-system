@@ -5,10 +5,12 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthCustomerModule } from './auth-customer/auth-customer.module.js';
 import { AuthStaffModule } from './auth-staff/auth-staff.module.js';
+import { CatalogModule } from './catalog/catalog.module.js';
 import { AuditInterceptor } from './common/audit.interceptor.js';
 import { RlsMiddleware } from './common/rls.middleware.js';
 import { DebugController } from './debug/debug.controller.js';
 import { HealthController } from './health/health.controller.js';
+import { InventoryModule } from './inventory/inventory.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -19,6 +21,8 @@ import { RedisModule } from './redis/redis.module.js';
     AuthModule,
     AuthCustomerModule,
     AuthStaffModule,
+    CatalogModule,
+    InventoryModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [
