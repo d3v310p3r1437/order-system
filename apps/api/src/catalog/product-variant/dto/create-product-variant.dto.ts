@@ -1,4 +1,13 @@
-import { IsNumber, IsString, IsUUID, Min, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class CreateProductVariantDto {
   @IsUUID()
@@ -8,7 +17,38 @@ export class CreateProductVariantDto {
   @MinLength(1)
   name!: string;
 
+  @IsString()
+  @MinLength(1)
+  sku!: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  unit?: string;
+
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  price!: number;
+  basePrice!: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  costPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  barcode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  defaultPreOrderEnabled?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  defaultPreOrderLeadDays?: number;
 }

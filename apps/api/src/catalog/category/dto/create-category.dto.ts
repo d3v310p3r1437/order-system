@@ -1,4 +1,6 @@
 import {
+  IsBoolean,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
@@ -11,6 +13,24 @@ export class CreateCategoryDto {
   @MinLength(1)
   @MaxLength(200)
   name!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(200)
+  slug!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsInt()
+  displayOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 
   @IsOptional()
   @IsUUID()

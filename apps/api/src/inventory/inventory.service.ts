@@ -54,7 +54,10 @@ export class InventoryService {
           variantId: dto.variantId,
           branchId: dto.branchId,
           quantity: dto.quantity ?? 0,
-          lowStockThreshold: dto.lowStockThreshold ?? 0,
+          lowStockThreshold: dto.lowStockThreshold ?? 5,
+          branchPrice: dto.branchPrice,
+          preOrderEnabledOverride: dto.preOrderEnabledOverride,
+          preOrderLeadDaysOverride: dto.preOrderLeadDaysOverride,
         },
       });
     } catch (error) {
@@ -78,7 +81,12 @@ export class InventoryService {
     try {
       return await this.prisma.tx.inventoryItem.update({
         where: { id },
-        data: { lowStockThreshold: dto.lowStockThreshold },
+        data: {
+          lowStockThreshold: dto.lowStockThreshold,
+          branchPrice: dto.branchPrice,
+          preOrderEnabledOverride: dto.preOrderEnabledOverride,
+          preOrderLeadDaysOverride: dto.preOrderLeadDaysOverride,
+        },
       });
     } catch (error) {
       if (isRecordNotFoundError(error)) {

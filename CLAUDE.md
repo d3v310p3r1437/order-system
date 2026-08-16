@@ -56,8 +56,9 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 2 — Каталог ба агуулах (1-р хэсэг: схем + CRUD API дууссан, MinIO/
-Meilisearch/UI хараахан эхлээгүй). Дэлгэрэнгүй: `docs/plan.md` §8.
+Phase 2 — Каталог ба агуулах (1-р ба 2-р хэсэг: схем + CRUD API +
+"бэлэн/захиалгаар" override логик + нийтэд харагдах availability endpoint
+дууссан, MinIO/Meilisearch/UI хараахан эхлээгүй). Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -123,7 +124,36 @@ Meilisearch/UI хараахан эхлээгүй). Дэлгэрэнгүй: `docs
   `PrismaClientUnknownRequestError` (алдааны `message`-дээ л Postgres код
   (жиш: "23514") агуулна) шидэх нь бодит e2e тестээр батлагдсан —
   `src/common/prisma-errors.ts`-ийн `isCheckConstraintViolation()`-г үз.
+- **Каталог + агуулах (Phase 2, 2-р хэсэг) дууссан**: migration
+  `add_branch_geo_and_catalog_fields` — `Branch.district`/`latitude`/
+  `longitude`; `Category.slug`(unique)/`description`/`displayOrder`/
+  `isActive`; `Product.slug`(unique)/`brand`; `ProductVariant.sku`(unique)/
+  `unit`/`basePrice`(`price`-ийн сольсон нэр, `RENAME COLUMN`-оор хийсэн —
+  CHECK constraint-ийг устгаж дахин үүсгээгүй, зөвхөн нэрийг нь өөрчилсөн)/
+  `costPrice`/`barcode`/`isActive`/`defaultPreOrderEnabled`/
+  `defaultPreOrderLeadDays`; `InventoryItem.branchPrice`/
+  `preOrderEnabledOverride`/`preOrderLeadDaysOverride` (override) +
+  `lowStockThreshold`-ийн анхны утга 0→5. Одоо байгаа мөрүүдэд slug/sku
+  NOT NULL UNIQUE нэмэхдээ `id`-ээр backfill хийсэн (id аль хэдийн unique
+  тул давхцахгүй баталгаатай) — жинхэнэ утгыг дараа нь admin-аар засна.
+  Дундын override-resolve util: `src/catalog/inventory-effective.util.ts`
+  (`resolveEffectivePrice`/`resolveEffectivePreOrder`/
+  `computeAvailabilityStatus`).
+  ⚠️ **Чухал заль (шинэ SECURITY DEFINER функц):** "Нийтэд харагдах"
+  `GET /products/:id` (CUSTOMER ч дуудна) InventoryItem-ийн бэлэн эсэхийг
+  мэдэх ёстой, гэвч `inventory_items_select` RLS policy нь CUSTOMER-д
+  ХЭЗЭЭ Ч SELECT зөвшөөрдөггүй (row-level, багана биш — тул зүгээр
+  багана хасаж SELECT хийвэл ч 0 мөр буцна). Иймд migration
+  `add_public_availability_lookup_function`-д ГАНЦ л шинэ SECURITY
+  DEFINER функц (`app_inventory_snapshot_for_variant`) нэмсэн — энэ нь
+  зөвхөн түүхий баганыг (quantity, override) буцаадаг "цонх" бөгөөд
+  ямар ч бизнес логик (IN_STOCK/PRE_ORDER шийдвэр) агуулаагүй тул
+  `computeAvailabilityStatus()`-той давхцаж бичигдээгүй — шийдвэрийг
+  ProductService.findOne() дотор ГАНЦ л газар (inventory-effective.util.ts)
+  гаргаж, ЗӨВХӨН `{status, leadDays}`-ийг HTTP хариунд оруулна (quantity/
+  branchId бодит утга серверийн санах ойгоос цааш хэзээ ч гарахгүй).
 - Дараагийн ажил: MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   admin-web/mobile-ийн каталог/агуулах UI, `DebugController`-ыг устгах/
   SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
-  гарвал), admin-web-ийн салбар удирдах хуудас
+  гарвал), admin-web-ийн салбар удирдах хуудас (Branch.district/lat/lng-г
+  ашиглаж газрын зураг дээр харуулах боломжтой боллоо)

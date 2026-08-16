@@ -26,9 +26,12 @@ export class ProductController {
     return this.productService.findAll(categoryId);
   }
 
+  // "Нийтэд харагдах" endpoint — @Roles()-гүй тул зөвхөн нэвтэрсэн байхыг
+  // шаардана (CUSTOMER ч дуудна). branchId query-гээр сонгосон 1 салбарын,
+  // өгөгдөөгүй бол бүх салбараар аггрегатласан availability status буцаана.
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productService.findOne(id);
+  findOne(@Param('id') id: string, @Query('branchId') branchId?: string) {
+    return this.productService.findOne(id, branchId);
   }
 
   @Post()

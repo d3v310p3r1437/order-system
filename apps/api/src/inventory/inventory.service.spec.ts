@@ -94,7 +94,7 @@ describe('InventoryService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('quantity/lowStockThreshold өгөгдөөгүй бол 0-ээр анхны утга тавина', async () => {
+    it('quantity өгөгдөөгүй бол 0, lowStockThreshold өгөгдөөгүй бол 5-аар анхны утга тавина', async () => {
       create.mockResolvedValue({ id: 'item-1' });
       await service.create({ variantId: 'v-1', branchId: 'b-1' });
       expect(create).toHaveBeenCalledWith({
@@ -102,7 +102,10 @@ describe('InventoryService', () => {
           variantId: 'v-1',
           branchId: 'b-1',
           quantity: 0,
-          lowStockThreshold: 0,
+          lowStockThreshold: 5,
+          branchPrice: undefined,
+          preOrderEnabledOverride: undefined,
+          preOrderLeadDaysOverride: undefined,
         },
       });
     });
