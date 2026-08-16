@@ -12,7 +12,8 @@
   `docs/adr/005-security-definer-pattern.md` (WRITE ангилал),
   `apps/api/src/payment/*`, `apps/api/src/common/login-throttle.service.ts`,
   `apps/api/prisma/migrations/20260816120500_add_order_mark_paid_function`,
-  `apps/api/prisma/migrations/20260817090000_atomic_idempotent_mark_paid_function`
+  `apps/api/prisma/migrations/20260817090000_atomic_idempotent_mark_paid_function`,
+  `apps/api/prisma/migrations/20260817110000_add_mismatch_diagnostics_to_mark_paid_function`
 
 ## Асуудал
 
@@ -157,6 +158,40 @@ WHERE id = p_order_id AND "providerInvoiceId" = p_provider_invoice_id
 `PaymentController.webhook()` эдгээрийн АЛЬ АЛЬНД нь `@HttpCode(HttpStatus.OK)`-оор
 **заавал HTTP 200** буцаана (rate-limit-ээс бусад тохиолдолд) — Stripe/
 PayPal-ийн дээрх "давхар retry-аас сэргийлэх" зарчмыг баримтална.
+
+#### `MISMATCH`-ыг HTTP статусаар БИШ, дотоод ERROR логоор илэрхийлнэ (2026-08-17 нэмэлт)
+
+"HTTP 200 буцаана" гэдэг нь **"дотооддоо анхаарал татахгүй өнгөрнө"**
+гэсэн үг БИШ — `MISMATCH` (checkPayment() PAID гэж баталгаажуулсан ч
+orderId/providerInvoiceId хос таарахгүй) нь cross-order халдлагын
+оролдлого эсвэл манай/QPay талын алдаа байж болзошгүй **сонор
+сэрэмжтэй аномали** тул `PaymentService.confirmWebhookPayment()`
+`Logger.error()`-ээр (`.log()`/`.warn()` БИШ) заавал бичнэ.
+
+`app_mark_order_paid()`-г (`20260817110000_add_mismatch_diagnostics_to_mark_paid_function`
+migration) 4 дэх багана (`actual_provider_invoice_id`) нэмж өргөтгөв —
+`MISMATCH`-ийн үед Order-д БОДИТООР хадгалагдсан `providerInvoiceId`-г
+(олдвол; Order огт олдоогүй бол `NULL`) буцаадаг тул ERROR лог-д
+"хүлээгдэж буй (webhook-ээр ирсэн) vs бодит (DB-д байгаа)" зөрүүг
+тодорхой бичих боломжтой:
+
+```
+Webhook providerInvoiceId MISMATCH: orderId=<orderId> submittedPaymentId=<webhook-ээр ирсэн> actualProviderInvoiceId=<DB-д байгаа, эсвэл ORDER_NOT_FOUND>
+```
+
+Энэ бол жинхэнэ `Error` объектоор (`.stack`-тай хамт, `RlsMiddleware`-ийн
+алдааны лог загвартай ижил) бичигдсэн тул **§10.4-ийн ирээдүйн Sentry
+холболтод шууд нийцтэй** — NestJS-ийн Sentry integration-ууд ихэвчлэн
+`Logger.error()` дуудлагыг (эсвэл шидэгдсэн `Error`-ийг) автоматаар
+alert болгодог тул энэ өөрчлөлт нэмэлт "тусгай event" механизм зохиох
+шаардлагагүйгээр шууд ажиллана. `PaymentController`-ийн ерөнхий
+`.log()` (webhook хүлээн авсан бүрийг бичдэг, өмнөх хэсгийг үз) энэ
+ERROR лог-той ЗЭРЭГЦЭЭ бичигдэнэ — хоёулаа хоорондоо зөрчилдөхгүй,
+ялгаатай зорилготой (нэг нь "юу ирсэн", нөгөө нь "юу аномал байсан").
+`apps/api/test/payment.e2e-spec.ts`-ийн MISMATCH тест `Logger.prototype.error`-ийг
+spy хийж HTTP 200 хэвээр буцаж байгаа ч ERROR лог (orderId,
+submitted/actual providerInvoiceId 3 талбарыг агуулсан) бичигдсэнийг
+батална.
 
 ### Шийдвэр 2 — WebhookGuardService: dedupe lock + coarse IP rate-limit
 

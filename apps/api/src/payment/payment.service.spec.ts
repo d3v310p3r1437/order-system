@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { PaymentService } from './payment.service.js';
 
 function buildDeps() {
@@ -91,21 +92,67 @@ describe('PaymentService.confirmWebhookPayment', () => {
     expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
   });
 
-  it('MISMATCH (providerInvoiceId таарахгүй) үед audit/event ХОЁУЛАА гарахгүй', async () => {
+  it('MISMATCH (providerInvoiceId таарахгүй) үед audit/event ХОЁУЛАА гарахгүй, гэхдээ ERROR level лог (payment_id, orderId, бодит утга) бичигдэнэ', async () => {
     const deps = buildDeps();
     deps.mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
     deps.mocks.queryRaw.mockResolvedValue([
-      { result: 'MISMATCH', branch_id: null, customer_id: null },
+      {
+        result: 'MISMATCH',
+        branch_id: null,
+        customer_id: null,
+        actual_provider_invoice_id: 'real_invoice_xyz',
+      },
     ]);
     const service = newService(deps);
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
 
-    const result = await service.confirmWebhookPayment(
-      'order-1',
-      'pay-mismatched',
-    );
+    try {
+      const result = await service.confirmWebhookPayment(
+        'order-1',
+        'pay-mismatched',
+      );
 
-    expect(result).toEqual({ checkStatus: 'PAID', result: 'MISMATCH' });
-    expect(deps.mocks.executeRaw).not.toHaveBeenCalled();
-    expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
+      expect(result).toEqual({ checkStatus: 'PAID', result: 'MISMATCH' });
+      expect(deps.mocks.executeRaw).not.toHaveBeenCalled();
+      expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const [message] = errorSpy.mock.calls[0] as [string];
+      expect(message).toContain('MISMATCH');
+      expect(message).toContain('order-1');
+      expect(message).toContain('pay-mismatched');
+      expect(message).toContain('real_invoice_xyz');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('MISMATCH + Order огт олдоогүй (actual_provider_invoice_id null) үед ч ERROR лог бичигдэж, "ORDER_NOT_FOUND" тэмдэглэгдэнэ', async () => {
+    const deps = buildDeps();
+    deps.mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
+    deps.mocks.queryRaw.mockResolvedValue([
+      {
+        result: 'MISMATCH',
+        branch_id: null,
+        customer_id: null,
+        actual_provider_invoice_id: null,
+      },
+    ]);
+    const service = newService(deps);
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    try {
+      await service.confirmWebhookPayment('order-unknown', 'pay-1');
+
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const [message] = errorSpy.mock.calls[0] as [string];
+      expect(message).toContain('ORDER_NOT_FOUND');
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

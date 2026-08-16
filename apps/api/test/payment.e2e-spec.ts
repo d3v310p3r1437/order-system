@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
@@ -297,7 +297,7 @@ describe('Payment (e2e, mock provider)', () => {
     }
   });
 
-  it('өөр захиалгын providerInvoiceId-г буруу orderId-тай хамт илгээвэл (binding таарахгүй) MISMATCH, paidAt тавигдахгүй', async () => {
+  it('өөр захиалгын providerInvoiceId-г буруу orderId-тай хамт илгээвэл (binding таарахгүй) MISMATCH, HTTP 200 хэвээр буцаана, гэхдээ ERROR level лог (payment_id, orderId, бодит утга) бичигдэнэ', async () => {
     const orderA = await checkout();
     const orderB = await checkout();
 
@@ -305,23 +305,48 @@ describe('Payment (e2e, mock provider)', () => {
       .post(`/payment/mock/simulate-paid/${orderB.providerInvoiceId}`)
       .expect(201);
 
-    // orderA-ийн ID-тай хамт orderB-ийн (аль хэдийн PAID) payment_id-г
-    // илгээхэд checkPayment() ӨӨРӨӨ PAID гэж баталгаажуулах ч,
-    // app_mark_order_paid() дотор providerInvoiceId таарахгүй тул orderA
-    // paid БОЛОХГҮЙ ёстой (docs/adr/006-ийн "cross-order" хамгаалалт).
-    const res = await request(app.getHttpServer())
-      .post(`/payment/webhook/${orderA.id}`)
-      .send({ payment_id: orderB.providerInvoiceId })
-      .expect(200);
-    const body = res.body as WebhookResponseBody;
-    expect(body.checkStatus).toBe('PAID');
-    expect(body.result).toBe('MISMATCH');
-    expect(body.paid).toBe(false);
+    // docs/adr/006-ийн "MISMATCH-ийг HTTP-ийн статусаар БИШ, дотоод лог
+    // (ирээдүйд §10.4 Sentry-д алерт болохоор) илэрхийлнэ" зарчим — жинхэнэ
+    // `Logger.prototype.error`-ыг spy хийж, PaymentController нь MISMATCH-ийг
+    // "чимээгүй" (ямар ч тусгай анхаарал татахгүй) өнгөрөөдөггүйг батална.
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
 
-    const dbOrderA = await superuserPrisma.order.findUniqueOrThrow({
-      where: { id: orderA.id },
-    });
-    expect(dbOrderA.paidAt).toBeNull();
+    try {
+      // orderA-ийн ID-тай хамт orderB-ийн (аль хэдийн PAID) payment_id-г
+      // илгээхэд checkPayment() ӨӨРӨӨ PAID гэж баталгаажуулах ч,
+      // app_mark_order_paid() дотор providerInvoiceId таарахгүй тул orderA
+      // paid БОЛОХГҮЙ ёстой (docs/adr/006-ийн "cross-order" хамгаалалт).
+      const res = await request(app.getHttpServer())
+        .post(`/payment/webhook/${orderA.id}`)
+        .send({ payment_id: orderB.providerInvoiceId })
+        .expect(200);
+      const body = res.body as WebhookResponseBody;
+      expect(body.checkStatus).toBe('PAID');
+      expect(body.result).toBe('MISMATCH');
+      expect(body.paid).toBe(false);
+
+      const dbOrderA = await superuserPrisma.order.findUniqueOrThrow({
+        where: { id: orderA.id },
+      });
+      expect(dbOrderA.paidAt).toBeNull();
+
+      // ERROR лог payment_id (submitted), orderId, бодит (orderA-д
+      // хадгалагдсан) providerInvoiceId 3-ыг агуулсан эсэхийг батална —
+      // зөвхөн "MISMATCH боллоо" гэсэн ерөнхий мессеж биш, зөрүүг
+      // тодорхой харуулах ёстой.
+      const mismatchLogCall = errorSpy.mock.calls.find(([message]) =>
+        String(message).includes('MISMATCH'),
+      );
+      expect(mismatchLogCall).toBeDefined();
+      const [message] = mismatchLogCall as [string, ...unknown[]];
+      expect(message).toContain(orderA.id);
+      expect(message).toContain(orderB.providerInvoiceId);
+      expect(message).toContain(orderA.providerInvoiceId);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it('token/header-гүй webhook хүсэлт ч ажиллана (RolesGuard-гүй, unauthenticated зорилготой)', async () => {

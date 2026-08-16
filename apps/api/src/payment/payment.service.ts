@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { RequestContextService } from '../common/request-context.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrderEventsPublisher } from '../realtime/order-events.publisher.js';
@@ -10,7 +10,7 @@ import {
 } from './payment-provider.interface.js';
 
 // app_mark_order_paid() SQL функцийн буцаах утга
-// (20260817090000_atomic_idempotent_mark_paid_function migration-ийг үз).
+// (20260817110000_add_mismatch_diagnostics_to_mark_paid_function migration-ийг үз).
 export type WebhookMarkResult =
   'MARKED_PAID' | 'ALREADY_PAID' | 'MISMATCH' | 'NOT_PAID';
 
@@ -23,6 +23,10 @@ interface MarkOrderPaidRow {
   result: string;
   branch_id: string | null;
   customer_id: string | null;
+  // Зөвхөн 'MISMATCH'-ийн үед л (лог/diagnostics зорилготой) утгатай —
+  // Order-д БОДИТООР хадгалагдсан providerInvoiceId (order огт олдоогүй
+  // бол null).
+  actual_provider_invoice_id: string | null;
 }
 
 // docs/adr/006-qpay-verify-dont-trust.md: webhook payload-ийн статусыг
@@ -32,6 +36,8 @@ interface MarkOrderPaidRow {
 // ангилал) тавина.
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
     private readonly prisma: PrismaService,
@@ -72,6 +78,22 @@ export class PaymentService {
         branchId: row.branch_id,
         customerId: row.customer_id,
       });
+    }
+
+    // ⚠️ docs/adr/006-ийн cross-order хамгаалалт: checkPayment() ӨӨРӨӨ PAID
+    // гэж баталгаажуулсан ч orderId/providerInvoiceId хос таарахгүй бол
+    // (webhook payload/callback URL-ийн зөрчил — халдлагын оролдлого
+    // эсвэл манай/QPay талын алдаа байж болзошгүй) ЗААВАЛ ERROR level-д
+    // (`.log()`/`.warn()` БИШ) бичнэ — HTTP хариу ЗААВАЛ 200 хэвээр
+    // үлдэнэ (Stripe/PayPal-ийн "webhook-д амьдаар татгалзахгүй" зарчим,
+    // §"Webhook idempotency ба rate-limit"-ийг үз), гэхдээ энэ аномалийг
+    // дотооддоо (ирээдүйд §10.4-ийн Sentry холбогдоход шууд алерт болохоор,
+    // жинхэнэ Error object-оор, `.stack`-тай хамт) бүртгэнэ.
+    if (result === 'MISMATCH') {
+      const mismatchError = new Error(
+        `Webhook providerInvoiceId MISMATCH: orderId=${orderId} submittedPaymentId=${providerPaymentId} actualProviderInvoiceId=${row?.actual_provider_invoice_id ?? 'ORDER_NOT_FOUND'}`,
+      );
+      this.logger.error(mismatchError.message, mismatchError.stack);
     }
 
     return { checkStatus, result };

@@ -372,6 +372,18 @@ Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц 
   controller handler-ийн АМЖИЛТТАЙ хариу БҮРТ нөхцөлгүй бичдэг тул
   rate-limited/dedupe-skip тохиолдолд ч "мутаци болсон" мэт худал мөр
   үлдээх эрсдэлтэй байсан).
+  ⚠️ **`MISMATCH`-ыг "HTTP 200 = чимээгүй өнгөрнө" гэж ойлгож БОЛОХГҮЙ:**
+  `MISMATCH` (checkPayment() PAID гэж баталгаажуулсан ч orderId/
+  providerInvoiceId хос таарахгүй — cross-order халдлагын оролдлого
+  байж болзошгүй сонор сэрэмжтэй аномали) тохиолдол бүрт
+  `PaymentService` `Logger.error()`-ээр (жинхэнэ `Error` объект +
+  `.stack`-тай, §10.4-ийн ирээдүйн Sentry холболтод шууд нийцтэй)
+  заавал бичнэ — HTTP хариу ЗААВАЛ 200 хэвээр (Stripe/PayPal-ийн
+  "webhook-д амьдаар татгалзахгүй" зарчим), гэхдээ дотооддоо алгасдаггүй.
+  `app_mark_order_paid()`-г (`20260817110000_add_mismatch_diagnostics_to_mark_paid_function`)
+  4 дэх багана (`actual_provider_invoice_id`) нэмж өргөтгөж, ERROR
+  лог-д "webhook-ээр ирсэн vs DB-д бодитоор байгаа" зөрүүг тодорхой
+  бичих боломжтой болгов. `docs/adr/006`-ийн тус хэсгийг үз.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
