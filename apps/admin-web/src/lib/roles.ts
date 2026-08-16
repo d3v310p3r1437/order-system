@@ -30,6 +30,17 @@ export const INVENTORY_WRITE_ROLES = [
   "BRANCH_MANAGER",
 ];
 
+// ↔ apps/api/src/orders/order.service.ts (STAFF_STATUS_ROLES) — OWNER-д
+// зөвхөн R байдаг тул орохгүй. CUSTOMER-ийн cancel-only зам admin-web-д
+// хамаагүй (харилцагч энэ веб самбарыг ашиглахгүй).
+export const ORDER_STATUS_UPDATE_ROLES = [
+  "SUPER_ADMIN",
+  "ALL_BRANCH_MANAGER",
+  "BRANCH_ADMIN",
+  "BRANCH_MANAGER",
+  "SALESPERSON",
+];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

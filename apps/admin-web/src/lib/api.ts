@@ -156,6 +156,39 @@ export interface UpdateInventoryItemInput {
   preOrderLeadDaysOverride?: number | null;
 }
 
+export type OrderStatus =
+  | "CREATED"
+  | "CONFIRMED"
+  | "PREPARING"
+  | "READY"
+  | "COMPLETED"
+  | "CANCELLED";
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  variantId: string;
+  quantity: number;
+  unitPriceSnapshot: string;
+  createdAt: string;
+}
+
+// totalAmount — Prisma Decimal нь HTTP JSON-д string болж сериалайзлагддаг
+// (ProductVariant.basePrice-тэй адил).
+export interface Order {
+  id: string;
+  customerId: string;
+  branchId: string;
+  status: OrderStatus;
+  totalAmount: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  qpayPaymentId: string | null;
+  items: OrderItem[];
+}
+
 interface ApiErrorBody {
   error: { code: string; message: string; details: unknown };
 }
@@ -372,4 +405,35 @@ export function adjustInventoryQuantity(
     accessToken,
     { method: "PATCH", body: JSON.stringify({ delta }) },
   );
+}
+
+// RLS (orders_select) хэн ямар мөрийг харахыг шийднэ — branchId/status
+// filter зөвхөн тодруулга.
+export function getOrders(
+  accessToken: string,
+  filter: { branchId?: string; status?: OrderStatus },
+): Promise<Order[]> {
+  const params = new URLSearchParams();
+  if (filter.branchId) params.set("branchId", filter.branchId);
+  if (filter.status) params.set("status", filter.status);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<Order[]>(`/orders${qs}`, accessToken);
+}
+
+export function getOrder(accessToken: string, id: string): Promise<Order> {
+  return apiFetch<Order>(`/orders/${id}`, accessToken);
+}
+
+// apps/api/src/orders/order.controller.ts-ийн PATCH /orders/:id/status-той
+// адил — staff-ийн ерөнхий шилжилт БОЛОН харилцагчийн cancel хоёулаа энэ
+// ганц endpoint-оор дамждаг ч admin-web зөвхөн staff талыг ашиглана.
+export function updateOrderStatus(
+  accessToken: string,
+  id: string,
+  status: OrderStatus,
+): Promise<Order> {
+  return apiFetch<Order>(`/orders/${id}/status`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
 }

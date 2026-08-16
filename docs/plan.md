@@ -383,11 +383,47 @@ SET LOCAL app.accessible_branches = $3;
 
 ### Phase 3a — Сагс ба захиалгын үндсэн урсгал (2 долоо хоног) — **v1.0-ийн Phase 3-аас задарсан**
 
-- [ ] Сагс API, checkout урсгал
-- [ ] Захиалгын статусын машин (state machine)
-- [ ] **MVP чиглүүлэлт:** эхэндээ **энгийн дүрэм** (харилцагчийн сонгосон салбар шууд = захиалгын салбар; geolocation-т суурилсан автомат чиглүүлэлт биш) — geolocation-based auto-routing-ийг Phase 3b-ийн сүүлд эсвэл backlog-т үлдээнэ
-- [ ] Захиалгын CRUD + RBAC guard (§6.1)
-- [ ] Аудит лог: захиалгын статус өөрчлөлт бүр
+- [x] Сагс API, checkout урсгал: `Order`/`OrderItem` Prisma загвар + migration
+      (`add_orders`), `POST /orders` (`OrderService.checkout`) — variant бүрийн
+      `resolveEffectivePrice()`-аар `unitPriceSnapshot` тооцож, `InventoryItem.
+      quantity`-г atomic decrement хийнэ (хангалтгүй бол 409 `OUT_OF_STOCK`,
+      SAVEPOINT-оор бүх бичилт (Order/OrderItem/өмнөх decrement) буцна).
+- [x] Захиалгын статусын машин (state machine): `src/orders/order-state-machine.ts`
+      (`CREATED→CONFIRMED→PREPARING→READY→COMPLETED`, эсвэл
+      `CREATED/CONFIRMED→CANCELLED`), нэгж тест 100% coverage.
+- [x] **MVP чиглүүлэлт:** харилцагчийн `POST /orders` body-д сонгосон
+      `branchId` шууд = захиалгын салбар (geolocation auto-routing Phase
+      3b/backlog-т үлдсэн хэвээр).
+- [x] Захиалгын CRUD + RBAC guard (§6.1): `PATCH /orders/:id/status`
+      (staff-ийн ерөнхий шилжилт + харилцагчийн зөвхөн `CREATED→CANCELLED`
+      cancel нэг endpoint-д нэгтгэсэн, role-оор дүрмээ ялгана), RLS
+      (`enable_orders_rls` migration) — SUPER_ADMIN/ALL_BRANCH_MANAGER CRUD
+      бүх, BRANCH_ADMIN/BRANCH_MANAGER CRUD өөрийн, SALESPERSON RU өөрийн
+      салбар (статус л), CUSTOMER CR өөрийн + CREATED-аас л cancel.
+      ⚠️ **Чухал нээлт:** PostgreSQL-д UPDATE/DELETE (RETURNING байх эсэхээс
+      үл хамааран) зорилтот мөрөө тодорхойлохдоо ХҮСНЭГТИЙН SELECT policy-г
+      ЗААВАЛ давхар шаарддаг (зөвхөн INSERT л RETURNING-гүй үед үүнийг
+      тойрдог) — тул CUSTOMER/SALESPERSON-ийн inventory decrement/increment-ийг
+      `inventory_items_update` RLS-ийг өргөтгөж шийдэх боломжгүй байсныг
+      `EXPLAIN ANALYZE`-аар нотолж, оронд нь `app_adjust_inventory_for_order()`
+      SECURITY DEFINER функц (`add_order_inventory_adjustment_function`
+      migration, зөвшөөрлийг дотроо шалгадаг) ашигласан.
+- [x] Аудит лог: захиалгын статус өөрчлөлт бүр (`@Audit('orders', { action:
+      'orders.status_changed' })`), checkout (`@Audit('orders')`).
+- [x] **Admin-web: "Захиалгууд" (`/orders`, `/orders/:id`) дэлгэц** —
+      жагсаалт (салбар/статусаар шүүх, `OrderStatusBadge`), дэлгэрэнгүй
+      харах (бараа, нийт дүн), статус шинэчлэх товч (`allowedNextStatuses()`
+      — backend-ийн `order-state-machine.ts`-тэй ЯГ ТААРАХ ёстой frontend
+      UX-only хуулбар, `ORDER_STATUS_UPDATE_ROLES` role-оор товч
+      харуулах/нуух зөвхөн UX, жинхэнэ хамгаалалт backend RBAC+RLS хэвээр).
+- [x] Харилцагчийн талыг ЗӨВХӨН API түвшинд (e2e) шалгасан
+      (`test/orders.e2e-spec.ts`) — Flutter UI энэ Phase-д ороогүй.
+- [x] Тест: unit (`order-state-machine.spec.ts` 100%, `order.service.spec.ts`
+      — role/шилжилтийн салаалал mock prisma-аар) + e2e
+      (`test/orders.e2e-spec.ts` — checkout, inventory decrement/increment
+      race-safety, SAVEPOINT-оор бүтэлгүй checkout бүхэлдээ буцах, state
+      machine буруу шилжилт татгалзах, customer cancel зөвхөн CREATED үед,
+      RLS-ээр өөр хэрэглэгч/салбарын захиалга 404).
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 
