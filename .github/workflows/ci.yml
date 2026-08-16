@@ -95,6 +95,20 @@ jobs:
       - name: Dependency суулгах (root, бүх workspace)
         run: pnpm install --frozen-lockfile
 
+      # admin-web нь DB/Keycloak шаардахгүй тул доорх алхмуудаас түрүүлж,
+      # хурдан fail-fast хийнэ.
+      - name: admin-web Lint
+        working-directory: apps/admin-web
+        run: pnpm run lint
+
+      - name: admin-web Unit/smoke тест (Vitest + React Testing Library)
+        working-directory: apps/admin-web
+        run: pnpm run test
+
+      - name: admin-web Build
+        working-directory: apps/admin-web
+        run: pnpm run build
+
       # ⚠️ ЧУХАЛ: apps/api/package.json-ий "postinstall" script нь `pnpm
       # install`-ийн үед аль хэдийн prisma generate-ийг дуудсан байх ёстой,
       # гэвч pnpm-ийн ирээдүйн хувилбар (v10+) lifecycle script-ийг

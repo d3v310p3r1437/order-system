@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthCustomerModule } from './auth-customer/auth-customer.module.js';
 import { AuthStaffModule } from './auth-staff/auth-staff.module.js';
+import { BranchModule } from './branch/branch.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { AuditInterceptor } from './common/audit.interceptor.js';
 import { RlsMiddleware } from './common/rls.middleware.js';
@@ -21,6 +22,7 @@ import { RedisModule } from './redis/redis.module.js';
     AuthModule,
     AuthCustomerModule,
     AuthStaffModule,
+    BranchModule,
     CatalogModule,
     InventoryModule,
   ],

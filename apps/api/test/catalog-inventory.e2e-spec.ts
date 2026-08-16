@@ -320,6 +320,42 @@ describe('Catalog & Inventory (e2e)', () => {
     expect(row).not.toBeNull();
   });
 
+  // admin-web-ийн салбар сонгох dropdown-д зориулсан минимал GET /branches
+  // (branch.controller.ts) — @Roles()-гүй ч RLS (branches_select) хэн ямар
+  // салбарыг харахыг бодитоор шийддэгийг батал.
+  describe('GET /branches — RLS-ээр хандах эрхтэй салбарууд л харагдана', () => {
+    it('SUPER_ADMIN бүх салбарыг харна', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/branches')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      const ids = (res.body as { id: string }[]).map((b) => b.id);
+      expect(ids).toEqual(expect.arrayContaining([branchA.id, branchB.id]));
+    });
+
+    it('BRANCH_MANAGER зөвхөн ӨӨРИЙН салбараа харна', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/branches')
+        .set('Authorization', `Bearer ${branchManagerAToken}`)
+        .expect(200);
+      const ids = (res.body as { id: string }[]).map((b) => b.id);
+      expect(ids).toContain(branchA.id);
+      expect(ids).not.toContain(branchB.id);
+    });
+
+    it('CUSTOMER аль ч салбарыг харахгүй (хоосон жагсаалт, 403 биш)', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/branches')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('token-гүй хүсэлт 401', async () => {
+      await request(app.getHttpServer()).get('/branches').expect(401);
+    });
+  });
+
   // §8 Phase 2 (2-р хэсэг) нэмэлт шаардлага: Branch.district/latitude/
   // longitude migration-оор бодитоор орсон эсэх.
   it('Branch дээр district/latitude/longitude талбар хадгалагдана', async () => {

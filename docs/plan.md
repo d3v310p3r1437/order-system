@@ -343,7 +343,35 @@ SET LOCAL app.accessible_branches = $3;
       `InventoryItem.lowStockThreshold` талбар нэмэгдсэн (сэрэмжлүүлэг
       ИЛГЭЭХ мэдэгдлийн урсгал өөрөө Phase 4-ийн мэдэгдлийн модультай хамт
       хэрэгжинэ — энд зөвхөн өгөгдлийн загвар).
-- [ ] Admin-web + Mobile: каталог/агуулах UI (Phase 0.5-ийн дизайны дагуу)
+- [x] **Admin-web: каталог/агуулах UI** (Mobile UI хараахан эхлээгүй,
+      доор тусад нь тэмдэглэв) — `react-router-dom` (protected route:
+      `/login`, `/dashboard`, `/categories`, `/products`, `/products/:id`,
+      `/inventory`), `Layout` (nav + `GET /auth/me`-ийн role-оор CUD товч
+      харуулах/нуух — зөвхөн UX, жинхэнэ хамгаалалт backend RBAC+RLS хэвээр).
+      Ангилал/Бүтээгдэхүүн: жагсаалт (indent бүтэц/ангиллаар шүүлт),
+      Нэмэх/Засах dialog (slug нэрнээс автомат санал, гэхдээ засварлаж
+      болно), **Устгах товч ЗОРИУДАА байхгүй** — зөвхөн "Идэвхгүй болгох"
+      toggle (hard delete нь variant/inventory-той FK зөрчилдөх эрсдэлтэй).
+      `/products/:id`: Variant CRUD (мөн устгахгүй, isActive л) + Агуулах
+      панел (`InventoryPanel`) — 1-ээс олон салбарт хандах эрхтэй бол
+      `GET /branches`-ээс ирсэн жагсаалтаар салбар сонгох dropdown (RLS-ээр
+      аль хэдийн шүүгдсэн, frontend талд дахин шүүлт хийхгүй), quantity
+      ЗӨВХӨН +N/-N delta (`PATCH .../adjust-quantity`), branchPrice/preOrder
+      override "Салбарын тусгай утга" toggle (унтраасан=variant-ийн анхны
+      утгыг өвлөнө), тооцоолсон IN_STOCK/PRE_ORDER/OUT_OF_STOCK badge нь
+      backend-ийн `GET /products/:id?branchId=`-ээс ирсэн утгыг ШУУД
+      харуулна (frontend талд availability логик дахин бичээгүй, зөвхөн
+      `computeAvailabilityStatus()` — ADR 005-ийн "ганц газар л шийднэ"
+      зарчим). `/inventory`: сонгосон салбарын бүх нөөцийн мөрийн ерөнхий
+      тойм + доод хязгаарын сэрэмжлүүлэг. Vitest + React Testing Library
+      суурь тавьсан (`apps/admin-web/src/**/__tests__`), CI-д admin-web
+      lint/test/build алхам нэмэгдэв (өмнө нь admin-web CI-д огт ороогүй
+      байсан). **Шинэ бэкенд endpoint:** admin-web-ийн салбар сонгох
+      dropdown-д зориулж минимал `GET /branches` (`src/branch/`) нэмэв —
+      CUD-гүй (§7 "Admin-web: салбар удирдах хуудас" тусад нь), зөвхөн
+      уншихад зориулсан, шинэ SECURITY DEFINER функц ШААРДААГҮЙ (branches
+      RLS `20260815082257_enable_rls_policies`-д аль хэдийн бэлэн байсан).
+- [ ] Mobile: каталог/агуулах UI (Phase 0.5-ийн дизайны дагуу)
 - [x] **(шинэ)** Аудит лог: бүтээгдэхүүн/нөөцийн өөрчлөлт бүрт бичигдэж
       байгааг баталгаажуулах тест (`test/catalog-inventory.e2e-spec.ts`)
 - [x] **(2-р хэсэг)** §6.1 матрицын дагуу дор хаяж 3 дүр (SUPER_ADMIN,
