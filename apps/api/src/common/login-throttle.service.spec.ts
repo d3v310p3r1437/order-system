@@ -45,4 +45,21 @@ describe('LoginThrottleService', () => {
     expect(await throttle.isBlocked(namespace, identifier)).toBe(false);
     await redis.del(`other-namespace:login-fail:${identifier}`);
   });
+
+  // auth-customer/auth-staff хоёр модуль ижил LoginThrottleService-г
+  // хуваалцдаг (§ CLAUDE.md "Одоогийн Phase") тул нэг identifier (жиш:
+  // адилхан утга и-мэйл болон утасны дугаарын форматад давхцаж болзошгүй)
+  // хоёр namespace-д ЯГ ХАРИЛЦАН БИЕ ДААСАН ажиллаж байгааг илт баталгаажуулна.
+  it("'customer' namespace 5 удаа блоклогдсон ч 'staff' namespace ижил identifier-ээр шинээр эхэлж хэвийн ажиллана", async () => {
+    const sharedIdentifier = `shared-${Math.floor(Math.random() * 100000)}`;
+
+    for (let i = 0; i < 5; i++) {
+      await throttle.recordFailure('customer', sharedIdentifier);
+    }
+    expect(await throttle.isBlocked('customer', sharedIdentifier)).toBe(true);
+    expect(await throttle.isBlocked('staff', sharedIdentifier)).toBe(false);
+
+    await redis.del(`customer:login-fail:${sharedIdentifier}`);
+    await redis.del(`staff:login-fail:${sharedIdentifier}`);
+  });
 });

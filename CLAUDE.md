@@ -85,7 +85,8 @@ Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэ�
   scaffold; ганц дэлгэц (router-гүй, useState conditional render) —
   LoginForm ↔ Dashboard-lite (`GET /auth/me`-ээр "Дүр" харуулна), access
   token зөвхөн in-memory React state-д (localStorage-гүй, XSS эрсдэлээс
-  сэргийлэх зорилготой, session персист дараагийн Phase-д).
+  сэргийлэх зорилготой, session персист дараагийн Phase-д) —
+  `docs/adr/004-admin-web-token-storage.md`.
 - Дараагийн ажил: `RolesGuard`/`@Roles()` (§6.1 матрицыг код болгох),
   `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах, refresh token
   revocation store (хэрэгцээ гарвал), admin-web-ийн салбар удирдах хуудас
