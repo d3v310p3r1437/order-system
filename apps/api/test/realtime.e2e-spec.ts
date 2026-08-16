@@ -206,12 +206,17 @@ describe('Realtime order events (e2e)', () => {
     });
 
     try {
+      // Auth нь `namespace.use()` middleware-д хийгддэг тул (order-events.gateway.ts-ийн
+      // race condition-ийн тайлбарыг үз) socket.io ЗАВСРЫН холболтыг
+      // (эхлээд accept хийгээд дараа нь disconnect хийх БИШ) шууд
+      // handshake шатандаа `next(err)`-ээр татгалздаг — клиент тал
+      // 'disconnect' биш 'connect_error' хүлээн авна.
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
-          () => reject(new Error('disconnect 2000ms дотор ирсэнгүй')),
+          () => reject(new Error('connect_error 2000ms дотор ирсэнгүй')),
           2000,
         );
-        socket.once('disconnect', () => {
+        socket.once('connect_error', () => {
           clearTimeout(timer);
           resolve();
         });

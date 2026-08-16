@@ -62,4 +62,35 @@ describe('LoginThrottleService', () => {
     await redis.del(`customer:login-fail:${sharedIdentifier}`);
     await redis.del(`staff:login-fail:${sharedIdentifier}`);
   });
+
+  // src/payment/webhook-guard.service.ts энэ ThrottleOptions-ийг (шинэ
+  // Redis логик давхардуулж бичихгүйн тулд) coarse rate-limit-д дахин
+  // ашигладаг — anхны login (5/900с) хэрэглээнд ЯМАР Ч нөлөөгүйг батална.
+  it('ThrottleOptions-оор өөр maxAttempts/windowSeconds дамжуулбал ЯГ тэрийг ашиглана (анхны 5/900с-той хамааралгүй)', async () => {
+    const namespace = 'custom-options-namespace';
+    const customIdentifier = `custom-${Math.floor(Math.random() * 100000)}`;
+
+    const firstCount = await throttle.recordFailure(
+      namespace,
+      customIdentifier,
+      { windowSeconds: 5 },
+    );
+    expect(firstCount).toBe(1);
+    expect(
+      await throttle.isBlocked(namespace, customIdentifier, {
+        maxAttempts: 2,
+      }),
+    ).toBe(false);
+
+    await throttle.recordFailure(namespace, customIdentifier, {
+      windowSeconds: 5,
+    });
+    expect(
+      await throttle.isBlocked(namespace, customIdentifier, {
+        maxAttempts: 2,
+      }),
+    ).toBe(true);
+
+    await redis.del(`${namespace}:login-fail:${customIdentifier}`);
+  });
 });

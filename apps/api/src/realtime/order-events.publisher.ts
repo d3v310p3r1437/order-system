@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { RequestContextService } from '../common/request-context.js';
 import { OrderEventsGateway } from './order-events.gateway.js';
-import type { OrderStatusChangedPayload } from './order-events.types.js';
+import type {
+  OrderPaymentConfirmedPayload,
+  OrderStatusChangedPayload,
+} from './order-events.types.js';
 
 // OrderService-ийн ганц холбоос энэ модультай — `OrderEventsGateway`
 // (Socket.io-той шууд харьцдаг)-ийг шууд импортлохгүй, зөвхөн энэ нимгэн
@@ -26,6 +29,12 @@ export class OrderEventsPublisher {
   publishOrderStatusChanged(payload: OrderStatusChangedPayload): void {
     this.requestContext.onCommit(() => {
       this.gateway.emitOrderStatusChanged(payload);
+    });
+  }
+
+  publishOrderPaymentConfirmed(payload: OrderPaymentConfirmedPayload): void {
+    this.requestContext.onCommit(() => {
+      this.gateway.emitOrderPaymentConfirmed(payload);
     });
   }
 }

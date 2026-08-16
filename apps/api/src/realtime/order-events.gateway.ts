@@ -2,7 +2,6 @@ import { Logger, type OnApplicationShutdown } from '@nestjs/common';
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
   OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
@@ -16,9 +15,11 @@ import { resolveUserRoleNames } from '../common/user-roles.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { RedisService } from '../redis/redis.service.js';
 import {
+  ORDER_PAYMENT_CONFIRMED_EVENT,
   ORDER_STATUS_CHANGED_EVENT,
   branchRoom,
   orderRoom,
+  type OrderPaymentConfirmedPayload,
   type OrderStatusChangedPayload,
 } from './order-events.types.js';
 
@@ -44,7 +45,7 @@ interface SocketData {
   namespace: '/ws/orders',
 })
 export class OrderEventsGateway
-  implements OnGatewayInit, OnGatewayConnection, OnApplicationShutdown
+  implements OnGatewayInit, OnApplicationShutdown
 {
   private readonly logger = new Logger(OrderEventsGateway.name);
   private pubSubClients: Redis[] = [];
@@ -58,26 +59,40 @@ export class OrderEventsGateway
     private readonly redis: RedisService,
   ) {}
 
-  // Redis Pub/Sub adapter — олон NestJS instance горимд аль ч instance
-  // дээр (жиш: PATCH /orders/:id/status хүлээн авсан instance)
-  // `server.to(room).emit(...)` дуудахад Redis-ээр дамжуулж бусад
-  // instance-ийн socket-уудад мөн хүрдэг болгоно (docs/plan.md Хэсэг A #1).
-  // RedisService (@Global, бусад модулиудтай хуваалцдаг ердийн command
-  // холболт) дээр шууд subscribe хийвэл тэр холболт "subscriber горимд"
-  // орж бусад command дуудаж чадахгүй болдог тул `.duplicate()`-аар
-  // (ioredis) тусдаа pub/sub-д зориулсан холболт үүсгэнэ.
+  // ⚠️ Чухал заль (race condition): NestJS-ийн `OnGatewayConnection.
+  // handleConnection()` lifecycle hook нь socket.io-ийн ЖИНХЭНЭ холболтын
+  // "connection" event-ийн listener маягаар ажилладаг тул ASYNC байсан ч
+  // socket.io үүнийг ХҮЛЭЭДЭГГҮЙ — клиент рүү 'connect' handshake ack ямар ч
+  // хойшлолтгүй, `handleConnection`-ий дотоод `await this.resolveAccess()`
+  // (бодит Postgres query) дуусахаас ӨМНӨ илгээгдчихдэг. Иймд клиент
+  // 'connect'-ийг хүлээгээд ШУУД дараагийн event ('subscribe:order')
+  // явуулбал, сервэр тал `client.data` хараахан тавигдаагүй ("өнчин")
+  // байхад тэр message-г хүлээн авах эрсдэлтэй — бодит e2e тестээр
+  // (client.data={} гэж илэрсэн) нотлогдсон.
   //
-  // ⚠️ `@WebSocketGateway({ namespace: '/ws/orders' })` ашигласан тул
-  // Nest `afterInit()`-д ЖИНХЭНЭ `Server`-ийг БИШ, зөвхөн тухайн
-  // namespace-ийг (`Namespace`, `.adapter()` метод байхгүй) дамжуулдаг —
-  // Redis adapter бол ROOT Server дээр (`namespace.server`) НЭГ л удаа
-  // тавигдах ёстой (бүх namespace-д нэг adapter хуваалцагдана).
+  // Шийдэл: `handleConnection`-ий оронд socket.io-ийн НАМЕСПЕЙС ТҮВШНИЙ
+  // middleware (`namespace.use()`) ашиглана — энэ нь socket.io-ийн
+  // баталгаажуулсан зарчмаар ASYNC ч ХҮЛЭЭГДДЭГ (клиент 'connect'-ийг
+  // ЗӨВХӨН middleware бүрэн дууссаны (эсвэл next(err)-ээр татгалзсаны)
+  // ДАРАА л хүлээн авна) тул `client.data` баталгаатай бэлэн байхаас
+  // өмнө ямар ч message боловсруулагдахгүй.
   afterInit(namespace: Namespace): void {
     const server = namespace.server;
     const pubClient = this.redis.duplicate();
     const subClient = this.redis.duplicate();
     this.pubSubClients = [pubClient, subClient];
     server.adapter(createAdapter(pubClient, subClient));
+
+    namespace.use((client, next) => {
+      this.authenticateAndJoinBranches(client)
+        .then(() => next())
+        .catch((err: unknown) => {
+          this.logger.warn(
+            `WebSocket холболт баталгаажсангүй: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          next(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
   }
 
   // `.duplicate()`-аар нээсэн 2 холболтыг апп/тест хаагдахад хамт хааж
@@ -107,30 +122,23 @@ export class OrderEventsGateway
     );
   }
 
-  async handleConnection(client: Socket): Promise<void> {
-    try {
-      const token = this.extractToken(client);
-      if (!token) {
-        throw new Error('token алга');
-      }
-      const { localUserId } = await this.tokenVerifier.verify(token);
-      const { roles, branchIds } = await this.resolveAccess(localUserId);
+  private async authenticateAndJoinBranches(client: Socket): Promise<void> {
+    const token = this.extractToken(client);
+    if (!token) {
+      throw new Error('token алга');
+    }
+    const { localUserId } = await this.tokenVerifier.verify(token);
+    const { roles, branchIds } = await this.resolveAccess(localUserId);
 
-      (client.data as SocketData) = { userId: localUserId, roles };
+    (client.data as SocketData) = { userId: localUserId, roles };
 
-      // CUSTOMER-д "Салбар" эрх §6.1 матрицаар бүрмөсөн байхгүй (RLS
-      // branches_select 0 мөр буцаана) тул branchIds хоосон байх боловч,
-      // тодорхой байлгах үүднээс staff л автомат branch room-д нэгдэнэ.
-      if (!roles.includes('CUSTOMER')) {
-        for (const branchId of branchIds) {
-          await client.join(branchRoom(branchId));
-        }
+    // CUSTOMER-д "Салбар" эрх §6.1 матрицаар бүрмөсөн байхгүй (RLS
+    // branches_select 0 мөр буцаана) тул branchIds хоосон байх боловч,
+    // тодорхой байлгах үүднээс staff л автомат branch room-д нэгдэнэ.
+    if (!roles.includes('CUSTOMER')) {
+      for (const branchId of branchIds) {
+        await client.join(branchRoom(branchId));
       }
-    } catch (err) {
-      this.logger.warn(
-        `WebSocket холболт баталгаажсангүй: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      client.disconnect(true);
     }
   }
 
@@ -138,7 +146,9 @@ export class OrderEventsGateway
   // дэлгэцийг нээхэд дуудна. RLS-тэй ижил "харагдах эсэх" шалгалтыг
   // `orders_select` policy-гоор л (шинэ SECURITY DEFINER функцгүйгээр)
   // дамжуулна — тухайн userId-ийн session-ээр Order-ыг уншиж чадвал л
-  // room-д нэгдэнэ.
+  // room-д нэгдэнэ. `namespace.use()` middleware (дээрх afterInit) бүрэн
+  // дууссаны ДАРАА л энэ handler дуудагддаг тул `client.data` баталгаатай
+  // бэлэн байна.
   @SubscribeMessage('subscribe:order')
   async handleSubscribeOrder(
     @ConnectedSocket() client: Socket,
@@ -161,6 +171,16 @@ export class OrderEventsGateway
       .to(orderRoom(payload.orderId))
       .to(branchRoom(payload.branchId))
       .emit(ORDER_STATUS_CHANGED_EVENT, payload);
+  }
+
+  // docs/adr/006: PaymentService-ээс зөвхөн `app_mark_order_paid()`
+  // ЖИНХЭНЭ 'MARKED_PAID' буцаасан (idempotent давталт биш, ШИНЭЭР
+  // paidAt тавигдсан) үед л дуудагдана.
+  emitOrderPaymentConfirmed(payload: OrderPaymentConfirmedPayload): void {
+    this.server
+      .to(orderRoom(payload.orderId))
+      .to(branchRoom(payload.branchId))
+      .emit(ORDER_PAYMENT_CONFIRMED_EVENT, payload);
   }
 
   private extractToken(client: Socket): string | null {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -6,13 +7,10 @@ import { PrismaClient } from '@prisma/client';
 import { SignJWT } from 'jose';
 import request from 'supertest';
 import type { App } from 'supertest/types';
+import { io } from 'socket.io-client';
 import { AppModule } from '../src/app.module';
 import { CUSTOMER_JWT_ISSUER } from '../src/auth/constants.js';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
-
-interface ErrorBody {
-  error: { code: string; message: string; details: unknown };
-}
 
 interface OrderBody {
   id: string;
@@ -20,6 +18,13 @@ interface OrderBody {
   providerInvoiceId: string | null;
   paidAt: string | null;
   payUrl?: string;
+}
+
+interface WebhookResponseBody {
+  orderId: string;
+  checkStatus: string | null;
+  result: string;
+  paid: boolean;
 }
 
 function getJwtSecret(): Uint8Array {
@@ -61,8 +66,10 @@ async function waitFor<T>(
 describe('Payment (e2e, mock provider)', () => {
   let app: INestApplication<App>;
   let superuserPrisma: PrismaClient;
+  let baseUrl: string;
 
   let branch: { id: string };
+  let customerId: string;
   let customerToken: string;
   let variantId: string;
 
@@ -81,7 +88,13 @@ describe('Payment (e2e, mock provider)', () => {
       }),
     );
     app.useGlobalFilters(new HttpExceptionFilter());
-    await app.init();
+    // 'order.payment_confirmed' WebSocket event-ийг socket.io-client-аар
+    // бодитоор хүлээж авахын тулд жинхэнэ TCP порт сонсуулна
+    // (test/realtime.e2e-spec.ts-тэй ижил зарчим).
+    await app.listen(0);
+    const httpServer: import('http').Server = app.getHttpServer();
+    const address = httpServer.address() as AddressInfo;
+    baseUrl = `http://127.0.0.1:${address.port}`;
 
     superuserPrisma = new PrismaClient({
       datasources: { db: { url: process.env.DATABASE_URL } },
@@ -91,7 +104,7 @@ describe('Payment (e2e, mock provider)', () => {
       data: { name: `Төлбөрийн тест салбар ${Date.now()}` },
     });
 
-    const customerId = randomUUID();
+    customerId = randomUUID();
     await superuserPrisma.user.create({
       data: {
         id: customerId,
@@ -126,7 +139,7 @@ describe('Payment (e2e, mock provider)', () => {
     variantId = variant.id;
 
     await superuserPrisma.inventoryItem.create({
-      data: { variantId, branchId: branch.id, quantity: 10 },
+      data: { variantId, branchId: branch.id, quantity: 50 },
     });
   });
 
@@ -135,74 +148,158 @@ describe('Payment (e2e, mock provider)', () => {
     await superuserPrisma.$disconnect();
   });
 
-  it('checkout → providerInvoiceId+payUrl буцаана, simulate-paid → webhook → Order.paidAt тавигдана', async () => {
-    const checkoutRes = await request(app.getHttpServer())
+  async function checkout(): Promise<OrderBody> {
+    const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
       .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
       .expect(201);
-    const order = checkoutRes.body as OrderBody;
+    return res.body as OrderBody;
+  }
 
+  it('checkout providerInvoiceId+payUrl буцаана', async () => {
+    const order = await checkout();
     expect(order.providerInvoiceId).toMatch(/^mock_/);
     expect(order.payUrl).toContain(order.providerInvoiceId);
     expect(order.paidAt).toBeNull();
+  });
 
-    // Webhook-г эхлээд симуляц ХИЙХЭЭС ӨМНӨ дуудахад checkPayment() PENDING
-    // буцаах тул Order.paidAt ХЭВЭЭР null байх ёстой (webhook payload-д
-    // шууд итгэдэггүй гэдгийг батлана, docs/adr/006).
-    const premature = await request(app.getHttpServer())
+  it('webhook-г симуляц ХИЙХЭЭС ӨМНӨ дуудахад payload-д итгэхгүй — checkStatus=PENDING, paidAt хэвээр null (docs/adr/006)', async () => {
+    const order = await checkout();
+
+    const res = await request(app.getHttpServer())
       .post(`/payment/webhook/${order.id}`)
       .send({ payment_id: order.providerInvoiceId })
-      .expect(201);
-    expect((premature.body as { status: string; paid: boolean }).status).toBe(
-      'PENDING',
-    );
-    expect((premature.body as { paid: boolean }).paid).toBe(false);
+      .expect(200);
+    const body = res.body as WebhookResponseBody;
+    expect(body.checkStatus).toBe('PENDING');
+    expect(body.result).toBe('NOT_PAID');
+    expect(body.paid).toBe(false);
 
+    const dbOrder = await superuserPrisma.order.findUniqueOrThrow({
+      where: { id: order.id },
+    });
+    expect(dbOrder.paidAt).toBeNull();
+  });
+
+  it('simulate-paid → webhook → Order.paidAt тавигдаж, WebSocket order.payment_confirmed event нэг удаа явна', async () => {
+    const order = await checkout();
+
+    const socket = io(`${baseUrl}/ws/orders`, {
+      auth: { token: customerToken },
+      transports: ['websocket'],
+    });
+    const receivedEvents: unknown[] = [];
+    socket.on('order.payment_confirmed', (payload: unknown) => {
+      receivedEvents.push(payload);
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', () => resolve());
+        socket.once('connect_error', (err) => reject(err));
+      });
+      socket.emit('subscribe:order', order.id);
+      // Сервэр талын room join нь async (RLS-ээр Order-ыг дахин уншина) —
+      // ack event-гүй тул богино хүлээлт (RLS query хэдхэн мс-д гүйцдэг).
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      await request(app.getHttpServer())
+        .post(`/payment/mock/simulate-paid/${order.providerInvoiceId}`)
+        .expect(201);
+
+      const confirmRes = await request(app.getHttpServer())
+        .post(`/payment/webhook/${order.id}`)
+        .send({ payment_id: order.providerInvoiceId })
+        .expect(200);
+      const body = confirmRes.body as WebhookResponseBody;
+      expect(body.checkStatus).toBe('PAID');
+      expect(body.result).toBe('MARKED_PAID');
+      expect(body.paid).toBe(true);
+
+      const dbOrder = await waitFor(async () => {
+        const row = await superuserPrisma.order.findUnique({
+          where: { id: order.id },
+        });
+        return row?.paidAt ? row : null;
+      });
+      expect(dbOrder.paidAt).not.toBeNull();
+
+      // event socket-д хүрэхийг богино хугацаагаар хүлээнэ.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(receivedEvents).toHaveLength(1);
+      expect(receivedEvents[0]).toEqual({
+        orderId: order.id,
+        branchId: branch.id,
+        customerId,
+      });
+    } finally {
+      socket.disconnect();
+    }
+  });
+
+  it('ижил payment_id-аар 2 удаа ЗЭРЭГ (Promise.all) webhook ирвэл (dedupe lock) Order.paidAt зөвхөн 1 удаа тавигдаж, WS event зөвхөн 1 удаа явна', async () => {
+    const order = await checkout();
     await request(app.getHttpServer())
       .post(`/payment/mock/simulate-paid/${order.providerInvoiceId}`)
       .expect(201);
 
-    const confirmed = await request(app.getHttpServer())
-      .post(`/payment/webhook/${order.id}`)
-      .send({ payment_id: order.providerInvoiceId })
-      .expect(201);
-    expect((confirmed.body as { status: string; paid: boolean }).status).toBe(
-      'PAID',
-    );
-    expect((confirmed.body as { paid: boolean }).paid).toBe(true);
-
-    const dbOrder = await waitFor(async () => {
-      const row = await superuserPrisma.order.findUnique({
-        where: { id: order.id },
-      });
-      return row?.paidAt ? row : null;
+    const socket = io(`${baseUrl}/ws/orders`, {
+      auth: { token: customerToken },
+      transports: ['websocket'],
     });
-    expect(dbOrder.paidAt).not.toBeNull();
+    const receivedEvents: unknown[] = [];
+    socket.on('order.payment_confirmed', (payload: unknown) => {
+      receivedEvents.push(payload);
+    });
 
-    // Дахин ижил webhook ирвэл (QPay-ийн бодит давталт) idempotent —
-    // marked=false (аль хэдийн тэмдэглэгдсэн), алдаа шидэхгүй.
-    const replay = await request(app.getHttpServer())
-      .post(`/payment/webhook/${order.id}`)
-      .send({ payment_id: order.providerInvoiceId })
-      .expect(201);
-    expect((replay.body as { paid: boolean }).paid).toBe(false);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once('connect', () => resolve());
+        socket.once('connect_error', (err) => reject(err));
+      });
+      socket.emit('subscribe:order', order.id);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      const [resA, resB] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/payment/webhook/${order.id}`)
+          .send({ payment_id: order.providerInvoiceId }),
+        request(app.getHttpServer())
+          .post(`/payment/webhook/${order.id}`)
+          .send({ payment_id: order.providerInvoiceId }),
+      ]);
+
+      const results = [resA, resB].map(
+        (r) => (r.body as WebhookResponseBody).result,
+      );
+      // Хоёр хариу ХОЁУЛАА 200 (илгээгч тал давхар retry хийхээс
+      // сэргийлэх — Stripe/PayPal стандарт) — гэхдээ ЗӨВХӨН НЭГ нь л
+      // бодитоор боловсруулагдсан (MARKED_PAID), нөгөө нь dedupe lock-д
+      // "DUPLICATE_SKIPPED" болно.
+      expect(resA.status).toBe(200);
+      expect(resB.status).toBe(200);
+      expect(results.filter((r) => r === 'MARKED_PAID')).toHaveLength(1);
+      expect(results.filter((r) => r === 'DUPLICATE_SKIPPED')).toHaveLength(1);
+
+      const dbOrder = await waitFor(async () => {
+        const row = await superuserPrisma.order.findUnique({
+          where: { id: order.id },
+        });
+        return row?.paidAt ? row : null;
+      });
+      expect(dbOrder.paidAt).not.toBeNull();
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(receivedEvents).toHaveLength(1);
+    } finally {
+      socket.disconnect();
+    }
   });
 
-  it('өөр захиалгын providerInvoiceId-г буруу orderId-тай хамт илгээвэл (binding таарахгүй) paidAt тавигдахгүй', async () => {
-    const checkoutA = await request(app.getHttpServer())
-      .post('/orders')
-      .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
-      .expect(201);
-    const orderA = checkoutA.body as OrderBody;
-
-    const checkoutB = await request(app.getHttpServer())
-      .post('/orders')
-      .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
-      .expect(201);
-    const orderB = checkoutB.body as OrderBody;
+  it('өөр захиалгын providerInvoiceId-г буруу orderId-тай хамт илгээвэл (binding таарахгүй) MISMATCH, paidAt тавигдахгүй', async () => {
+    const orderA = await checkout();
+    const orderB = await checkout();
 
     await request(app.getHttpServer())
       .post(`/payment/mock/simulate-paid/${orderB.providerInvoiceId}`)
@@ -215,9 +312,11 @@ describe('Payment (e2e, mock provider)', () => {
     const res = await request(app.getHttpServer())
       .post(`/payment/webhook/${orderA.id}`)
       .send({ payment_id: orderB.providerInvoiceId })
-      .expect(201);
-    expect((res.body as { status: string; paid: boolean }).status).toBe('PAID');
-    expect((res.body as { paid: boolean }).paid).toBe(false);
+      .expect(200);
+    const body = res.body as WebhookResponseBody;
+    expect(body.checkStatus).toBe('PAID');
+    expect(body.result).toBe('MISMATCH');
+    expect(body.paid).toBe(false);
 
     const dbOrderA = await superuserPrisma.order.findUniqueOrThrow({
       where: { id: orderA.id },
@@ -226,21 +325,14 @@ describe('Payment (e2e, mock provider)', () => {
   });
 
   it('token/header-гүй webhook хүсэлт ч ажиллана (RolesGuard-гүй, unauthenticated зорилготой)', async () => {
-    const checkoutRes = await request(app.getHttpServer())
-      .post('/orders')
-      .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
-      .expect(201);
-    const order = checkoutRes.body as OrderBody;
+    const order = await checkout();
 
     // Authorization header ОГТ ЗААГҮЙ — webhook нь QPay-ийн серверээс
     // ирдэг тул манай хэрэглэгчийн session байхгүй байх нь хэвийн.
     const res = await request(app.getHttpServer())
       .post(`/payment/webhook/${order.id}`)
       .send({ payment_id: order.providerInvoiceId })
-      .expect(201);
-    expect((res.body as ErrorBody & { status?: string }).status).toBe(
-      'PENDING',
-    );
+      .expect(200);
+    expect((res.body as WebhookResponseBody).checkStatus).toBe('PENDING');
   });
 });

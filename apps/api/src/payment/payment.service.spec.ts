@@ -9,50 +9,103 @@ function buildDeps() {
   };
 
   const queryRaw = jest.fn();
+  const executeRaw = jest.fn();
   const prisma = {
     get tx() {
-      return { $queryRaw: queryRaw };
+      return { $queryRaw: queryRaw, $executeRaw: executeRaw };
     },
   };
 
-  return { paymentProvider, prisma, mocks: { checkPayment, queryRaw } };
+  const requestContext = {
+    get: jest
+      .fn()
+      .mockReturnValue({ tx: { $executeRaw: executeRaw }, userId: null }),
+  };
+  const publishOrderPaymentConfirmed = jest.fn();
+  const orderEvents = { publishOrderPaymentConfirmed };
+
+  return {
+    paymentProvider,
+    prisma,
+    requestContext,
+    orderEvents,
+    mocks: { checkPayment, queryRaw, executeRaw, publishOrderPaymentConfirmed },
+  };
+}
+
+function newService(deps: ReturnType<typeof buildDeps>) {
+  return new PaymentService(
+    deps.paymentProvider,
+    deps.prisma as never,
+    deps.requestContext as never,
+    deps.orderEvents as never,
+  );
 }
 
 describe('PaymentService.confirmWebhookPayment', () => {
-  it('checkPayment() PENDING буцаавал app_mark_order_paid огт дуудахгүй', async () => {
-    const { paymentProvider, prisma, mocks } = buildDeps();
-    mocks.checkPayment.mockResolvedValue({ status: 'PENDING' });
-    const service = new PaymentService(paymentProvider, prisma as never);
+  it('checkPayment() PENDING буцаавал app_mark_order_paid огт дуудахгүй, audit/event ч гарахгүй', async () => {
+    const deps = buildDeps();
+    deps.mocks.checkPayment.mockResolvedValue({ status: 'PENDING' });
+    const service = newService(deps);
 
     const result = await service.confirmWebhookPayment('order-1', 'pay-1');
 
-    expect(result).toEqual({ status: 'PENDING', marked: false });
-    expect(mocks.queryRaw).not.toHaveBeenCalled();
+    expect(result).toEqual({ checkStatus: 'PENDING', result: 'NOT_PAID' });
+    expect(deps.mocks.queryRaw).not.toHaveBeenCalled();
+    expect(deps.mocks.executeRaw).not.toHaveBeenCalled();
+    expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
   });
 
-  it('checkPayment() PAID буцаавал app_mark_order_paid дуудна, mark=true', async () => {
-    const { paymentProvider, prisma, mocks } = buildDeps();
-    mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
-    mocks.queryRaw.mockResolvedValue([{ app_mark_order_paid: 1 }]);
-    const service = new PaymentService(paymentProvider, prisma as never);
+  it('checkPayment() PAID + шинээр MARKED_PAID болвол audit бичигдэж, WS event нийтлэгдэнэ', async () => {
+    const deps = buildDeps();
+    deps.mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
+    deps.mocks.queryRaw.mockResolvedValue([
+      { result: 'MARKED_PAID', branch_id: 'b-1', customer_id: 'c-1' },
+    ]);
+    const service = newService(deps);
 
     const result = await service.confirmWebhookPayment('order-1', 'pay-1');
 
-    expect(result).toEqual({ status: 'PAID', marked: true });
-    expect(mocks.checkPayment).toHaveBeenCalledWith('pay-1');
+    expect(result).toEqual({ checkStatus: 'PAID', result: 'MARKED_PAID' });
+    expect(deps.mocks.checkPayment).toHaveBeenCalledWith('pay-1');
+    expect(deps.mocks.executeRaw).toHaveBeenCalledTimes(1);
+    expect(deps.mocks.publishOrderPaymentConfirmed).toHaveBeenCalledWith({
+      orderId: 'order-1',
+      branchId: 'b-1',
+      customerId: 'c-1',
+    });
   });
 
-  it('PAID ч гэсэн providerInvoiceId таарахгүй бол (0 мөр) marked=false', async () => {
-    const { paymentProvider, prisma, mocks } = buildDeps();
-    mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
-    mocks.queryRaw.mockResolvedValue([{ app_mark_order_paid: 0 }]);
-    const service = new PaymentService(paymentProvider, prisma as never);
+  it('ALREADY_PAID (idempotent давталт) үед audit/event ХОЁУЛАА гарахгүй', async () => {
+    const deps = buildDeps();
+    deps.mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
+    deps.mocks.queryRaw.mockResolvedValue([
+      { result: 'ALREADY_PAID', branch_id: null, customer_id: null },
+    ]);
+    const service = newService(deps);
+
+    const result = await service.confirmWebhookPayment('order-1', 'pay-1');
+
+    expect(result).toEqual({ checkStatus: 'PAID', result: 'ALREADY_PAID' });
+    expect(deps.mocks.executeRaw).not.toHaveBeenCalled();
+    expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('MISMATCH (providerInvoiceId таарахгүй) үед audit/event ХОЁУЛАА гарахгүй', async () => {
+    const deps = buildDeps();
+    deps.mocks.checkPayment.mockResolvedValue({ status: 'PAID' });
+    deps.mocks.queryRaw.mockResolvedValue([
+      { result: 'MISMATCH', branch_id: null, customer_id: null },
+    ]);
+    const service = newService(deps);
 
     const result = await service.confirmWebhookPayment(
       'order-1',
       'pay-mismatched',
     );
 
-    expect(result).toEqual({ status: 'PAID', marked: false });
+    expect(result).toEqual({ checkStatus: 'PAID', result: 'MISMATCH' });
+    expect(deps.mocks.executeRaw).not.toHaveBeenCalled();
+    expect(deps.mocks.publishOrderPaymentConfirmed).not.toHaveBeenCalled();
   });
 });

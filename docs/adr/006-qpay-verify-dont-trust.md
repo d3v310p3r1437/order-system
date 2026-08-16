@@ -3,12 +3,16 @@
 - Статус: Хүлээн зөвшөөрсөн (Mock provider-оор бүрэн урсгал баталгаажсан;
   QPay бодит credential хараахан ирээгүй тул `QPayProvider`-ийн HTTP
   дуудлагууд ЗӨВХӨН unit тестээр (mock HTTP хариу) шалгагдсан, доорх
-  "QPay бодит холболт ирэхэд заавал баталгаажуулах зүйлс" хэсгийг үз)
-- Огноо: 2026-08-16
+  "QPay бодит холболт ирэхэд заавал баталгаажуулах зүйлс" хэсгийг үз).
+  2026-08-17: idempotency (davtagdah webhook) ба rate-limit/dedupe
+  хэсгүүд нэмэгдэж шинэчлэгдсэн — доорх "Webhook idempotency ба
+  rate-limit" хэсгийг үз.
+- Огноо: 2026-08-16 (анхны), 2026-08-17 (idempotency/rate-limit нэмэлт)
 - Холбоотой: `docs/plan.md` §4.4, §8 Phase 3b (Хэсэг B),
   `docs/adr/005-security-definer-pattern.md` (WRITE ангилал),
-  `apps/api/src/payment/*`,
-  `apps/api/prisma/migrations/20260816120500_add_order_mark_paid_function`
+  `apps/api/src/payment/*`, `apps/api/src/common/login-throttle.service.ts`,
+  `apps/api/prisma/migrations/20260816120500_add_order_mark_paid_function`,
+  `apps/api/prisma/migrations/20260817090000_atomic_idempotent_mark_paid_function`
 
 ## Асуудал
 
@@ -81,7 +85,9 @@ QPay webhook → POST /payment/webhook/:orderId { payment_id }
   ID-тай таарсан эсэх" гэсэн domain relationship-оор хийгддэг).
 - **Idempotent:** `WHERE "paidAt" IS NULL` нөхцөл тул QPay webhook-г
   давхар (retry) илгээсэн ч (нийтлэг зан төлөв) хоёр дахь удаад зүгээр
-  0 мөр өөрчилж, алдаа шидэхгүй (`marked: false` буцаана).
+  0 мөр өөрчилж, алдаа шидэхгүй — доорх "Webhook idempotency ба
+  rate-limit" хэсэгт 2026-08-17-нд бүрэн жагсаалтаар (`MARKED_PAID`/
+  `ALREADY_PAID`/`MISMATCH`) өргөтгөв.
 - **Webhook-д ямар ч session identity шаардахгүй** (`PaymentController`
   дээр `RolesGuard` ЗОРИУДАА байхгүй) — учир нь дээрх server-to-server
   re-check бүхэлдээ л эрх мэдлийн баталгаа, `Authorization` header-т
@@ -100,6 +106,92 @@ Signature шалгах нь (боломжтой бол) НЭМЭЛТ давха�
 server-to-server re-check ЗААВАЛ байх ёстой, signature (нэмэгдвэл) зөвхөн
 "эрт татгалзах" (fast-reject, `checkPayment()` дуудлагыг хэмнэх) оптимизаци
 байх болно.
+
+## Webhook idempotency ба rate-limit (2026-08-17 нэмэлт)
+
+### Судалгаа: Stripe/PayPal-ийн webhook стандарт практик
+
+Bодит QPay sandbox байхгүй тул Stripe/PayPal-ийн (нийтэд ил, сайн
+баримтжуулсан) webhook удирдамжийг эх сурвалж болгож ашигласан — учир нь
+"payment provider webhook" гэдэг асуудлын хэлбэр (давхар илгээгдэх
+магадлалтай, эрх мэдэлгүй, гадны сервэрээс ирдэг HTTP хүсэлт) ижил бөгөөд
+эдгээр компаниуд аль хэдийн олон жил production дээр шийдвэрлэсэн загвар:
+
+1. **Webhook ЗААВАЛ HTTP 2xx буцаана** (амжилттай боловсруулагдсан ч,
+   idempotent давталт ч, "манай тал аль хэдийн мэднэ" гэсэн утгатай
+   MISMATCH/алдаа ч) — 2xx-ээс өөр код (400/500 гэх мэт) буцвал
+   илгээгч тал (Stripe/PayPal/QPay) ЭНЭ webhook-ийг "амжилтгүй хүргэгдсэн"
+   гэж үзэж **автоматаар олон удаа (exponential backoff-оор, заримдаа
+   өдрүүдийн турш) retry хийдэг** — энэ нь бидний талд давхар боловсруулах
+   ачаалал үүсгэдэг тул зайлсхийх ёстой. Rate-limit-ийн хариу (429) л
+   цорын ганц зөвтгөгдсөн үл хамаарал (доор тайлбарлав).
+2. **Webhook event ID (эсвэл манай тохиолдолд payment/invoice ID)-аар
+   idempotency key болгож ашиглана** — ижил ID-тай хүсэлт хэдэн ч удаа
+   ирсэн, зөвхөн НЭГ удаа л бодит "мутаци" хийгдэх ёстой.
+3. Webhook боловсруулалт удаан (гадаад API дуудлага гэх мэт) үед ЗЭРЭГ
+   (concurrent) давхар хүсэлт ирэх магадлал бодитой (сүлжээний саатал →
+   илгээгч тал хугацаа хэтэрсэн гэж үзээд шинэ оролдлого эхлүүлэх) тул
+   **зөвхөн DB-ийн atomic UPDATE-д найдахгүй, ХҮСЭЛТ хүлээн авах
+   давхаргад (application/Redis) богино хугацааны dedupe ЗӨВЛӨДӨГ**
+   (Stripe-ийн "Designing an idempotent API" удирдамжийн зарчим).
+
+### Шийдвэр 1 — SQL функцийг ATOMIC IDEMPOTENT болгосон (давхар боловсруулах, алдаа шидэхгүй)
+
+`app_mark_order_paid()`-ийг (`20260817090000_atomic_idempotent_mark_paid_function`
+migration, өмнөх `20260816120500`-ийг DROP+CREATE-ээр сольсон) 0 мөр
+өөрчлөгдсөн ШАЛТГААНЫГ ялгаж мэдэх боломжтой болгов:
+
+```sql
+UPDATE orders SET "paidAt" = now()
+WHERE id = p_order_id AND "providerInvoiceId" = p_provider_invoice_id
+  AND "paidAt" IS NULL;
+-- GET DIAGNOSTICS-аар мөрийн тоог авч, шалтгааныг ялгана:
+```
+
+| Буцаах утга (`result`) | Утга | HTTP хариу |
+|---|---|---|
+| `MARKED_PAID` | ЭНЭ дуудлагаар шинээр paidAt тавигдсан | 200, audit бичигдэнэ, WS event нийтлэгдэнэ |
+| `ALREADY_PAID` | Хос зөв таарсан ч аль хэдийн PAID байсан (idempotent давталт) | 200, audit/event ДАХИН гарахгүй |
+| `MISMATCH` | orderId олдсонгүй эсвэл providerInvoiceId таарахгүй | 200 (cross-order халдлагын хамгаалалт, дээрх хэсгийг үз) |
+
+`PaymentController.webhook()` эдгээрийн АЛЬ АЛЬНД нь `@HttpCode(HttpStatus.OK)`-оор
+**заавал HTTP 200** буцаана (rate-limit-ээс бусад тохиолдолд) — Stripe/
+PayPal-ийн дээрх "давхар retry-аас сэргийлэх" зарчмыг баримтална.
+
+### Шийдвэр 2 — WebhookGuardService: dedupe lock + coarse IP rate-limit
+
+`src/payment/webhook-guard.service.ts` — шинэ Redis логик ХАМГИЙН БАГА
+бичихийн тулд аль хэдийн байгаа `LoginThrottleService`-ийн INCR+EXPIRE
+"цонхны дотор N-ээс давбал блоклох" pattern-ийг **`ThrottleOptions`-оор
+параметржүүлж дахин ашигласан** (namespace `payment-webhook-ip`,
+30 хүсэлт/60 секунд):
+
+- **`isRateLimited(ip)`** — 1 минутад 30-с олон хүсэлт ирвэл 429
+  `TOO_MANY_REQUESTS` (rate-limit ЯГАНЦ л 2xx-ээс өөр хариу буцаадаг
+  тохиолдол — QPay-ийн бодит webhook ийм түвшний давтамжид хэзээ ч
+  хүрэхгүй тул legitimate дан webhook алдагдах эрсдэлгүй).
+- **`isDuplicate(paymentId)`** — payment_id-аар 10 секундын dedupe lock
+  (`SET key val NX EX 10`, ЭНЭ codebase-д ӨМНӨ БАЙГААГҮЙ ӨӨР ТӨРЛИЙН Redis
+  primitive — тоолуур биш "аль хэдийн боловсруулж байгаа эсэх" атомик
+  шалгалт тул шинээр бичсэн). Ижил payment_id-аар 10 секундын дотор дахин
+  ирвэл `checkPayment()`-ийг ДАХИН дуудахгүй (гадаад QPay API дуудлагыг
+  хэмнэнэ), шууд `{ result: 'DUPLICATE_SKIPPED' }`-тэй 200 буцаана.
+  `SET NX` атомик тул Promise.all-аар яг ЗЭРЭГ ирсэн 2 хүсэлтийн ЗӨВХӨН
+  НЭГ нь л бодитоор боловсруулагдана (`test/payment.e2e-spec.ts`-ийн
+  "2 удаа ЗЭРЭГ webhook" тестээр батлагдсан — `Order.paidAt` болон WS
+  `order.payment_confirmed` event хоёулаа зөвхөн 1 удаа).
+
+### Логлолт
+
+Webhook хүлээн авсан БҮРИЙГ (амжилттай ч, rate-limited/davhardсан ч)
+`PaymentController`-ийн `Logger` (`console`, DB биш) ашиглаж бичнэ —
+DB-ийн `audit_logs`-д бол ЗӨВХӨН ЖИНХЭНЭ мутаци (`MARKED_PAID`) хийгдсэн
+тохиолдолд л бичигдэнэ (`PaymentService.writeAuditLog()`, `@Audit()`
+decorator-ыг ЗОРИУДАА ашиглаагүй, учир нь энэ нь controller handler-ийн
+АМЖИЛТТАЙ хариу бүрт нөхцөлгүй бичдэг тул rate-limited/dedupe-skip
+тохиолдолд ч "мутаци болсон" мэт худал мөр үлдээх эрсдэлтэй байсан).
+Энэ ялгаа: DB audit log = "юу бодитоор өөрчлөгдсөн", application log =
+"юу хүлээн авсан" — хоёр өөр зорилготой, хольж ашиглаагүй.
 
 ## QPay бодит холболт ирэхэд заавал баталгаажуулах зүйлс
 
@@ -133,10 +225,13 @@ server-to-server re-check ЗААВАЛ байх ёстой, signature (нэмэ�
   ирмэгц НЭГ дэх алхмыг заавал гүйцэтгэж, шаардлагатай бол
   `PaymentWebhookDto`-д signature header баталгаажуулалт нэмэх ёстой**
   (fast-reject оптимизаци, гол хамгаалалт биш ч давхар хамгаалалт).
-- `PaymentController`-ийн webhook endpoint session-гүй тул rate-limit
-  (§4.4 "OTP/auth endpoint-д rate-limit" зарчмыг энд ч баримтлах ёстой
-  эсэх) одоогоор тавигдаагүй — DDoS/brute-force эрсдэлтэй (Phase 3b-ийн
-  хамрах хүрээнээс гадуур, backlog-д тэмдэглэв).
+- ~~`PaymentController`-ийн webhook endpoint session-гүй тул rate-limit
+  одоогоор тавигдаагүй~~ — **2026-08-17: шийдэгдсэн**, дээрх "Webhook
+  idempotency ба rate-limit" хэсгийг үз (`WebhookGuardService`,
+  IP-ээр 1 минутад 30). Босго ӨНДӨР сонгосон тул зохион байгуулалттай
+  (олон IP-ээс тархсан) DDoS-ээс бүрэн хамгаалахгүй — зөвхөн цорын
+  ганц эх сурвалжаас үерлүүлэх энгийн халдлагаас хамгаална, энэ нь
+  мэдэгдэж буй үлдэгдэл эрсдэл хэвээр.
 - `checkPayment()` дуудлага бүр QPay рүү бодит сүлжээний хүсэлт (латенц,
   QPay-ийн availability-аас хамаарна) — webhook-ийн хариу удаашрах
   боломжтой, гэхдээ аюулгүй байдлын trade-off хэлбэрээр зөвтгөгдсөн.

@@ -30,4 +30,24 @@ describe('OrderEventsPublisher', () => {
     registeredCallback();
     expect(emitOrderStatusChanged).toHaveBeenCalledWith(payload);
   });
+
+  it('publishOrderPaymentConfirmed() мөн адил onCommit()-оор хойшлуулна', () => {
+    const emitOrderPaymentConfirmed = jest.fn();
+    const gateway = { emitOrderPaymentConfirmed };
+    const onCommit = jest.fn<void, [() => void]>();
+    const requestContext = { onCommit };
+
+    const publisher = new OrderEventsPublisher(
+      gateway as never,
+      requestContext as never,
+    );
+    const payload = { orderId: 'o-1', branchId: 'b-1', customerId: 'c-1' };
+
+    publisher.publishOrderPaymentConfirmed(payload);
+
+    expect(emitOrderPaymentConfirmed).not.toHaveBeenCalled();
+    const registeredCallback = onCommit.mock.calls[0][0];
+    registeredCallback();
+    expect(emitOrderPaymentConfirmed).toHaveBeenCalledWith(payload);
+  });
 });

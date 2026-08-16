@@ -12,6 +12,17 @@ export interface OrderStatusChangedPayload {
 
 export const ORDER_STATUS_CHANGED_EVENT = 'order.status_changed';
 
+// docs/adr/006-qpay-verify-dont-trust.md: webhook-ийн server-to-server
+// баталгаажуулалтаар Order.paidAt ШИНЭЭР тавигдсан (idempotent давталт
+// биш) үед л нийтлэгдэнэ.
+export interface OrderPaymentConfirmedPayload {
+  orderId: string;
+  branchId: string;
+  customerId: string;
+}
+
+export const ORDER_PAYMENT_CONFIRMED_EVENT = 'order.payment_confirmed';
+
 export function orderRoom(orderId: string): string {
   return `order:${orderId}`;
 }

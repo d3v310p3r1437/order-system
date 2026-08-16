@@ -330,6 +330,48 @@ Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц 
   `payment.service.spec.ts`) + e2e (`test/realtime.e2e-spec.ts` — бодит
   TCP порт+`socket.io-client`, `test/payment.e2e-spec.ts` — checkout→
   simulate-paid→webhook→paidAt, cross-order binding хамгаалалт).
+- **Webhook idempotency + rate-limit, WebSocket auth race condition засвар
+  дууссан** (`docs/adr/006`-ийн 2026-08-17 нэмэлт): судалгаа —
+  Stripe/PayPal-ийн стандарт webhook practice (эх сурвалж: тэдгээрийн
+  нийтэд ил баримт бичиг) ашиглав.
+  ⚠️ **Чухал нээлт (WebSocket race condition):** `OrderEventsGateway`-ийн
+  `OnGatewayConnection.handleConnection()` lifecycle hook (ASYNC ч
+  socket.io ХҮЛЭЭДЭГГҮЙ, клиент рүү 'connect' ack шууд явчихдаг) ашиглаж
+  байсан нь клиент 'connect'-ийн дараа ШУУД `subscribe:order` явуулбал
+  сервэр тал `client.data` хараахан бэлэн болоогүй байхад тэр message-г
+  хүлээн авах race condition-той болохыг бодит e2e тестээр (WS event
+  0 удаа ирсэн) нотолсон — **`handleConnection`-ийг устгаж, оронд нь
+  `afterInit()`-д бүртгэсэн socket.io-ийн намespace-level `namespace.use()`
+  middleware** (async-г баталгаатай ХҮЛЭЭДЭГ, клиент 'connect'-ийг
+  ЗӨВХӨН middleware бүрэн дууссаны/`next(err)`-ээр татгалзсаны ДАРАА л
+  хүлээн авдаг) ашигласнаар шийдсэн. Клиент тал одоо token хүчингүй үед
+  'disconnect' биш 'connect_error' хүлээн авна (илүү зөв semantics —
+  холболт ер нь батлагдаагүй тул "тасарсан" гэхээсээ "батлагдаагүй" гэх
+  нь илүү үнэн).
+  `app_mark_order_paid()` SQL функцийг (`20260817090000_atomic_idempotent_mark_paid_function`,
+  өмнөх `add_order_mark_paid_function`-ийг DROP+CREATE-ээр сольсон)
+  ATOMIC IDEMPOTENT болгож, `MARKED_PAID`/`ALREADY_PAID`/`MISMATCH`
+  гурван ялгаатай утга буцаадаг болгов (`branchId`/`customerId`-г
+  `MARKED_PAID`-ийн үед WS event-д ашиглахын тулд хамт буцаадаг).
+  `PaymentController.webhook()` эдгээрийн АЛЬ АЛЬНД нь (rate-limit-ээс
+  бусад) `@HttpCode(HttpStatus.OK)`-оор ЗААВАЛ 200 буцаана (Stripe/
+  PayPal: 2xx-ээс өөр код буцвал илгээгч тал автоматаар олон удаа retry
+  хийдэг). Шинэ `src/payment/webhook-guard.service.ts`
+  (`WebhookGuardService`): (a) IP-ээр coarse rate-limit (1 минутад 30) —
+  **`LoginThrottleService`-г шинээр параметржүүлж** (`ThrottleOptions`
+  — `maxAttempts`/`windowSeconds`, анхны 5/900с дуудлагуудад нөлөөгүй
+  backward-compatible) дахин ашигласан, шинэ Redis логик БИЧЭЭГҮЙ;
+  (b) payment_id-аар 10 секундын dedupe lock (`SET NX EX`, ЭНЭ codebase-д
+  ӨМНӨ БАЙГААГҮЙ өөр төрлийн Redis primitive тул 1 мөр шинээр бичсэн) —
+  `Promise.all`-аар зэрэг ирсэн давхар webhook-ийн ЗӨВХӨН НЭГ нь л
+  боловсруулагдана (`test/payment.e2e-spec.ts`-ийн concurrency тестээр
+  батлагдсан). Логлолт: webhook хүлээн авсан БҮРИЙГ (rate-limited/
+  davhardsan ч) `Logger`-оор бичдэг, харин `audit_logs`-д ЗӨВХӨН ЖИНХЭНЭ
+  `MARKED_PAID` мутацийн үед л (`PaymentService.writeAuditLog()`, шинэ
+  raw INSERT — `@Audit()` decorator-ыг ЗОРИУДАА ашиглаагүй, учир нь
+  controller handler-ийн АМЖИЛТТАЙ хариу БҮРТ нөхцөлгүй бичдэг тул
+  rate-limited/dedupe-skip тохиолдолд ч "мутаци болсон" мэт худал мөр
+  үлдээх эрсдэлтэй байсан).
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
