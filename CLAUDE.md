@@ -56,10 +56,9 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 2 — Каталог ба агуулах (1-р ба 2-р хэсэг: схем + CRUD API +
-"бэлэн/захиалгаар" override логик + нийтэд харагдах availability endpoint +
-admin-web UI дууссан, MinIO/Meilisearch/Mobile UI хараахан эхлээгүй).
-Дэлгэрэнгүй: `docs/plan.md` §8.
+Phase 3a — Сагс ба захиалгын үндсэн урсгал (checkout, захиалгын state
+machine, RLS/RBAC, admin-web "Захиалгууд" дэлгэц дууссан; WebSocket/QPay/
+geolocation Phase 3b-д). Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -82,9 +81,12 @@ admin-web UI дууссан, MinIO/Meilisearch/Mobile UI хараахан эхл
   (жиш: эрхгүй харилцагч өөрийн бүртгэлийн үеийн audit мөрөө REGISTER-ийн
   ДАРАА ч харах эрхгүй) RETURNING шатандаа "violates row-level security
   policy" алдаа шидэх нь бий — тиймээс `audit.interceptor.ts` RETURNING
-  шаардахгүй `tx.$executeRaw` INSERT ашигладаг. **RLS-тэй хүснэгтэд
-  Prisma-гийн `.create()/.update()`-ийг ирээдүйд ашиглахдаа энэ зальтай
-  тулгарвал мөн адил raw INSERT/UPDATE руу шилжүүл.**
+  шаардахгүй `tx.$executeRaw` INSERT ашигладаг.
+  ⚠️ **ЗАСВАР (Phase 3a-д илэрсэн, доор дэлгэрэнгүй):** дээрх "raw
+  INSERT/UPDATE-руу шилжүүл" зөвлөмж зөвхөн **INSERT**-д хүчинтэй.
+  UPDATE/DELETE-д raw SQL ч (`$executeRaw`, RETURNING-гүй ч) SELECT
+  policy-г ЗАЙЛШГҮЙ шаарддаг тул RETURNING-гүй болгох аргаар үүнийг
+  тойрох АРГАГҮЙ — доорх Phase 3a-ийн тэмдэглэлийг үз.
 - **Ажилтны нэвтрэлт (`auth-staff`) + admin-web login дууссан**: backend
   `src/auth-staff` модуль — `POST /auth/staff/login` нь admin-web-ээс
   Keycloak руу шууд хандахгүй (client secret browser-т задрахаас
@@ -161,7 +163,8 @@ admin-web UI дууссан, MinIO/Meilisearch/Mobile UI хараахан эхл
   дэлгэрэнгүй бичив — ирээдүйд ижил хэрэгцээ (RLS-ээр хориглогдсон
   хүснэгтээс redact хийсэн утга нийтэд харуулах) гарвал ЭНЭ ADR-ыг
   заавал уншиж, шинэ функц зохиохоос өмнө байгаа функцүүдийг эхлээд
-  шалга.
+  шалга. (Энэ бол ADR 005-ийн "READ" бүлэг — Phase 3a-д WRITE-д зориулсан
+  тусдаа бүлэг нэмэгдсэн, доорх Phase 3a тэмдэглэлийг үз.)
 - **Admin-web: каталог/агуулахын UI дууссан**: `react-router-dom` (protected
   route-ууд: `/login`, `/dashboard`, `/categories`, `/products`,
   `/products/:id`, `/inventory` — токенгүй бол `/login` руу redirect).
@@ -196,12 +199,57 @@ admin-web UI дууссан, MinIO/Meilisearch/Mobile UI хараахан эхл
   `20260815082257_enable_rls_policies`) аль хэдийн бэлэн байсан тул шинэ
   SECURITY DEFINER функц ШААРДААГҮЙ. Бүрэн CRUD "салбар удирдах хуудас"
   ЭНЭ даалгаварт ХАМААРАХГҮЙ, доор "Дараагийн ажил"-д хэвээр байна.
-- Дараагийн ажил: MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
-  **Mobile-ийн каталог/агуулах UI** (admin-web хийгдсэн, Flutter тал
-  хараахан эхлээгүй), `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах,
-  refresh token revocation store (хэрэгцээ гарвал), admin-web-ийн салбар
-  удирдах хуудас (CUD, Branch.district/lat/lng-г ашиглаж газрын зураг дээр
-  харуулах боломжтой боллоо — одоо зөвхөн уншихад зориулсан
-  `GET /branches` байгаа), admin-web session persist (ADR 004-ийн
+- **Захиалгын үндсэн урсгал (Phase 3a) дууссан**: `Order`/`OrderItem`
+  Prisma загвар + migration (`add_orders`), RLS (`enable_orders_rls`,
+  §6.1 матриц), `src/orders` модуль — `POST /orders` (checkout, зөвхөн
+  CUSTOMER), `PATCH /orders/:id/status` (staff-ийн ерөнхий шилжилт +
+  харилцагчийн `CREATED→CANCELLED` cancel нэг endpoint-д нэгтгэсэн, role-оор
+  дүрмээ ялгана). Захиалгын state machine (`src/orders/order-state-machine.ts`,
+  цэвэр функц, 100% нэгж тест): `CREATED→CONFIRMED→PREPARING→READY→COMPLETED`,
+  эсвэл `CREATED/CONFIRMED→CANCELLED`. Admin-web: "Захиалгууд" (`/orders`,
+  `/orders/:id`) дэлгэц (жагсаалт, шүүлт, дэлгэрэнгүй, статус товч —
+  `allowedNextStatuses()` frontend-ийн UX-only хуулбар).
+  ⚠️ **Чухал нээлт — ADR 001-ийн "raw INSERT/UPDATE RETURNING тойрно"
+  зөвлөмжийг ЗАСВАРЛАВ:** PostgreSQL-ийн албан ёсны баримт бичигт заасны
+  дагуу **UPDATE/DELETE команд RETURNING байх эсэхээс ҮЛ ХАМААРАН** зорилтот
+  мөрөө тодорхойлохын тулд ХҮСНЭГТИЙН SELECT policy-г ЗААВАЛ давхар
+  хангасан байхыг шаарддаг (зөвхөн **INSERT** RETURNING-гүй үед л SELECT
+  policy-г бүрэн алгасдаг). Иймд CUSTOMER/SALESPERSON-ийн session-ээр
+  checkout/cancel-ийн үед InventoryItem.quantity-г (customer inventory_items
+  SELECT хийх эрхгүй, "нөөцийн тоо нууц") atomic decrement/increment хийхийг
+  `inventory_items_update` RLS-ийг join-оор өргөтгөж шийдэх оролдлого
+  БОДИТООР АЖИЛЛАХГҮЙ болохыг `EXPLAIN (ANALYZE)`-аар нотолсон (Postgres
+  policy quals-ыг "(update_using) AND (select_using)" гэж AND-аар
+  нэгтгэсэн байгааг шууд харсан).
+  **`docs/adr/005-security-definer-pattern.md`-ийг ЭНЭ нээлтээр шинэчилж,
+  анхны "зөвхөн READ+redact" хязгаарлалтын хажууд шинэ "## WRITE тохиолдол"
+  бүлэг + тусдаа WRITE зөвтгөлийн шалгуур (READ-ээс илүү хатуу, учир нь
+  RLS бүхэлдээ тойрогддог) нэмсэн** — зөвшөөрлийг ӨӨРӨӨ дотроо шалгаад
+  бичдэг WRITE зориулалттай SECURITY DEFINER функц
+  (`app_adjust_inventory_for_order`, migration
+  `add_order_inventory_adjustment_function`) ашигласан. **Ирээдүйд ижил
+  "унших эрхгүй ч бичих ёстой" тохиолдол гарвал шинэ SECURITY DEFINER
+  функц зохиохоос ӨМНӨ энэ шинэчилсэн ADR 005-ыг БҮХЭЛД нь (READ ба WRITE
+  хоёр бүлэг) заавал уншиж, өөрийн хэрэгцээ аль ангилалд багтахыг эхлээд
+  тодорхойл.**
+  ⚠️ **Чухал заль (SAVEPOINT):** RlsMiddleware хэдийн бүх хүсэлтийг нэг
+  interactive transaction-д ороосон байдаг (ADR 001) тул OrderService
+  `prisma.$transaction`-ыг дахин дуудаж чадахгүй (interactive
+  `TransactionClient` дээр `$transaction` метод deny-list-д орсон тул
+  байхгүй). Cart-ийн олон мөрийн decrement дундаас аль нэг нь амжилтгүй
+  болоход зөвхөн checkout/status-update-ийн бичсэн зүйлсийг (Order/
+  OrderItem, өмнөх амжилттай decrement/increment) буцаахын тулд raw SQL
+  `SAVEPOINT`/`ROLLBACK TO SAVEPOINT` (`OrderService.withSavepoint()`)
+  ашигласан — "0 мөр өөрчлөгдсөн" (жиш: InventoryItem мөр байхгүй) нь
+  ЖИНХЭНЭ Postgres алдаа БИШ тул CHECK constraint зөрчил шиг транзакцыг
+  автоматаар "aborted" болгодоггүй, тиймээс аль ч төрлийн алдаанд ROLLBACK
+  TO SAVEPOINT-ыг ЗААВАЛ дуудах ёстойг анхаарах.
+- Дараагийн ажил: Phase 3b (WebSocket Gateway, QPay интеграц + webhook HMAC
+  verification, geolocation auto-routing), MinIO зураг байршуулах endpoint,
+  Meilisearch индексжилт, **Mobile-ийн каталог/агуулах/захиалгын UI**
+  (admin-web хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
+  устгах/SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
+  гарвал), admin-web-ийн салбар удирдах хуудас (CUD, одоо зөвхөн уншихад
+  зориулсан `GET /branches` байгаа), admin-web session persist (ADR 004-ийн
   "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
   шаардлагатай хэвээр).

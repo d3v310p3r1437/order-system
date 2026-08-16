@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: "/categories", label: "Ангилал" },
   { to: "/products", label: "Бүтээгдэхүүн" },
   { to: "/inventory", label: "Агуулах" },
+  { to: "/orders", label: "Захиалгууд" },
 ];
 
 export function Layout() {

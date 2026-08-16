@@ -38,14 +38,19 @@ export function isForeignKeyViolation(error: unknown): boolean {
 // PrismaClientUnknownRequestError шидэх нь бодит Postgres/RLS-тэй
 // e2e тестээр батлагдсан (Postgres-ийн 23514 check_violation кодыг
 // message-даа дамжуулна) — InventoryService.adjustQuantity үүнийг барьж
-// 409 INSUFFICIENT_STOCK болгоно.
+// 409 INSUFFICIENT_STOCK болгоно. `$executeRaw`-аар (OrderService-ийн
+// SAVEPOINT-той decrement/increment) ижил constraint зөрчвөл Prisma
+// "Raw query failed" (P2010, PrismaClientKnownRequestError) хэлбэрээр
+// шидэх нь ажиглагдсан тул хоёр класс аль алиныг нь барина.
 export function isCheckConstraintViolation(
   error: unknown,
   constraint: string,
 ): boolean {
-  return (
-    error instanceof Prisma.PrismaClientUnknownRequestError &&
-    error.message.includes('23514') &&
-    error.message.includes(constraint)
-  );
+  if (
+    !(error instanceof Prisma.PrismaClientUnknownRequestError) &&
+    !(error instanceof Prisma.PrismaClientKnownRequestError)
+  ) {
+    return false;
+  }
+  return error.message.includes('23514') && error.message.includes(constraint);
 }

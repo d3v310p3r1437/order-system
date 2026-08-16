@@ -1,14 +1,24 @@
 # ADR 005: Шинэ SECURITY DEFINER SQL функц хэзээ зөвтгөгддөг вэ
 
-- Статус: Хүлээн зөвшөөрсөн
-- Огноо: 2026-08-16
+- Статус: Хүлээн зөвшөөрсөн (Phase 3a-д WRITE тохиолдлыг нэмж шинэчилсэн)
+- Огноо: 2026-08-16 (анхны), шинэчилсэн 2026-08-16 (Phase 3a)
 - Холбоотой: `docs/adr/001-rls-transaction-pattern.md`,
-  `docs/plan.md` §6.1, §8 Phase 2 (2-р хэсэг),
+  `docs/plan.md` §6.1, §8 Phase 2 (2-р хэсэг), §8 Phase 3a,
   `apps/api/prisma/migrations/20260816031625_add_public_availability_lookup_function`,
+  `apps/api/prisma/migrations/20260816095000_add_order_inventory_adjustment_function`,
   `apps/api/src/catalog/inventory-effective.util.ts`,
-  `apps/api/src/catalog/product/product.service.ts`
+  `apps/api/src/catalog/product/product.service.ts`,
+  `apps/api/src/orders/order.service.ts`
 
-## Асуудал
+> ⚠️ **Энэ ADR одоо ХОЁР тусдаа ангиллыг хамарна: READ (анхны, доор
+> тодорхой) БОЛОН WRITE (Phase 3a-д нэмэгдсэн, доор "WRITE тохиолдол"
+> хэсгийг үз). Шинэ SECURITY DEFINER функц зохиохоос ӨМНӨ энэ ADR-ыг
+> БҮХЭЛД нь уншиж, өөрийн хэрэгцээ аль ангилалд (READ эсвэл WRITE)
+> багтахыг эхлээд тодорхойлно.**
+
+## READ тохиолдол (анхны — Phase 2, `GET /products/:id`)
+
+### Асуудал
 
 `inventory_items` хүснэгт дээрх RLS policy (`inventory_items_select`,
 `20260816023759_enable_catalog_inventory_rls`) зөвхөн
@@ -26,7 +36,7 @@ CUSTOMER-д ч "бэлэн үү / захиалгаар авах уу" гэдги
 Иймд серверийн код (CUSTOMER-ийн нэрийн өмнөөс ажиллаж буй `tx`) ямар нэг
 байдлаар RLS-ийг зохион байгуулалттайгаар "тойрох" шаардлагатай болсон.
 
-## Шийдвэр
+### Шийдвэр
 
 **Зөвхөн quantity/override зэрэг түүхий (raw) баганыг серверийн санах
 ойд буцаадаг, БИЗНЕС ЛОГИК ОГТ АГУУЛААГҮЙ, нарийн хязгаарлагдмал
@@ -37,7 +47,7 @@ SECURITY DEFINER SQL функц** нэмнэ (`app_inventory_snapshot_for_varian
 (migration/DDL-ийг зөвхөн superuser `app` холболтоор хийдэг тул функцийн
 эзэмшигч RLS-ийг бүрэн тойрдог — ADR 001-ийн §"Файлууд" хэсгийг үз).
 
-### Яагаад raw quantity-г SQL түвшинд биш, TS түвшинд redact хийдэг
+#### Яагаад raw quantity-г SQL түвшинд биш, TS түвшинд redact хийдэг
 
 `app_inventory_snapshot_for_variant()` нь `IN_STOCK`/`PRE_ORDER`/
 `OUT_OF_STOCK` шийдвэрийг ӨӨРӨӨ гаргадаггүй — зөвхөн
@@ -73,7 +83,7 @@ SECURITY DEFINER SQL функц** нэмнэ (`app_inventory_snapshot_for_varian
 бодит утга JS/TS процессын дотор л амьдарч, JSON.stringify-д хэзээ ч
 хүрдэггүй.
 
-### "Мөр байхгүй" (no InventoryItem row) тохиолдол
+#### "Мөр байхгүй" (no InventoryItem row) тохиолдол
 
 Тухайн branchId-д энэ variant-ийн InventoryItem мөр огт үүсээгүй байж
 болно (жиш: тухайн салбар энэ барааг огт захиалж байгаагүй). Энэ
@@ -85,7 +95,105 @@ OUT_OF_STOCK буцаах логик БИЧИХГҮЙ, ганц газар (util
 тест: `src/catalog/inventory-effective.util.spec.ts` ("item null...",
 "item undefined ч мөн адил...").
 
+## WRITE тохиолдол (Phase 3a-д нэмэгдсэн — checkout/cancel-ийн inventory decrement/increment)
+
+### Асуудал
+
+Захиалгын checkout (`POST /orders`) болон cancel (`PATCH /orders/:id/status`,
+`CANCELLED`) хийхэд `InventoryItem.quantity`-г CUSTOMER (өөрийн захиалга)
+болон SALESPERSON (өөрийн салбарын захиалга) session-ээр atomic
+decrement/increment хийх шаардлагатай (docs/plan.md §7 модуль #5, #6).
+Гэвч §6.1 матриц ("нөөцийн тоо нууц") тул `inventory_items_select` RLS
+policy CUSTOMER/SALESPERSON-д ХЭЗЭЭ Ч SELECT зөвшөөрдөггүй — яг READ
+тохиолдолтой (дээрх) адилхан хязгаарлалт.
+
+**Эхний оролдлого (ажиллаагүй):** READ тохиолдолд ашигласантай төстэй
+inline-EXISTS join загвараар (жиш: `products_update` policy) зөвхөн
+`inventory_items_update` policy-г (`USING`/`WITH CHECK`) өргөтгөж, тухайн
+inventory мөр идэвхтэй захиалгын `order_items`-ээр join хийж холбогдсон
+эсэхийг шалгах гэж үзсэн — шинэ SECURITY DEFINER функц шаардлагагүй гэж
+таамагласан.
+
+⚠️ **Энэ ажиллаагүй, `EXPLAIN (ANALYZE)`-аар нотлогдсон:** PostgreSQL-ийн
+албан ёсны баримт бичигт "UPDATE/DELETE командууд одоо байгаа мөрийг
+тодорхойлохын тулд тухайн хүснэгтийн SELECT policy-г МӨН шаарддаг" гэж
+тодорхой заасан байдаг — энэ нь **RETURNING байх эсэхээс ҮЛ ХАМААРНА**
+(зөвхөн **INSERT** RETURNING-гүй үед л SELECT policy-г бүрэн алгасдаг,
+`audit.interceptor.ts`-ийн raw INSERT яг энэ ялгаанд тулгуурладаг).
+`EXPLAIN ANALYZE`-ийн гаралтад Postgres нь UPDATE policy-ийн `USING`
+нөхцөл БОЛОН SELECT policy-ийн `USING` нөхцлийг **AND**-аар нэгтгэсэн
+байгааг шууд харсан: `Filter: ((update_using) AND (select_using))`.
+`inventory_items_select` нь CUSTOMER/SALESPERSON-г огт оруулаагүй
+(`app_can_manage_branch` л) тул update-ийн өргөтгөсөн нөхцөл ХЭДИЙ ҮНЭН
+байсан ч AND-ийн нөгөө тал (select_using) худал байснаас бодит UPDATE 0
+мөр олсон.
+
+SELECT policy-г мөн адил өргөтгөх нь боломжгүй — тэгвэл CUSTOMER
+`GET /inventory-items`-ээр quantity-г шууд харах болно, яг READ
+тохиолдлын "нөөцийн тоо нууц" зөрчлийг дахин үүсгэнэ.
+
+### Шийдвэр
+
+READ тохиолдлын зарчмаас (зөвхөн "тооцоолсон утга буцаах") ухамсартайгаар
+ГАДУУР, гэхдээ **ижил суурь механизмаар** (superuser `app` эзэмшигчтэй
+SECURITY DEFINER, RLS-ийг бүрэн тойрдог) `app_adjust_inventory_for_order()`
+функц нэмэв (`20260816095000_add_order_inventory_adjustment_function`).
+
+**Гол ялгаа READ функцтэй харьцуулахад:** READ функц
+(`app_inventory_snapshot_for_variant`) ямар ч зөвшөөрлийн шалгалт хийдэггүй (учир нь
+"нийтэд харагдах" каталогийн мэдээлэл, зөвхөн redact хийдэг) — харин
+WRITE функц ЗӨВШӨӨРЛИЙГ ӨӨРӨӨ ДОТРОО шалгах ёстой, учир нь энд UPDATE
+нь RLS-ээр огт хамгаалагдахгүй болж байгаа тул зөвшөөрлийн цорын ганц
+хамгаалалт функц дотор байрлана.
+
+**`app_adjust_inventory_for_order(p_order_id, p_variant_id, p_branch_id,
+p_delta) RETURNS integer` дотоод логик** (`src/orders/order.service.ts`-ийн
+`adjustInventory()`-оос `SELECT app_adjust_inventory_for_order(...)`
+байдлаар дуудагдана, checkout-д delta<0, cancel restock-д delta>0):
+
+1. **Зөвшөөрлийн шалгалт (эхлээд):** `orders` хүснэгтийг `order_items`-тэй
+   join хийж, дараах БҮГДИЙГ шалгана — (a) `p_order_id`-тай Order
+   бодитоор оршин байна, (b) энэ Order-д `p_variant_id`-тай OrderItem
+   ЖИНХЭНЭ захиалагдсан байна (санамсаргүй variantId/branchId хос
+   дамжуулж дурын мөр өөрчлөхөөс сэргийлнэ), (c) `p_branch_id` нь тэр
+   Order-ийн `branchId`-тай таарна, БОЛОН (d) дуудагч нь тухайн Order-ыг
+   удирдах эрхтэй: `app_has_global_scope()` ЭСВЭЛ
+   `app_can_manage_branch(o."branchId")` (staff) ЭСВЭЛ
+   `o."customerId" = app_current_user_id()` (CUSTOMER, өөрийн захиалга)
+   ЭСВЭЛ `user_branch_roles`-д тухайн салбарт SALESPERSON эсэх. Эдгээрийн
+   аль нэг нь ч биш бол `RAISE EXCEPTION` (ERRCODE 42501, зөвшөөрөлгүй)
+   шидэж, УДААГААС гарна — `UPDATE`-д огт хүрэхгүй.
+2. **Бичилт (зөвхөн зөвшөөрөл баталгаажсаны дараа):**
+   `UPDATE inventory_items SET quantity = quantity + p_delta WHERE
+   "variantId" = p_variant_id AND "branchId" = p_branch_id` — RLS-ийг
+   бүрэн тойрдог тул SELECT policy шаардахгүй.
+   `inventory_items_quantity_nonneg` CHECK constraint (сөрөг тоо руу
+   орвол) энд ЭНГИЙН Postgres алдаа хэвээр шидэгдэнэ (23514) —
+   `OrderService`-ийн `isCheckConstraintViolation()` үүнийг барьж 409
+   `OUT_OF_STOCK` болгоно.
+3. **Буцаах утга:** `GET DIAGNOSTICS`-аар авсан бодит өөрчлөгдсөн мөрийн
+   тоо (0 эсвэл 1) — 0 бол (жиш: тухайн branch/variant хослолд
+   InventoryItem мөр огт үүсээгүй) дуудагч тал (`OrderService`) checkout
+   үед 409 `OUT_OF_STOCK`, cancel restock үед зөвхөн warn лог бичээд
+   үргэлжлүүлнэ (READ тохиолдлын "мөр байхгүй → OUT_OF_STOCK, алдаа
+   шидэхгүй" зарчимтай ижил санаа: 0-мөр хариуг ганц газар шийднэ).
+
+**⚠️ Хэн ч дурын `p_order_id`/`p_variant_id`/`p_branch_id`/`p_delta`
+дамжуулж функцийг шууд дуудаж болзошгүй эсэхийг анхаар:** Функц PUBLIC-д
+EXECUTE эрхтэй (Postgres анхдагч), SECURITY DEFINER тул RLS-ийг бүрэн
+тойрдог — иймд **алхам 1 (зөвшөөрлийн шалгалт) функц дотор байхгүй бол**
+энэ нь ЯМАР Ч хэрэглэгчид дурын inventory мөрийг чөлөөтэй өөрчлөх
+боломж олгох маш ноцтой цоорхой болно. Функцийн аюулгүй байдал бүхэлдээ
+алхам 1-ийн зөв бичигдсэн байхаас хамаарна — энэ бол READ функцээс
+(зөвшөөрлийн шалгалтгүй, зөвхөн redact) чухал ялгаа.
+
 ## Ирээдүйд ижил хэрэгцээ гарвал — ЗАРЧИМ
+
+Эхлээд өөрийн хэрэгцээ **READ** (тооцоолсон/redact утга буцаах) уу,
+эсвэл **WRITE** (RLS-ээр SELECT хориглогдсон хүснэгтэд бичих шаардлагатай)
+уу гэдгийг тодорхойл — доорх хоёр жагсаалтын зохих нэгийг баримтал.
+
+### READ — тооцоолсон/redact утга буцаах (жиш: `app_inventory_snapshot_for_variant`)
 
 **Шинэ SECURITY DEFINER функц ЗӨВХӨН дараах БҮХ нөхцөл хангагдсан үед л
 зөвтгөгдөнө:**
@@ -110,16 +218,60 @@ OUT_OF_STOCK буцаах логик БИЧИХГҮЙ, ганц газар (util
 зөвшөөрөгдсөн энгийн CRUD унших endpoint) — SECURITY DEFINER огт
 хэрэггүй, энгийн `prisma.tx.<model>.findMany()`-г RLS-тэйгээ ажиллуулна.
 
+### WRITE — RLS-ээр SELECT хориглогдсон хүснэгтэд бичих (жиш: `app_adjust_inventory_for_order`)
+
+**Шинэ WRITE зориулалттай SECURITY DEFINER функц ЗӨВХӨН дараах БҮХ
+нөхцөл хангагдсан үед л зөвтгөгдөнө — READ-ийн нөхцлүүдээс илүү хатуу,
+учир нь энд RLS бүхэлдээ тойрогддог:**
+
+1. **Зөвхөн итгэмжлэгдсэн backend code path-аас дуудагдана** (жиш:
+   `OrderService`), НЭГ ч endpoint параметрийг ШУУД (validate/join
+   хийлгүй) функцэд дамжуулдаггүй — checkout/cancel аль хэдийн
+   баталгаажуулсан (variant захиалагдсан, order олдсон) утгаас гарна.
+2. **Функц ӨӨРӨӨ (дотроо, эхний алхамд) зөвшөөрлийг шалгана** — дуудагч
+   session (`app_current_user_id()`) тухайн бичих гэж буй мөртэй ямар
+   домэйн харилцаатай (жиш: "энэ Order-ын ЭЗЭН" эсвэл "энэ салбарыг
+   удирдах эрхтэй") болохыг тодорхой SQL нөхцлөөр баталгаажуулна.
+   Баталгаажаагүй бол `RAISE EXCEPTION`-ээр ЯАГААД ч UPDATE хүрэхгүй.
+3. **Scope нарийн:** зөвхөн НЭГ багана (жиш: `quantity`)-ийг, зөвхөн
+   параметрээр өгсөн НЭГ (эсвэл join-оор тодорхой хязгаарлагдсан) мөрийг
+   өөрчилдөг — өргөн хүрээний/нөхцөлгүй UPDATE, өөр багана/хүснэгт
+   хөндөх ЗОРИЛГОГҮЙ.
+4. **Бизнес логик функц дотор байхгүй** (READ-ийн 2-той адил) — зөвхөн
+   "authorize + write", шийдвэр гаргалт (жиш: ямар delta байх ёстойг
+   тооцоолох) TS талд байна.
+5. **Өмнө нь бичигдсэн ижил зорилготой функц байхгүй эсэхийг шалгасан**
+   (READ-ийн 3-тай адил) — READ функцүүдийг ч WRITE-д ашиглах боломжгүй
+   (эсрэгээрээ ч) тул хайлт хийхдээ WRITE ангиллын функцүүд дунд шал.
+6. Migration comment-д (a) яагаад RLS policy-г шууд өргөтгөх боломжгүй
+   байсныг (READ-ийн адил "давхар SELECT policy шаардлагатай" зэрэг
+   тодорхой техникийн шалтгаан), (b) функц дотроо БҮРЭН ямар
+   зөвшөөрлийн нөхцөл шалгадгийг тодорхой бичнэ — ADR 001, ADR 005-ийг
+   заавал ишлэнэ.
+
+Хэрэв (1) эсвэл (2)-ыг хангахгүй бол (жиш: параметрийг клиентээс шууд,
+validate хийлгүй авах, эсвэл зөвшөөрлийн шалгалтыг функцийн ГАДНА
+"боловч найдвартай гэж таамаглах") — WRITE SECURITY DEFINER функц огт
+хэрэглэхгүй, оронд нь RLS policy-г (боломжтой бол) сайжруулах эсвэл
+архитектурыг дахин бод.
+
 ## Мэдэгдэж буй trade-off
 
-- SECURITY DEFINER функц бол RLS-ийн "сүүлчийн хамгаалалт" зарчмын
-  ухамсартай ялгаа (цоорхой) тул шинэ ийм функц нэмэх бүрт код review-д
-  онцгой анхаарал шаардана (checklist: §4.4 аюулгүй байдлын checklist-д
-  нэмж болох зүйл).
+- SECURITY DEFINER функц (READ ба WRITE аль аль нь) RLS-ийн "сүүлчийн
+  хамгаалалт" зарчмын ухамсартай ялгаа (цоорхой) тул шинэ ийм функц
+  нэмэх бүрт код review-д онцгой анхаарал шаардана (checklist: §4.4
+  аюулгүй байдлын checklist-д нэмж болох зүйл). **WRITE функцийн хувьд
+  энэ эрсдэл ИЛҮҮ өндөр** — READ функц буруу бичигдвэл мэдээлэл алдагдах
+  (confidentiality) эрсдэлтэй, WRITE функц буруу бичигдвэл (алхам 1
+  дутуу/буруу) ДУРЫН хэрэглэгч ДУРЫН мөрийг өөрчлөх (integrity) эрсдэлтэй
+  — илүү ноцтой.
 - Функц PUBLIC-д EXECUTE эрхтэй (Postgres анхдагч) тул `app_runtime`
   role үүнийг чөлөөтэй дуудна — параметржих боломжтой аливаа функц
   (жиш: энэ функцэд `p_branch_id` дурын утга дамжуулж болно) SQL
   injection биш ч "дурын variantId/branchId хосыг лавлах" боломж олгодог
-  тул зөвхөн "нийтэд харагдах" гэдэгт тохирсон, аль хэдийн олон нийтэд
-  ил (жиш: каталогийн бүтээгдэхүүн) объектод л ашиглах ёстой — хувийн
-  мэдээлэл агуулсан хүснэгтэд адилхан загвар шууд хуулж болохгүй.
+  тул READ функцийг зөвхөн "нийтэд харагдах" гэдэгт тохирсон, аль хэдийн
+  олон нийтэд ил (жиш: каталогийн бүтээгдэхүүн) объектод л ашиглах
+  ёстой — хувийн мэдээлэл агуулсан хүснэгтэд адилхан загвар шууд хуулж
+  болохгүй. WRITE функцийн хувьд энэ эрсдэл функцийн ДОТООД зөвшөөрлийн
+  шалгалтаар (дээрх "WRITE" 2-р нөхцөл) л зөөлрүүлэгддэг — тиймээс тэр
+  шалгалт дутуу/сул байх нь функцийг бүхэлд нь эмзэг болгоно.

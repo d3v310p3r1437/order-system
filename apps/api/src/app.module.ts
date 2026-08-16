@@ -12,6 +12,7 @@ import { RlsMiddleware } from './common/rls.middleware.js';
 import { DebugController } from './debug/debug.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { InventoryModule } from './inventory/inventory.module.js';
+import { OrderModule } from './orders/order.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
 
@@ -25,6 +26,7 @@ import { RedisModule } from './redis/redis.module.js';
     BranchModule,
     CatalogModule,
     InventoryModule,
+    OrderModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [
