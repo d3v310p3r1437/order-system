@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
+import { useOrderEvents } from "@/lib/realtime";
 import { ROLE_LABELS } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,8 @@ const NAV_ITEMS = [
 ];
 
 export function Layout() {
-  const { email, roleNames, isLoadingRoles, logout } = useAuth();
+  const { accessToken, email, roleNames, isLoadingRoles, logout } = useAuth();
+  useOrderEvents(accessToken);
 
   const roleLabel = isLoadingRoles
     ? "Ачааллаж байна…"

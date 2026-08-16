@@ -44,7 +44,10 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 - `.env` файлыг commit хийхгүй
 - RLS-гүй шинэ хүснэгт нэмэхгүй
 - Migration-ийг шууд `docker-compose.prod.yml`-ийн эсрэг ажиллуулахгүй
-- Payment webhook (QPay/SocialPay) дээр signature verification алгасахгүй
+- Payment webhook (QPay/SocialPay) payload-д шууд итгэхгүй — ЗААВАЛ идэвхтэй
+  `PaymentProvider.checkPayment()`-ийг сервэр талаас дахин дуудаж баталгаажуулна
+  (`docs/adr/006-qpay-verify-dont-trust.md`, "verify don't trust" зарчим —
+  HMAC signature биш)
 
 ## Эрх, нэвтрэлт (docs/plan.md §6.2, docs/adr/002-...)
 Харилцагч → утасны дугаар + `src/auth-customer` (HS256, JWT_SECRET).
@@ -56,9 +59,9 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 3a — Сагс ба захиалгын үндсэн урсгал (checkout, захиалгын state
-machine, RLS/RBAC, admin-web "Захиалгууд" дэлгэц дууссан; WebSocket/QPay/
-geolocation Phase 3b-д). Дэлгэрэнгүй: `docs/plan.md` §8.
+Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц (Mock+QPay stub)
+дууссан; geolocation auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй:
+`docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -244,12 +247,71 @@ geolocation Phase 3b-д). Дэлгэрэнгүй: `docs/plan.md` §8.
   ЖИНХЭНЭ Postgres алдаа БИШ тул CHECK constraint зөрчил шиг транзакцыг
   автоматаар "aborted" болгодоггүй, тиймээс аль ч төрлийн алдаанд ROLLBACK
   TO SAVEPOINT-ыг ЗААВАЛ дуудах ёстойг анхаарах.
-- Дараагийн ажил: Phase 3b (WebSocket Gateway, QPay интеграц + webhook HMAC
-  verification, geolocation auto-routing), MinIO зураг байршуулах endpoint,
-  Meilisearch индексжилт, **Mobile-ийн каталог/агуулах/захиалгын UI**
-  (admin-web хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
+- **Бодит цаг (WebSocket) + төлбөрийн абстракц (Phase 3b, Хэсэг A+B) дууссан**:
+  `src/realtime/order-events.gateway.ts` (Socket.io, namespace `/ws/orders`,
+  `@socket.io/redis-adapter` — horizontal scale-д зориулсан, `main.ts`-д
+  `app.useWebSocketAdapter(new IoAdapter(app))` ЗААВАЛ өмнө нь дуудахгүй бол
+  gateway "server.adapter is not a function" алдаагаар унана; мөн
+  `namespace: '/ws/orders'` ашигласнаар Nest `afterInit()`-д ЖИНХЭНЭ Server-ийг
+  БИШ зөвхөн `Namespace`-ийг дамжуулдаг тул adapter-ыг `namespace.server`
+  дээр тавих ёстой). `PATCH /orders/:id/status` амжилттай бүрт
+  `order.status_changed` event нийтэлнэ, гэхдээ **шинэ `RequestContextService.onCommit()`
+  механизмаар** зөвхөн `RlsMiddleware`-ийн request-scoped transaction
+  (ADR 001) бодитоор COMMIT хийгдсэний ДАРАА л (энгийн `.publish()`-ээр биш) —
+  эс бөгөөс DB бичилт хараахан commit хийгдээгүй байхад "худал" event
+  клиент рүү очих эрсдэлтэй байсан. Room-based зарчим (RLS-ийн зарчмыг
+  WS давхаргад мөн баримталсан): staff холбогдох мөчдөө `GET /branches`-тэй
+  ижил RLS query-гээр өөрт харагдах салбаруудын `branch:${branchId}` room-д
+  автоматаар нэгддэг, CUSTOMER `subscribe:order` event-ээр (RLS
+  `orders_select`-ээр харагдвал л) `order:${orderId}` room-д нэгддэг —
+  шинэ SECURITY DEFINER функц ШААРДААГҮЙ (одоо байгаа RLS-ийг дахин
+  ашигласан, ADR 005-ийн "READ" зарчим). ⚠️ **Чухал заль (Redis холболт
+  цэвэрлэлт):** Nest-ийн `close()` дараалал `OnModuleDestroy`-г WS
+  server-ийг хаахаас (`dispose()`, Redis adapter энэ үед л unsubscribe
+  хийдэг) ӨМНӨ дуудна — тул `.duplicate()`-аар нээсэн pub/sub холболтыг
+  цэвэрлэхдээ `OnModuleDestroy` биш `OnApplicationShutdown` (dispose()-ийн
+  ДАРАА) ашиглах ёстой, мөн `.disconnect()` (огцом) биш `.quit()` (эелдэг)
+  ашиглах ёстой — эс бөгөөс "Connection is closed" unhandled rejection-оор
+  процесс унадаг (e2e тестийн worker crash-аар илэрсэн).
+  Payment: `src/payment/payment-provider.interface.ts` (`PaymentProvider`
+  interface) + `mock-payment.provider.ts` (dev/тест, `POST /payment/mock/
+  simulate-paid/:providerInvoiceId` зөвхөн NODE_ENV!=='production') +
+  `qpay.provider.ts` (developer.qpay.mn Merchant V2-ийн эх сурвалжаар
+  бичсэн ч КРЕДЕНШИАЛ байхгүй тул ЗӨВХӨН HTTP mock unit тестээр шалгагдсан),
+  `PAYMENT_PROVIDER` env (mock|qpay, анхдагч mock) DI сонголт. `POST /orders`
+  (checkout) `PaymentProvider.createInvoice()` дуудаж `payUrl` буцаана.
+  ⚠️ **Чухал заль (providerInvoiceId бичилт):** `orders_update` RLS
+  policy CUSTOMER-д зөвхөн CREATED→CANCELLED шилжилтэд л UPDATE зөвшөөрдөг
+  тул checkout-ийн дараа тусад нь `providerInvoiceId`-г UPDATE хийх
+  боломжгүй (RLS татгалзана) — үүнийг шинэ SECURITY DEFINER функцгүйгээр
+  (ADR 005 зарчим: эхлээд одоо байгаа механизмаар шийд) `orderId`-г
+  application код (`randomUUID()`) урьдчилж үүсгэж, `PaymentProvider.
+  createInvoice()`-г Order мөр ҮҮСГЭХЭЭС ӨМНӨ дуудаж, эхний INSERT дотор
+  нь `providerInvoiceId`-г шууд бичиж шийдсэн. Webhook (`POST /payment/
+  webhook/:orderId`, session/auth ЗОРИУДАА байхгүй) HMAC signature-ийн
+  ОРОНД **"verify don't trust"** зарчим (`docs/adr/006-qpay-verify-dont-trust.md`):
+  ЗААВАЛ идэвхтэй provider-ийн `checkPayment()`-ийг сервэр талаас дахин
+  дуудаж, ТҮҮНИЙ хариу PAID байх үед л шинэ `app_mark_order_paid()`
+  SECURITY DEFINER функцээр (migration `add_order_mark_paid_function`,
+  ADR 005 WRITE ангилал — session identity огт байхгүй тул зөвшөөрлийн
+  "нотолгоо" нь `providerInvoiceId` checkout үед бид өөрсдөө бичсэн
+  утгатай таарах эсэхээр хийгдэнэ, cross-order халдлагаас хамгаална)
+  `Order.paidAt`-г (шинэ талбар; `qpayPaymentId`→`providerInvoiceId`
+  нэрийг мөн сольсон, `RENAME COLUMN`) тавина. admin-web `/orders`
+  дэлгэц WebSocket холбогдож (`src/lib/realtime.ts`, `Layout`-д залгасан)
+  event ирэхэд TanStack Query cache invalidate хийдэг. Тест: unit
+  (`order-events.gateway.spec.ts`, `order-events.publisher.spec.ts`,
+  `mock-payment.provider.spec.ts`, `qpay.provider.spec.ts` — HTTP mock,
+  `payment.service.spec.ts`) + e2e (`test/realtime.e2e-spec.ts` — бодит
+  TCP порт+`socket.io-client`, `test/payment.e2e-spec.ts` — checkout→
+  simulate-paid→webhook→paidAt, cross-order binding хамгаалалт).
+- Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
+  MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
+  **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
+  хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
   устгах/SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
   гарвал), admin-web-ийн салбар удирдах хуудас (CUD, одоо зөвхөн уншихад
   зориулсан `GET /branches` байгаа), admin-web session persist (ADR 004-ийн
   "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
-  шаардлагатай хэвээр).
+  шаардлагатай хэвээр), QPay бодит sandbox credential ирмэгц ADR 006-ийн
+  checklist гүйцээх, webhook endpoint-д rate-limit нэмэх (backlog).

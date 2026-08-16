@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { SignJWT } from 'jose';
@@ -89,6 +90,10 @@ describe('Orders (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    // src/main.ts-тэй ижил заавал (app.init()-ээс ӨМНӨ) — эс бөгөөс
+    // OrderEventsGateway "server.adapter is not a function" алдаа шидэж
+    // app.init() бүхэлдээ унана.
+    app.useWebSocketAdapter(new IoAdapter(app));
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,

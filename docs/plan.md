@@ -131,7 +131,11 @@
 - [ ] Input validation (DTO + class-validator) байгаа
 - [ ] Эрхийн шалгалт (RBAC guard) endpoint бүрт тодорхой заасан
 - [ ] Rate-limit шаардлагатай endpoint (auth, OTP) дээр тавигдсан
-- [ ] **(шинэ)** Payment webhook (QPay/SocialPay) бүрт **HMAC/signature verification** заавал шалгагдсан, verification амжилтгүй бол 401 буцаана
+- [x] **(шинэ, Phase 3b-д шийдвэрээ өөрчилсөн)** Payment webhook (QPay/SocialPay)
+      бүрт signature verification-ийн ОРОНД **server-to-server "verify don't
+      trust" дахин баталгаажуулалт** (`PaymentProvider.checkPayment()`,
+      `docs/adr/006-qpay-verify-dont-trust.md`) заавал шалгагдсан, PAID
+      биш л бол Order.paidAt хэзээ ч тавигдахгүй
 - [ ] **(шинэ)** Мэдээлэл өөрчилдөг (create/update/delete) endpoint бол audit log дуудалт орсон эсэх
 
 ### 4.5 Тестийн стандарт
@@ -427,12 +431,64 @@ SET LOCAL app.accessible_branches = $3;
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 
-- [ ] WebSocket Gateway + Redis Pub/Sub adapter
-- [ ] QPay интеграц: invoice үүсгэх, webhook хүлээн авах
-- [ ] **(шинэ) Webhook signature (HMAC) verification** заавал — §4.4
+- [x] **WebSocket Gateway + Redis Pub/Sub adapter**: `src/realtime`
+      (`OrderEventsGateway`, Socket.io namespace `/ws/orders`,
+      `@socket.io/redis-adapter` — `RedisService.duplicate()`-аар нээсэн
+      тусдаа pub/sub холболт, `main.ts`-д `app.useWebSocketAdapter(new
+      IoAdapter(app))` заавал). `PATCH /orders/:id/status` амжилттай
+      бүрт `order.status_changed` event нийтэлнэ (`{orderId, branchId,
+      customerId, oldStatus, newStatus}`) — гэхдээ ЗӨВХӨН
+      `RlsMiddleware`-ийн request-scoped transaction (`docs/adr/001`)
+      бодитоор COMMIT хийгдсэний ДАРАА (`RequestContextService.onCommit()`,
+      шинэ механизм) тул "commit хийгдээгүй ч event явчихсан" зөрчил
+      үүсэхгүй. Клиент тал: JWT-ээр (TokenVerifierService дахин ашигласан)
+      handshake дээр authenticate хийж, staff холбогдох мөчдөө өөрт
+      харагдах салбаруудын (`GET /branches`-тэй ижил RLS-ээр шүүгдсэн)
+      `branch:${branchId}` room-д автоматаар нэгддэг, CUSTOMER
+      `subscribe:order` event-ээр (RLS orders_select-ээр харагдвал л)
+      `order:${orderId}` room-д нэгддэг — шинэ SECURITY DEFINER функц
+      шаардлагагүй (одоо байгаа RLS-ийг л дахин ашигласан). admin-web
+      `/orders` дэлгэц WebSocket холбогдож (`src/lib/realtime.ts`,
+      `Layout`-д залгасан), event ирэхэд TanStack Query cache
+      invalidate хийж жагсаалт автоматаар шинэчлэгддэг. Тест: unit
+      (`order-events.gateway.spec.ts`, `order-events.publisher.spec.ts`)
+      + e2e (`test/realtime.e2e-spec.ts` — бодит TCP порт сонсуулж,
+      `socket.io-client`-аар холбогдож event хүлээн авах).
+- [x] **QPay интеграц: invoice үүсгэх, webhook хүлээн авах** (Mock +
+      QPay provider хоёулаа): `src/payment/payment-provider.interface.ts`
+      (`PaymentProvider`), `mock-payment.provider.ts` (dev/тест, credential
+      шаардахгүй, `POST /payment/mock/simulate-paid/:providerInvoiceId`
+      зөвхөн `NODE_ENV!=='production'`), `qpay.provider.ts` (developer.qpay.mn
+      Merchant V2-ийн эх сурвалжаар бичсэн ч бодит credential байхгүй тул
+      ЗӨВХӨН HTTP mock-той unit тестээр шалгагдсан, `docs/adr/006`-ийн
+      "заавал баталгаажуулах зүйлс" checklist-ийг үз), `PAYMENT_PROVIDER`
+      env (`mock`|`qpay`, анхдагч `mock`)-ээр DI сонголт. `POST /orders`
+      (checkout) өргөтгөж `PaymentProvider.createInvoice()` дуудаж,
+      `Order.providerInvoiceId`-г ЭХНИЙ INSERT дотор нь шууд бичиж (RLS-ийн
+      `orders_update` policy CUSTOMER-д зөвхөн CANCELLED шилжилтэд л
+      UPDATE зөвшөөрдөг тул дараа нь тусад нь UPDATE хийх боломжгүй байсан
+      — orderId-г application код урьдчилж үүсгэж шийдсэн), `payUrl`-ыг
+      хариунд нэмж буцаана.
+- [x] **(шинэ) Webhook "verify don't trust" (HMAC signature-ийн оронд)**
+      заавал — `POST /payment/webhook/:orderId`
+      (`PaymentService.confirmWebhookPayment`) ЗААВАЛ идэвхтэй
+      provider-ийн `checkPayment()`-ийг сервэр талаас дахин дуудаж, ТҮҮНИЙ
+      хариу PAID байх үед л (webhook payload-д шууд итгэхгүй)
+      `Order.paidAt`-г (шинэ талбар) `app_mark_order_paid()` SECURITY
+      DEFINER функцээр (docs/adr/005 WRITE ангилал, providerInvoiceId
+      таарсан үед л бичдэг тул cross-order халдлагаас хамгаалагдсан)
+      тавина. §4.4, `docs/adr/006-qpay-verify-dont-trust.md`-ийг үз.
 - [ ] Geolocation-д суурилсан автомат чиглүүлэлт (нөөц + зай) — **хэрэв цаг хүрэхгүй бол backlog руу шилжүүлж болох "should-have" ажил** гэж тодорхой тэмдэглэнэ
 - [ ] Mobile апп: сагс, checkout, захиалгын түүх, худалдагчийн бодит цагийн мэдэгдэл
-- [ ] `qa-e2e-runner`-аар захиалгын бүрэн урсгалын e2e тест
+- [x] Захиалгын бүрэн урсгалын e2e тест: `test/orders.e2e-spec.ts`
+      (Phase 3a-аас), `test/payment.e2e-spec.ts` (checkout→createInvoice→
+      simulate-paid→webhook→paidAt, cross-order binding), `test/realtime.e2e-spec.ts`
+      (WebSocket холболт+event) — Flutter mobile UI-гүй тул зөвхөн API
+      түвшинд (`qa-e2e-runner` subagent-гүйгээр шууд).
+- [ ] **(шинэ, QPay бодит credential хүлээгдэж байна)** QPay-ийг бодит
+      sandbox-той (эсвэл ядаж баримтжуулсан бодит payload жишээтэй)
+      турших, `docs/adr/006`-ийн "заавал баталгаажуулах зүйлс" checklist-ийг
+      гүйцээх
 
 ### Phase 4 — Гүйцэтгэл, хүргэлт, мэдэгдэл (2-3 долоо хоног)
 

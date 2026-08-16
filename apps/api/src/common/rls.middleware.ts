@@ -44,13 +44,36 @@ export class RlsMiddleware implements NestMiddleware {
     res.once('finish', () => finishResponse());
     res.once('close', () => finishResponse());
 
+    // Энэ массивыг `run()`-д дамжуулсан context-той ИЖИЛ reference-ээр
+    // хуваалцаж, доор (transaction амжилттай commit хийгдсэний дараа) дахин
+    // ашиглана — array бол доторх мөрөнд push хийхэд reference өөрчлөгдөхгүй.
+    const afterCommitCallbacks: Array<() => void> = [];
+
     this.prisma
       .runRequestTransaction(userId, (tx) =>
-        this.requestContext.run({ tx, userId }, async () => {
-          next();
-          await responseFinished;
-        }),
+        this.requestContext.run(
+          { tx, userId, afterCommitCallbacks },
+          async () => {
+            next();
+            await responseFinished;
+          },
+        ),
       )
+      .then(() => {
+        // Энэ мөрд хүрсэн үед `$transaction` (Prisma) аль хэдийн COMMIT
+        // хийгдсэн байна — зөвхөн ЭНЭ ХОЙНО л event/side-effect callback-уудыг
+        // ажиллуулна.
+        for (const callback of afterCommitCallbacks) {
+          try {
+            callback();
+          } catch (err) {
+            this.logger.error(
+              'afterCommit callback алдаа гарлаа',
+              err instanceof Error ? err.stack : err,
+            );
+          }
+        }
+      })
       .catch((err: unknown) => {
         this.logger.error(
           'RLS transaction алдаа гарлаа',

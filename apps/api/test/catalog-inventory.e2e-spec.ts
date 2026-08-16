@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import { SignJWT } from 'jose';
@@ -70,6 +71,7 @@ describe('Catalog & Inventory (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useWebSocketAdapter(new IoAdapter(app));
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
