@@ -9,11 +9,12 @@ import {
 import * as argon2 from 'argon2';
 import { SignJWT, jwtVerify } from 'jose';
 import { CUSTOMER_JWT_ISSUER } from '../auth/constants.js';
+import { LoginThrottleService } from '../common/login-throttle.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { LoginThrottleService } from './login-throttle.service.js';
 
 const ACCESS_TOKEN_EXPIRY = process.env.JWT_ACCESS_EXPIRY ?? '15m';
 const REFRESH_TOKEN_EXPIRY = '30d'; // §6.2 хүснэгт: харилцагчийн refresh token — 30 хоног
+const THROTTLE_NAMESPACE = 'auth-customer';
 
 export interface CustomerTokenPair {
   accessToken: string;
@@ -67,7 +68,7 @@ export class AuthCustomerService {
   }
 
   async login(phone: string, password: string): Promise<CustomerTokenPair> {
-    if (await this.loginThrottle.isBlocked(phone)) {
+    if (await this.loginThrottle.isBlocked(THROTTLE_NAMESPACE, phone)) {
       throw new HttpException(
         {
           code: 'TOO_MANY_ATTEMPTS',
@@ -87,7 +88,7 @@ export class AuthCustomerService {
     const userId = found[0]?.id ?? null;
 
     if (!userId) {
-      await this.loginThrottle.recordFailure(phone);
+      await this.loginThrottle.recordFailure(THROTTLE_NAMESPACE, phone);
       throw new UnauthorizedException({
         code: 'INVALID_CREDENTIALS',
         message: 'Утасны дугаар эсвэл нууц үг буруу байна',
@@ -107,14 +108,14 @@ export class AuthCustomerService {
       !user?.passwordHash ||
       !(await argon2.verify(user.passwordHash, password))
     ) {
-      await this.loginThrottle.recordFailure(phone);
+      await this.loginThrottle.recordFailure(THROTTLE_NAMESPACE, phone);
       throw new UnauthorizedException({
         code: 'INVALID_CREDENTIALS',
         message: 'Утасны дугаар эсвэл нууц үг буруу байна',
       });
     }
 
-    await this.loginThrottle.reset(phone);
+    await this.loginThrottle.reset(THROTTLE_NAMESPACE, phone);
     return this.issueTokenPair(user.id);
   }
 

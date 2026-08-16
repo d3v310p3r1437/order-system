@@ -73,6 +73,19 @@ Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэ�
   шаардахгүй `tx.$executeRaw` INSERT ашигладаг. **RLS-тэй хүснэгтэд
   Prisma-гийн `.create()/.update()`-ийг ирээдүйд ашиглахдаа энэ зальтай
   тулгарвал мөн адил raw INSERT/UPDATE руу шилжүүл.**
+- **Ажилтны нэвтрэлт (`auth-staff`) + admin-web login дууссан**: backend
+  `src/auth-staff` модуль — `POST /auth/staff/login` нь admin-web-ээс
+  Keycloak руу шууд хандахгүй (client secret browser-т задрахаас
+  сэргийлнэ), зөвхөн backend server-to-server Resource Owner Password
+  grant-аар Keycloak дуудаж, snake_case хариуг camelCase болгоно.
+  `LoginThrottleService`-ийг `src/common`-руу зөөж, namespace параметртэй
+  болгож (`auth-customer` / `auth-staff`) хоёр auth модуль хооронд
+  хуваалцав. `apps/admin-web`: Vite + React + TS + Tailwind v4 +
+  shadcn/ui (radix-nova, өөрийн cobalt-indigo палет) + TanStack Query
+  scaffold; ганц дэлгэц (router-гүй, useState conditional render) —
+  LoginForm ↔ Dashboard-lite (`GET /auth/me`-ээр "Дүр" харуулна), access
+  token зөвхөн in-memory React state-д (localStorage-гүй, XSS эрсдэлээс
+  сэргийлэх зорилготой, session персист дараагийн Phase-д).
 - Дараагийн ажил: `RolesGuard`/`@Roles()` (§6.1 матрицыг код болгох),
   `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах, refresh token
-  revocation store (хэрэгцээ гарвал)
+  revocation store (хэрэгцээ гарвал), admin-web-ийн салбар удирдах хуудас

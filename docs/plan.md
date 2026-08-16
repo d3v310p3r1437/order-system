@@ -290,7 +290,16 @@ SET LOCAL app.accessible_branches = $3;
 - [x] **(шинэ) Суурь аудит лог:** бүх mutation (create/update/delete) endpoint дээр `AuditInterceptor` — хэн, хэзээ, ямар хүснэгт, өмнөх/дараах утга (JSON diff) хадгална
 - [ ] **(шинэ) SMS gateway vendor үнэлгээ:** Монголын 2-3 нийлүүлэгчийг (жиш. Mobicom/Unitel corporate API, 3rd-party aggregator) харьцуулж сонгох, `SmsProvider` абстракц interface бичих (бодит интеграц Phase 7-д)
 - [ ] **(шинэ)** Mobile апп: нэвтрэлтийн дэлгэц дээр **"Утасны дугаараар (харилцагч) / И-мэйлээр (ажилтан)"** сонголт эсвэл автоматаар таних логик — асуудал #4
-- [ ] Admin-web: салбар удирдах хуудас, нэвтрэлтийн дэлгэц
+- [ ] Admin-web: салбар удирдах хуудас
+- [x] **(шинэ) Ажилтны нэвтрэлт (`auth-staff`):** `POST /auth/staff/login`
+      backend proxy (Keycloak Resource Owner Password grant, client secret
+      зөвхөн backend талд, admin-web Keycloak руу шууд хандахгүй),
+      `LoginThrottleService`-ийг харилцагчийн auth-тай хуваалцаж холбосон
+      (namespace-аар тусгаарласан), @Audit("users", "staff.login").
+      Admin-web: Vite + React + TS + Tailwind + shadcn/ui + TanStack Query
+      scaffold, LoginForm → Dashboard-lite (`GET /auth/me` дуудаж
+      "Тавтай морил, \<и-мэйл\>. Дүр: \<role\>" харуулна), access token
+      зөвхөн in-memory state-д (localStorage-гүй)
 - [ ] **(шинэ)** Backup drill — `pg_dump` автомат sync + сар бүр сэргээх тест **эхлэнэ** (§10.3)
 - [ ] Auth + audit unit/integration тест (`test-writer`)
 

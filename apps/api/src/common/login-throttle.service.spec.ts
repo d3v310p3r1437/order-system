@@ -7,7 +7,8 @@ import { LoginThrottleService } from './login-throttle.service.js';
 describe('LoginThrottleService', () => {
   let redis: RedisService;
   let throttle: LoginThrottleService;
-  const phone = `+9760000${Math.floor(Math.random() * 1000)}`;
+  const namespace = 'test-throttle';
+  const identifier = `+9760000${Math.floor(Math.random() * 1000)}`;
 
   beforeAll(() => {
     redis = new RedisService();
@@ -15,12 +16,12 @@ describe('LoginThrottleService', () => {
   });
 
   afterAll(async () => {
-    await redis.del(`auth-customer:login-fail:${phone}`);
+    await redis.del(`${namespace}:login-fail:${identifier}`);
     redis.disconnect();
   });
 
   it('эхлээд блоклогдоогүй байна', async () => {
-    expect(await throttle.isBlocked(phone)).toBe(false);
+    expect(await throttle.isBlocked(namespace, identifier)).toBe(false);
   });
 
   it('1-5 дахь оролдлогын өмнө блоклогдоогүй байна, 6 дахь шалгалт дээр блоклоно', async () => {
@@ -28,14 +29,20 @@ describe('LoginThrottleService', () => {
     // recordFailure() дуудна (§6.2: 1-5 дахь буруу оролдлого зөвшөөрөгдөнө,
     // 6 дахь нь тоолуур >=5 болсон тул шалгахаас нь өмнө блоклогдоно).
     for (let i = 0; i < 5; i++) {
-      expect(await throttle.isBlocked(phone)).toBe(false);
-      await throttle.recordFailure(phone);
+      expect(await throttle.isBlocked(namespace, identifier)).toBe(false);
+      await throttle.recordFailure(namespace, identifier);
     }
-    expect(await throttle.isBlocked(phone)).toBe(true);
+    expect(await throttle.isBlocked(namespace, identifier)).toBe(true);
   });
 
   it('reset дуудсаны дараа дахин блоклохгүй болно', async () => {
-    await throttle.reset(phone);
-    expect(await throttle.isBlocked(phone)).toBe(false);
+    await throttle.reset(namespace, identifier);
+    expect(await throttle.isBlocked(namespace, identifier)).toBe(false);
+  });
+
+  it('namespace тус бүрийн тоолуур тусдаа байна', async () => {
+    await throttle.recordFailure('other-namespace', identifier);
+    expect(await throttle.isBlocked(namespace, identifier)).toBe(false);
+    await redis.del(`other-namespace:login-fail:${identifier}`);
   });
 });

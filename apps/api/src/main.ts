@@ -6,6 +6,9 @@ import { HttpExceptionFilter } from './common/http-exception.filter.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  // admin-web (Vite dev server)-ээс browser-аар шууд дуудахыг зөвшөөрнө —
+  // §6.2: admin-web Keycloak руу шууд хандахгүй, зөвхөн энэ backend-ээр дамжина.
+  app.enableCors({ origin: 'http://localhost:5173', credentials: true });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
