@@ -32,6 +32,31 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 - `pnpm --filter api lint` — lint
 - `cd apps/mobile && flutter run` — mobile апп ажиллуулах
 
+## Хөгжүүлэлтийн орчны тохиргоо
+
+**GitHub CLI (`gh`) PATH асуудал (2026-08-16, шийдэгдсэн):** `gh.exe`
+(`C:\Program Files\GitHub CLI\gh.exe`) суулгагдсан ч Windows-ийн
+хэрэглэгчийн (User-level) PATH environment variable-д ороогүй байсан тул
+Claude Code-ийн Bash/PowerShell орчинд `gh: command not found` алдаа
+өгдөг байсан. Шийдвэрлэсэн арга (админ эрх шаардахгүй, `setx`-ийн
+1024 тэмдэгтийн хязгаарлалт/PATH таслах эрсдэлгүй):
+```powershell
+$p = [Environment]::GetEnvironmentVariable('Path','User')
+[Environment]::SetEnvironmentVariable('Path', $p + ';C:\Program Files\GitHub CLI', 'User')
+```
+мөн Git Bash-д шууд ажиллахын тулд `~/.bashrc`-д
+`export PATH="$PATH:/c/Program Files/GitHub CLI"` мөрийг нэмсэн.
+
+⚠️ **Чухал:** энэ өөрчлөлт зөвхөн **шинэ** процесст нөлөөлнө — аль хэдийн
+нээлттэй VS Code/терминал сесс дээр АВТОМАТААР шинэчлэгдэхгүй тул PATH
+өөрчлөлтийг ашиглахын тулд VS Code-оо (эсвэл терминалаа) бүрэн хааж
+дахин нээх шаардлагатай.
+
+Ирээдүйд ижил төстэй асуудал ("winget/msi-ээр суулгасан хэрэгсэл systemwide
+PATH-д ороогүй ч Program Files дор бодитоор оршдог") гарвал яг ижил
+аргыг (хэрэглэгчийн PATH-д Windows-ийн бодит суулгасан замыг нэмэх,
+`.bashrc`-д давхардуулах) ашиглана.
+
 ## Кодын стандарт (дэлгэрэнгүй: docs/plan.md §4)
 - TypeScript strict mode, ESLint+Prettier заавал
 - Commit: Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
