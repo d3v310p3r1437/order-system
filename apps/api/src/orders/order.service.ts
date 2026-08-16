@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,7 +14,12 @@ import {
   isForeignKeyViolation,
 } from '../common/prisma-errors.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
+import {
+  PAYMENT_PROVIDER,
+  type PaymentProvider,
+} from '../payment/payment-provider.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { OrderEventsPublisher } from '../realtime/order-events.publisher.js';
 import type {
   CheckoutOrderDto,
   CheckoutOrderItemDto,
@@ -70,7 +77,11 @@ interface ResolvedCheckoutItem {
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
+    private readonly orderEvents: OrderEventsPublisher,
+  ) {}
 
   findAll(filter: { status?: OrderStatus; branchId?: string }) {
     // RLS (orders_select) нь дүрд харагдахгүй мөрийг өөрөө шүүж хасна —
@@ -112,11 +123,35 @@ export class OrderService {
       new Prisma.Decimal(0),
     );
 
-    return this.withSavepoint(async () => {
+    // ⚠️ Чухал заль: `orders_update` RLS policy (20260816094000) нь
+    // CUSTOMER-ийн UPDATE-г ЗӨВХӨН status='CREATED'→'CANCELLED' шилжилтэд
+    // л зөвшөөрдөг (§7 модуль #6 cancel) — өөрөөр хэлбэл CUSTOMER өөрийн
+    // ШИНЭЭР үүсгэсэн CREATED захиалгандаа providerInvoiceId нэмж UPDATE
+    // хийх боломжгүй (status өөрчлөгдөхгүй тул WITH CHECK-ийн аль ч
+    // тал таарахгүй). Үүнийг шинэ SECURITY DEFINER функцгүйгээр (ADR 005
+    // зарчим: аль болох одоо байгаа механизмаар шийд) тойрохын тулд
+    // orderId-г Prisma-ийн DB талын `@default(uuid())`-ийн оронд ЭНД
+    // (application код) урьдчилж үүсгэж, PaymentProvider.createInvoice()-г
+    // Order мөр ҮҮСГЭХЭЭС ӨМНӨ дуудаж, `providerInvoiceId`-г эхний INSERT
+    // дотор нь шууд оруулна — `orders_insert` policy providerInvoiceId
+    // баганад хязгаарлалт тавьдаггүй тул энгийн CREATE-ээр л хангагдана.
+    const orderId = randomUUID();
+    // Санамж (docs/adr/006): энэ дуудлага SAVEPOINT/DB бичилтээс ӨМНӨ
+    // (гадна) хийгдэх тул хэрэв дараагийн DB бичилт (нөөц дутах гэх мэт)
+    // амжилтгүй болвол payment provider талд "эзэнгүй" (orphaned) invoice
+    // үлдэх эрсдэлтэй — MVP-д зөвшөөрөгдөх, ADR 006-д тэмдэглэсэн.
+    const invoice = await this.paymentProvider.createInvoice(
+      orderId,
+      totalAmount.toNumber(),
+    );
+
+    const result = await this.withSavepoint(async () => {
       const order = await this.createOrderRow(
+        orderId,
         customerId,
         dto.branchId,
         totalAmount,
+        invoice.providerInvoiceId,
       );
 
       await this.prisma.tx.orderItem.createMany({
@@ -139,6 +174,8 @@ export class OrderService {
 
       return this.findOne(order.id);
     });
+
+    return { ...result, payUrl: invoice.payUrl };
   }
 
   // Staff-ийн статус шинэчлэлт БОЛОН харилцагчийн cancel (docs/plan.md §7
@@ -170,7 +207,7 @@ export class OrderService {
       throw new BadRequestException(INVALID_TRANSITION);
     }
 
-    return this.withSavepoint(async () => {
+    const result = await this.withSavepoint(async () => {
       if (isRestockingTransition(dto.status)) {
         for (const item of order.items) {
           await this.adjustInventory(
@@ -185,6 +222,23 @@ export class OrderService {
       await this.updateOrderStatusRow(id, dto.status);
       return this.findOne(id);
     });
+
+    // docs/plan.md §8 Phase 3b, Хэсэг A #2: SAVEPOINT амжилттай RELEASE
+    // хийгдсэний ДАРАА л publish дуудна (withSavepoint дундаас биш) —
+    // хэрэв withSavepoint дотор шидвэл (жиш: дараагийн restock мөр
+    // амжилтгүй болвол) энэ дуудлага огт хийгдэхгүй, "худал" event
+    // огт бүртгэгдэхгүй. Бодит Redis publish нь ЭНДЭЭС ч ХОЙШ, зөвхөн
+    // RlsMiddleware-ийн бүхэл транзакц commit хийгдсэний ДАРАА л явагдана
+    // (OrderEventsPublisher-ийн `onCommit()`-г үз).
+    this.orderEvents.publishOrderStatusChanged({
+      orderId: order.id,
+      branchId: order.branchId,
+      customerId: order.customerId,
+      oldStatus: order.status,
+      newStatus: dto.status,
+    });
+
+    return result;
   }
 
   private async resolveCheckoutItem(
@@ -221,13 +275,22 @@ export class OrderService {
   }
 
   private async createOrderRow(
+    id: string,
     customerId: string,
     branchId: string,
     totalAmount: Prisma.Decimal,
+    providerInvoiceId: string,
   ) {
     try {
       return await this.prisma.tx.order.create({
-        data: { customerId, branchId, status: 'CREATED', totalAmount },
+        data: {
+          id,
+          customerId,
+          branchId,
+          status: 'CREATED',
+          totalAmount,
+          providerInvoiceId,
+        },
       });
     } catch (error) {
       if (isForeignKeyViolation(error)) {

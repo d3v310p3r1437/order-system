@@ -185,7 +185,8 @@ export interface Order {
   updatedAt: string;
   completedAt: string | null;
   cancelledAt: string | null;
-  qpayPaymentId: string | null;
+  providerInvoiceId: string | null;
+  paidAt: string | null;
   items: OrderItem[];
 }
 

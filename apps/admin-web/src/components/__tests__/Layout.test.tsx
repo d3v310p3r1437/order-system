@@ -11,6 +11,12 @@ vi.mock("@/lib/api", async () => {
   return { ...actual, getMe: vi.fn() };
 });
 
+// useOrderEvents (src/lib/realtime.ts) бодит WebSocket холболт хийхийг
+// сэргийлнэ — энэ тестэд backend/сүлжээ шаардлагагүй байх ёстой.
+vi.mock("socket.io-client", () => ({
+  io: vi.fn(() => ({ on: vi.fn(), disconnect: vi.fn() })),
+}));
+
 describe("Layout", () => {
   it("хэрэглэгчийн и-мэйл, дүрийн монгол нэршил, Гарах товчийг харуулна", async () => {
     vi.mocked(api.getMe).mockResolvedValue({

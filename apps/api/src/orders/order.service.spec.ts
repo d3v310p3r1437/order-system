@@ -52,9 +52,30 @@ function buildPrismaMock() {
   };
 }
 
-function newService(prisma: unknown) {
+function buildPaymentProviderMock() {
+  return {
+    createInvoice: jest.fn().mockResolvedValue({
+      providerInvoiceId: 'mock_inv_1',
+      payUrl: 'mock://pay/1',
+    }),
+    checkPayment: jest.fn(),
+    refundPayment: jest.fn(),
+  };
+}
+
+function buildOrderEventsPublisherMock() {
+  return { publishOrderStatusChanged: jest.fn() };
+}
+
+function newService(
+  prisma: unknown,
+  paymentProvider = buildPaymentProviderMock(),
+  orderEvents = buildOrderEventsPublisherMock(),
+) {
   return new OrderService(
     prisma as ConstructorParameters<typeof OrderService>[0],
+    paymentProvider,
+    orderEvents as ConstructorParameters<typeof OrderService>[2],
   );
 }
 

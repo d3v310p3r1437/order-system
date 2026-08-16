@@ -234,8 +234,17 @@ model Order {
   // Phase 3c-ийн 7-хоногийн буцаалтын цонжинд хэрэгтэй тул одоо л оруулав.
   completedAt DateTime?
   cancelledAt DateTime?
-  // Phase 3b дүүргэнэ (QPay invoice id) — одоо схемд л байрлуулж байна.
-  qpayPaymentId String?
+  // Phase 3b: PaymentProvider.createInvoice()-ийн буцаасан ID (mock эсвэл
+  // QPay) — src/payment/payment-provider.interface.ts. Webhook-ийн
+  // "verify don't trust" баталгаажуулалтад (app_mark_order_paid SECURITY
+  // DEFINER функц, docs/adr/006) ЯГ ЭНЭ утгыг тулгаж шалгадаг тул нэрийг
+  // provider-нейтраль болгож сольсон (өмнө нь qpayPaymentId байсан).
+  providerInvoiceId String? @unique
+  // Webhook (POST /payment/webhook/:orderId) идэвхтэй provider-ийн
+  // checkPayment()-ээр PAID гэдгийг сервер талд дахин баталгаажуулсны
+  // дараа л тавигдана (docs/adr/006) — webhook payload-д ирсэн статусыг
+  // шууд итгэж бичихгүй.
+  paidAt DateTime?
 
   items OrderItem[]
 

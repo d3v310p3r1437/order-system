@@ -26,7 +26,8 @@ const SAMPLE_ORDER: api.Order = {
   updatedAt: "2026-08-16T10:00:00.000Z",
   completedAt: null,
   cancelledAt: null,
-  qpayPaymentId: null,
+  providerInvoiceId: null,
+  paidAt: null,
   items: [
     {
       id: "item-1",
