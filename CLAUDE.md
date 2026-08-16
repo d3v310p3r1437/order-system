@@ -47,7 +47,8 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэнгүй: `docs/plan.md` §8.
+Phase 2 — Каталог ба агуулах (1-р хэсэг: схем + CRUD API дууссан, MinIO/
+Meilisearch/UI хараахан эхлээгүй). Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -87,6 +88,33 @@ Phase 1 — Суурь бүтэц, Auth, RLS, аудит лог. Дэлгэрэ�
   token зөвхөн in-memory React state-д (localStorage-гүй, XSS эрсдэлээс
   сэргийлэх зорилготой, session персист дараагийн Phase-д) —
   `docs/adr/004-admin-web-token-storage.md`.
-- Дараагийн ажил: `RolesGuard`/`@Roles()` (§6.1 матрицыг код болгох),
-  `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах, refresh token
-  revocation store (хэрэгцээ гарвал), admin-web-ийн салбар удирдах хуудас
+- **Каталог + агуулах (Phase 2, 1-р хэсэг) дууссан**: schema.prisma-д
+  `Category`/`Product`/`ProductVariant`/`InventoryItem` нэмэгдсэн (migration
+  `add_catalog_inventory` + `enable_catalog_inventory_rls` — өмнөх
+  `app_current_user_id()`/`app_has_global_scope()`/`app_can_manage_branch()`
+  функцүүдийг л дахин ашигласан, шинэ SECURITY DEFINER функц НЭМЭЭГҮЙ).
+  `src/catalog/{category,product,product-variant}` + `src/inventory` модуль.
+  **`RolesGuard`/`@Roles()` эцэст нь хэрэгжсэн** (`src/common/roles.guard.ts`,
+  `roles.decorator.ts` — audit.decorator.ts-тэй ижил SetMetadata+Reflector
+  загвар, шинэ authorization архитектур зохиогоогүй): @Roles()-гүй бол зөвхөн
+  "нэвтэрсэн эсэх", @Roles(...)-той бол `user_branch_roles`-аас (эсвэл
+  authProvider=CUSTOMER_AUTH бол CUSTOMER) уншсан дүрийг тулгана. RLS
+  (мөр-түвшин) хэвээр сүүлчийн хамгаалалт. InventoryItem-ийн тоо хэмжээ
+  зөвхөн delta-аар (`{ increment: delta }`, DB CHECK `quantity >= 0` —
+  race-safe, read-then-write биш) өөрчлөгдөнө.
+  ⚠️ **Чухал заль:** `AuditInterceptor.captureBeforeData`-ийн raw SELECT
+  promise-г шууд `.catch(() => null)`-оор атгах ёстой (эх файл дотор
+  тайлбарласан) — эс бөгөөс handler алдаа шидэж (жиш: RLS-ээр хориглогдсон
+  мөр рүү update) `concatMap`-ийн callback ер нь ажиллахгүй тохиолдолд
+  captureBeforeData-ийн promise хэзээ ч уншигдахгүй, харин чинжбол алдаа
+  шидвэл orphaned rejection болж, e2e тестийг санамсаргүй, буруу мөр рүү
+  чиглэсэн stack trace-тэйгээр унагаадаг байсан (debug хийхэд их цаг зарцуулсан).
+  ⚠️ **Prisma 6.19-ийн алдааны код гэнэтийн зан:** typed (raw биш) `.update()`
+  дээр Postgres CHECK constraint зөрчигдвөл P2004 биш,
+  `PrismaClientUnknownRequestError` (алдааны `message`-дээ л Postgres код
+  (жиш: "23514") агуулна) шидэх нь бодит e2e тестээр батлагдсан —
+  `src/common/prisma-errors.ts`-ийн `isCheckConstraintViolation()`-г үз.
+- Дараагийн ажил: MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
+  admin-web/mobile-ийн каталог/агуулах UI, `DebugController`-ыг устгах/
+  SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
+  гарвал), admin-web-ийн салбар удирдах хуудас

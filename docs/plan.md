@@ -306,12 +306,26 @@ SET LOCAL app.accessible_branches = $3;
 ### Phase 2 — Каталог ба агуулах (2-3 долоо хоног)
 (v1.0-той бараг адил, доор нэмэлт)
 
-- [ ] Бүтээгдэхүүн, ангилал, вариант схем + CRUD API (§6.1 матрицын эрхээр хязгаарласан)
+- [x] Бүтээгдэхүүн, ангилал, вариант схем + CRUD API (§6.1 матрицын эрхээр
+      хязгаарласан): `Category`/`Product`/`ProductVariant`/`InventoryItem`
+      Prisma model + migration (`add_catalog_inventory`,
+      `enable_catalog_inventory_rls` — өмнөх `app_current_user_id()`/
+      `app_has_global_scope()`/`app_can_manage_branch()` функцүүдийг л дахин
+      ашигласан, шинэ SECURITY DEFINER функц нэмээгүй). `RolesGuard`/
+      `@Roles()` (§6.1 матрицыг эцэст нь код болгосон — өмнө нь "дараагийн
+      ажил" гэж CLAUDE.md-д тэмдэглэгдсэн байсан) endpoint бүрт, DTO
+      validation (class-validator), InventoryItem-ийн тоо хэмжээ өөрчлөх нь
+      atomic `{ increment: delta }` (+ DB CHECK constraint `quantity >= 0`
+      race-safe хамгаалалт).
 - [ ] MinIO зураг байршуулах endpoint
 - [ ] Meilisearch индексжилтийн pipeline
-- [ ] Салбар тус бүрийн нөөцийн хүснэгт, дутагдлын сэрэмжлүүлэг
+- [x] Салбар тус бүрийн нөөцийн хүснэгт, дутагдлын сэрэмжлүүлэг:
+      `InventoryItem.lowStockThreshold` талбар нэмэгдсэн (сэрэмжлүүлэг
+      ИЛГЭЭХ мэдэгдлийн урсгал өөрөө Phase 4-ийн мэдэгдлийн модультай хамт
+      хэрэгжинэ — энд зөвхөн өгөгдлийн загвар).
 - [ ] Admin-web + Mobile: каталог/агуулах UI (Phase 0.5-ийн дизайны дагуу)
-- [ ] **(шинэ)** Аудит лог: бүтээгдэхүүн/нөөцийн өөрчлөлт бүрт бичигдэж байгааг баталгаажуулах тест
+- [x] **(шинэ)** Аудит лог: бүтээгдэхүүн/нөөцийн өөрчлөлт бүрт бичигдэж
+      байгааг баталгаажуулах тест (`test/catalog-inventory.e2e-spec.ts`)
 
 ### Phase 3a — Сагс ба захиалгын үндсэн урсгал (2 долоо хоног) — **v1.0-ийн Phase 3-аас задарсан**
 

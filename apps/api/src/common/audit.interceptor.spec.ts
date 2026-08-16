@@ -165,6 +165,27 @@ describe('AuditInterceptor', () => {
     expect(executeRaw).not.toHaveBeenCalled();
   });
 
+  it('captureBeforeData (raw SELECT) шидэх алдаа mutation-ы амжилттай хариуг унагаахгүй, зөвхөн анхааруулга бичнэ', async () => {
+    const metadata: AuditMetadata = { tableName: 'inventory_items' };
+    reflectorGet.mockReturnValue(metadata);
+    queryRawUnsafe.mockRejectedValue(new Error('raw select boom'));
+    const ctx = mockContext({
+      method: 'PATCH',
+      params: { id: 'item-1' },
+      url: '/inventory-items/item-1/adjust-quantity',
+    });
+
+    const responseBody = { id: 'item-1', quantity: 4 };
+    const result = await lastValueFrom(
+      interceptor().intercept(ctx, mockCallHandler(responseBody)),
+    );
+
+    expect(result).toEqual(responseBody);
+    const call = executeRaw.mock.calls[0] as unknown[];
+    expect(call[InsertArg.BeforeData]).toBeNull();
+    expect(call[InsertArg.AfterData]).toBe(JSON.stringify(responseBody));
+  });
+
   it('буруу (том үсэг/тусгай тэмдэгттэй) tableName-той @Audit-ыг алгасна', async () => {
     const metadata = { tableName: 'DROP TABLE users;--' } as AuditMetadata;
     reflectorGet.mockReturnValue(metadata);
