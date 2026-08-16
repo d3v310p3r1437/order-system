@@ -81,11 +81,15 @@ export class ProductService {
     const rows = await this.prisma.tx.$queryRaw<InventorySnapshotRow[]>`
       SELECT * FROM app_inventory_snapshot_for_variant(${variant.id}, ${branchId ?? null})
     `;
-    if (rows.length === 0) {
-      return { status: 'OUT_OF_STOCK', leadDays: null };
-    }
-
-    const computed = rows.map((row) => computeAvailabilityStatus(row, variant));
+    // Мөр байхгүй ("энэ салбар/аль ч салбар энэ variant-ийг огт
+    // захиалаагүй") тохиолдлыг computeAvailabilityStatus(null, variant)
+    // өөрөө OUT_OF_STOCK болгож шийддэг тул энд тусад нь шалгахгүй —
+    // ганц эх сурвалж (inventory-effective.util.ts).
+    const entries: (InventorySnapshotRow | null)[] =
+      rows.length > 0 ? rows : [null];
+    const computed = entries.map((row) =>
+      computeAvailabilityStatus(row, variant),
+    );
     const inStock = computed.find((c) => c.status === 'IN_STOCK');
     if (inStock) {
       return inStock;
