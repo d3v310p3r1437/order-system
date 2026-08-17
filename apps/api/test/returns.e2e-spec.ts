@@ -9,6 +9,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { CUSTOMER_JWT_ISSUER } from '../src/auth/constants.js';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 
 interface ErrorBody {
   error: { code: string; message: string; details: unknown };
@@ -74,6 +75,7 @@ async function waitFor<T>(
 describe('Returns (e2e)', () => {
   let app: INestApplication<App>;
   let superuserPrisma: PrismaClient;
+  let prismaService: PrismaService;
 
   let branchA: { id: string };
   let branchB: { id: string };
@@ -85,6 +87,7 @@ describe('Returns (e2e)', () => {
   let customerToken: string;
   let otherCustomerToken: string;
   let customerId: string;
+  let otherCustomerId: string;
 
   let variantId: string;
   let variantBasePrice: number;
@@ -106,6 +109,8 @@ describe('Returns (e2e)', () => {
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
 
+    prismaService = app.get(PrismaService);
+
     superuserPrisma = new PrismaClient({
       datasources: { db: { url: process.env.DATABASE_URL } },
     });
@@ -121,7 +126,7 @@ describe('Returns (e2e)', () => {
     const branchManagerAId = randomUUID();
     const salespersonAId = randomUUID();
     const branchManagerBId = randomUUID();
-    const otherCustomerId = randomUUID();
+    otherCustomerId = randomUUID();
     customerId = randomUUID();
 
     await superuserPrisma.user.create({
@@ -318,6 +323,42 @@ describe('Returns (e2e)', () => {
         .send({ orderItemId: order.items[0].id, reason: 'миний биш ч оролдъё' })
         .expect(404);
       expect((res.body as ErrorBody).error.code).toBe('ORDER_ITEM_NOT_FOUND');
+    });
+
+    // ⚠️ Дээрх 404-той тест зөвхөн ReturnRequestService.create()-ийн
+    // ӨМНӨХ SELECT (order_items_select RLS-ээр null буцаах) шалгалтыг
+    // л шалгадаг — return_requests_insert-ийн WITH CHECK ЗАРЧМЫН хувьд
+    // ХЭЗЭЭ Ч хүрдэггүй (service нь INSERT-д хүрэхээс өмнө аль хэдийн
+    // 404 шидчихдэг). ReturnRequestService-ийг ирээдүйд заавал ГАРАН
+    // (жиш: someone accidentally-г preflight-ыг устгах гэх мэт алдаа)
+    // хамгаалах "сүүлчийн шугам" гэдгийг ЭНЭ RLS policy-г ӨӨРИЙГ нь,
+    // service давхаргыг бүрэн тойрч, шууд raw SQL-ээр шалгана —
+    // `PrismaService.runRequestTransaction()`-оор (order-events.gateway.ts-д
+    // ашигладаг ижил механизм) otherCustomer-ийн session нээж, ЧАДАМЖТАЙ
+    // (requestedByUserId=otherCustomer, ӨӨРИЙНХ нь) ч БУСДЫН (customerId)
+    // orderItemId зорьсон raw INSERT оролдоно.
+    it('return_requests_insert RLS policy: requestedByUserId ӨӨРИЙНХ байсан ч orderItemId БУСДЫН эзэмшлийнх бол INSERT цуцлагдана (service давхаргыг тойрсон шууд SQL-ээр)', async () => {
+      const order = await checkoutAndComplete(branchA.id, branchManagerAToken);
+      const orderItemId = order.items[0].id;
+
+      await expect(
+        prismaService.runRequestTransaction(
+          otherCustomerId,
+          (tx) =>
+            tx.$executeRaw`
+            INSERT INTO return_requests (id, "orderItemId", "requestedByUserId", reason)
+            VALUES (${randomUUID()}, ${orderItemId}, ${otherCustomerId}, 'RLS цоорхойг шалгах оролдлого')
+          `,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+
+      // Хамгийн чухал нь: RLS татгалзсаны улмаас ЯМАР Ч мөр бодитоор
+      // бичигдээгүй эсэхийг (алдаа шидсэн ч зарим орчинд "0 мөр INSERT
+      // хийгдсэн" гэдэгтэй андуурч болзошгүй тул) шууд DB-ээс баталгаажуулав.
+      const leaked = await superuserPrisma.returnRequest.findFirst({
+        where: { orderItemId, requestedByUserId: otherCustomerId },
+      });
+      expect(leaked).toBeNull();
     });
 
     it('хүчинтэй хүсэлт REQUESTED төлөвтэй үүсэж, audit лог бичигдэнэ, давхар идэвхтэй хүсэлт 409', async () => {
