@@ -84,7 +84,7 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц (Mock+QPay stub)
+Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон)
 дууссан; geolocation auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй:
 `docs/plan.md` §8.
 
@@ -384,6 +384,76 @@ Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц 
   4 дэх багана (`actual_provider_invoice_id`) нэмж өргөтгөж, ERROR
   лог-д "webhook-ээр ирсэн vs DB-д бодитоор байгаа" зөрүүг тодорхой
   бичих боломжтой болгов. `docs/adr/006`-ийн тус хэсгийг үз.
+- **Буцаалт ба нөхөн төлбөр (Phase 3c) дууссан** (`docs/plan.md` §7 модуль
+  #9, §8 Phase 3c — анх Phase 6-д төлөвлөгдсөн байсан ч энэ даалгаварт
+  зориулж эрт орсон): `SystemSetting` (`key`/`value`, RLS: SELECT бүх
+  нэвтэрсэн, UPDATE зөвхөн `app_has_global_scope()`) + `ReturnRequest`
+  (`ReturnStatus`: REQUESTED/APPROVED/REJECTED/REFUNDED/REFUND_FAILED)
+  Prisma загвар + migration (`add_returns_and_settings`, RLS
+  `enable_returns_settings_rls` — Phase 1-ийн `app_current_user_id()`/
+  `app_has_global_scope()`/`app_can_manage_branch()`-г л дахин ашигласан,
+  шинэ SECURITY DEFINER функц НЭМЭЭГҮЙ). `RETURN_FEE_PERCENT` анхны утга
+  (10%) migration дотор seed хийсэн тул `SystemSettingService`-д null
+  fallback-ийг тусад нь шалгах шаардлагагүй (эелдэг fallback хэвээр
+  үлдсэн ч). `src/returns` (`ReturnRequestService`/`Controller`),
+  `src/settings` (`SystemSettingService`/`Controller`) модуль.
+  ⚠️ **Чухал заль (ADR 005-ийн WRITE зарчмыг практикт нотолсон жишээ):**
+  зөвшөөрөх урсгалд (`PATCH /returns/:id/approve`) нөөц буцаахдаа шинэ
+  SECURITY DEFINER функц ЗОХИОГООГҮЙ — Phase 3a-ийн
+  `app_adjust_inventory_for_order()`-г ШУУД дахин ашигласан, учир нь энд
+  (checkout/cancel-ийн CUSTOMER/SALESPERSON-ээс ЯЛГААТАЙ нь) дуудагч
+  ЗААВАЛ staff (BRANCH_ADMIN/BRANCH_MANAGER/global) байдаг тул тэр функцийн
+  дотоод `app_can_manage_branch()` зөвшөөрлийн нөхцлийг shuud хангадаг —
+  ADR 005-ийн "өмнө нь бичигдсэн ижил зорилготой функц байхгүй эсэхийг
+  эхлээд шалга" зарчим анх удаа бодитоор "шинэ функц ЗОХИОХГҮЙ" гэсэн үр
+  дүнд хүргэсэн тохиолдол. `ReturnRequest` UPDATE (approve/reject) мөн
+  энгийн typed Prisma `.update()`-ээр шууд ажилладаг — учир нь
+  `return_requests_update` RLS policy-ийн нөхцөл яг ижил
+  `app_can_manage_branch()`-д тулгуурладаг тул staff аль хэдийн SELECT/
+  UPDATE аль алиныг нь давхар хангадаг (ADR 001-ийн "UPDATE-д SELECT
+  policy давхар шаардагддаг" нээлт энд асуудал үүсгээгүй).
+  ⚠️ **Чухал заль (SAVEPOINT дахин ашиглалт):** Phase 3a-д
+  `OrderService`-ийн private method байсан SAVEPOINT логикийг
+  `src/common/savepoint.util.ts`-руу зөөж (`withSavepoint(tx, fn)`,
+  давхцалгүй нэрийн тоолуур залгасан) `OrderService`-г ч мөн шинэчлэн
+  дахин ашигласан — хоёр дахь service (`ReturnRequestService`) яг ижил
+  "хэсэгчилсэн rollback" хэрэгцээтэй болсноор код давхардуулахаас
+  сэргийлэв (CLAUDE.md-ийн "логик давхардуулахгүй" зарчим SQL функцээс
+  гадна TS туслах логикт ч хамаарна).
+  Зөвшөөрөх урсгал: SystemSetting-ээс шимтгэл унших → snapshot
+  (`refundFeePercent`/`refundAmount`) тооцох → идэвхтэй
+  `PaymentProvider.refundPayment()` дуудах (SAVEPOINT-ын ГАДНА, checkout-ийн
+  `createInvoice()`-той ижил зарчим) → амжилттай бол `REFUNDED` + нөөц
+  буцаах, амжилтгүй бол `REFUND_FAILED`. **REFUND_FAILED-ээс ЯГ ЭНЭ ижил
+  `/approve` endpoint-оор дахин дуудаж "гараар дахин оролдох" боломжтой**
+  (тусдаа retry endpoint зохиогоогүй) — `approve()` REQUESTED-ийн зэрэгцээ
+  REFUND_FAILED-ийг ч эхлэх цэг болгож зөвшөөрдөг.
+  ⚠️ **Чухал заль (MockPaymentProvider бодитоор ажиллах болгосон):**
+  `refundPayment()` өмнө нь аргументаа огт үл тоомсорлож үргэлж амжилттай
+  буцдаг байсан тул REFUND_FAILED замыг детерминистикээр (тусгай
+  simulate-endpoint шаардлагагүйгээр) e2e/нэгж тестээр турших боломжгүй
+  байсан — одоо зөвхөн invoice PAID төлөвт байх үед л амжилттай ажилладаг
+  (QPay-тай адил бодит хязгаарлалт simulate хийсэн) болгож, тест-д
+  simulate-paid дуудсан эсэхээс шалтгаалж REFUNDED/REFUND_FAILED хоёуланг
+  нь детерминистикээр гаргадаг болгов.
+  WebSocket: `return.status_changed` event (Phase 3b-ийн `onCommit()`
+  gated pattern-ийг дахин ашигласан, шинэ room зохиогоогүй — `orderRoom`/
+  `branchRoom`-г л ашигласан). Тохиргооны API: `GET/PUT
+  /settings/return-fee-percent` (PUT зөвхөн `SUPER_ADMIN`/`OWNER`/
+  `ALL_BRANCH_MANAGER` — `system_settings_update` RLS-тэй ЯГ тохирно,
+  admin-web-ийн `RETURN_FEE_WRITE_ROLES`-той давхар нийцүүлсэн).
+  Admin-web: "Буцаалтууд" (`/returns`, `/returns/:id`) дэлгэц (жагсаалт,
+  дэлгэрэнгүй, Зөвшөөрөх/Татгалзах товч, REFUND_FAILED үед "Дахин оролдох"
+  товч), `RejectReturnDialog`; тусдаа "Тохиргоо" route зохиогоогүй,
+  Dashboard-д `ReturnFeeSettingCard`-ыг зөвхөн global-scope дүрд харуулна.
+  Харилцагчийн буцаалт хүсэх (`POST /returns`) зөвхөн API/e2e түвшинд
+  шалгасан (Flutter UI Phase 3c-д ороогүй, өмнөх Phase-үүдтэй ижил зарчим).
+  Тест: unit (`return-refund.util.spec.ts` 100%, `return-request.
+  service.spec.ts`, `system-setting.service.spec.ts`,
+  `savepoint.util.spec.ts`) + e2e (`test/returns.e2e-spec.ts` — 7 хоногийн
+  цонх хэтрэлт/хэтрээгүй, давхар идэвхтэй хүсэлт татгалзагдах, зөвшөөрөхөд
+  refund+restock хамт явагдах, refund амжилтгүй үед REFUND_FAILED, тэндээс
+  дахин оролдоход амжилттай, RLS дүр тус бүрээр, тохиргооны API).
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web

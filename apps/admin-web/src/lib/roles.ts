@@ -41,6 +41,20 @@ export const ORDER_STATUS_UPDATE_ROLES = [
   "SALESPERSON",
 ];
 
+// ↔ apps/api/src/returns/return-request.controller.ts (REVIEW_ROLES) —
+// SALESPERSON ЗОРИУДАА ороогүй (харах эрхтэй ч зөвшөөрөх/татгалзах эрхгүй,
+// return_requests_update RLS-тэй тохирно).
+export const RETURN_REVIEW_ROLES = [
+  "SUPER_ADMIN",
+  "ALL_BRANCH_MANAGER",
+  "BRANCH_ADMIN",
+  "BRANCH_MANAGER",
+];
+
+// ↔ apps/api/src/settings/system-setting.controller.ts (RETURN_FEE_WRITE_ROLES)
+// — system_settings_update RLS (app_has_global_scope())-тэй тохирно.
+export const RETURN_FEE_WRITE_ROLES = ["SUPER_ADMIN", "OWNER", "ALL_BRANCH_MANAGER"];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

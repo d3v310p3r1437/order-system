@@ -15,6 +15,8 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { OrderModule } from './orders/order.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { ReturnModule } from './returns/return.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 
 @Module({
   imports: [
@@ -27,6 +29,8 @@ import { RedisModule } from './redis/redis.module.js';
     CatalogModule,
     InventoryModule,
     OrderModule,
+    SettingsModule,
+    ReturnModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [

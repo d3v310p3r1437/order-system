@@ -31,9 +31,22 @@ describe('MockPaymentProvider', () => {
     expect(check.status).toBe('FAILED');
   });
 
-  it('refundPayment() providerRefundId буцаана', async () => {
+  it('PAID invoice-г refundPayment() хийхэд providerRefundId буцаана', async () => {
     const provider = new MockPaymentProvider();
-    const refund = await provider.refundPayment('mock_x', 500);
+    const invoice = await provider.createInvoice('order-1', 1000);
+    provider.simulatePaid(invoice.providerInvoiceId);
+
+    const refund = await provider.refundPayment(invoice.providerInvoiceId, 500);
     expect(refund.providerRefundId).toMatch(/^mock_refund_/);
+  });
+
+  it('PAID БИШ (PENDING эсвэл танигдаагүй) invoice-г refundPayment() хийхийг оролдвол алдаа шидэнэ (§8 Phase 3c REFUND_FAILED зам)', async () => {
+    const provider = new MockPaymentProvider();
+    const invoice = await provider.createInvoice('order-1', 1000);
+
+    await expect(
+      provider.refundPayment(invoice.providerInvoiceId, 500),
+    ).rejects.toThrow();
+    await expect(provider.refundPayment('mock_unknown', 500)).rejects.toThrow();
   });
 });

@@ -20,6 +20,21 @@ export interface OrderStatusChangedEvent {
   newStatus: OrderStatus;
 }
 
+export type ReturnStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "REFUNDED"
+  | "REFUND_FAILED";
+
+export interface ReturnStatusChangedEvent {
+  returnRequestId: string;
+  orderId: string;
+  branchId: string;
+  customerId: string;
+  status: ReturnStatus;
+}
+
 // docs/plan.md §8 Phase 3b, Хэсэг A #4: apps/api/src/realtime/order-events.gateway.ts-тэй
 // холбогдож, PATCH /orders/:id/status амжилттай ажиллах бүрт "Захиалгууд"
 // (`/orders`, `/orders/:id`) дэлгэцийн TanStack Query cache-ийг автоматаар
@@ -51,6 +66,20 @@ export function useOrderEvents(accessToken: string | null): void {
         queryKey: ["order", payload.orderId],
       });
     });
+
+    // §7 модуль #9, §8 Phase 3c: PATCH /returns/:id/approve|reject амжилттай
+    // ажилласан бүрт "Буцаалтууд" дэлгэцийн cache-ийг invalidate хийнэ —
+    // order.status_changed-тэй ижил зарчим (backend event-ийг ШУУД
+    // ашиглахгүй, зөвхөн "ямар нэг зүйл өөрчлөгдсөн" гэдгийг л дохио болгоно).
+    socket.on(
+      "return.status_changed",
+      (payload: ReturnStatusChangedEvent) => {
+        void queryClient.invalidateQueries({ queryKey: ["returns"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["return", payload.returnRequestId],
+        });
+      },
+    );
 
     return () => {
       socket.disconnect();

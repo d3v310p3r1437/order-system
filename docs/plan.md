@@ -490,6 +490,55 @@ SET LOCAL app.accessible_branches = $3;
       турших, `docs/adr/006`-ийн "заавал баталгаажуулах зүйлс" checklist-ийг
       гүйцээх
 
+### Phase 3c — Буцаалт ба нөхөн төлбөр (1 долоо хоног) — **Phase 6-с эрт орсон**
+
+- [x] `SystemSetting` (`key`/`value`, RLS: SELECT бүх нэвтэрсэн, UPDATE зөвхөн
+      `app_has_global_scope()`) + `ReturnRequest` (`ReturnStatus` enum:
+      REQUESTED/APPROVED/REJECTED/REFUNDED/REFUND_FAILED) Prisma загвар +
+      migration (`add_returns_and_settings`, RLS
+      `enable_returns_settings_rls`) — өмнөх `app_current_user_id()`/
+      `app_has_global_scope()`/`app_can_manage_branch()`-г л дахин ашигласан,
+      шинэ SECURITY DEFINER функц НЭМЭЭГҮЙ. `RETURN_FEE_PERCENT` анхны утга
+      (10%) migration дотор seed хийсэн.
+- [x] Business logic шалгалт (`src/returns/return-refund.util.ts`, цэвэр
+      функц, 100% нэгж тест): Order.status='COMPLETED' ба
+      `completedAt`-аас хойш ≤7 хоног, идэвхтэй (REQUESTED/APPROVED)
+      ReturnRequest давхардуулахгүй.
+- [x] Зөвшөөрөх урсгал (`PATCH /returns/:id/approve`): SystemSetting-ээс
+      шимтгэл унших → `refundFeePercent`/`refundAmount` snapshot →
+      идэвхтэй `PaymentProvider.refundPayment()` дуудах → амжилттай бол
+      `REFUNDED` + нөөц буцаах, амжилтгүй бол `REFUND_FAILED` (staff-д
+      харагдаж, ижил endpoint-оор гараар дахин оролдох боломжтой).
+      ⚠️ **ADR 005-ийн зарчмыг баталгаажуулав:** нөөц буцаахад шинэ
+      SECURITY DEFINER функц ЗОХИОГООГҮЙ — staff (зөвшөөрөгч) аль хэдийн
+      `app_can_manage_branch()` нөхцлийг хангадаг тул Phase 3a-ийн
+      `app_adjust_inventory_for_order()`-г шууд дахин ашигласан.
+      `MockPaymentProvider.refundPayment()`-ийг зөвхөн PAID invoice дээр л
+      амжилттай ажилладаг болгож (өмнө нь аргумент үл тоомсорлодог байсан)
+      REFUND_FAILED замыг детерминистикээр e2e-ээр турших боломжтой
+      болгов.
+- [x] Татгалзах урсгал (`PATCH /returns/:id/reject`): `rejectedReason`
+      заавал, `InventoryItem`/refund огт хөндөхгүй.
+- [x] `@Audit` бүх mutation дээр. WebSocket `return.status_changed` event
+      (`RequestContextService.onCommit()`-ийн gated pattern, Phase
+      3b-гээс дахин ашигласан).
+- [x] Тохиргооны API: `GET/PUT /settings/return-fee-percent` (PUT зөвхөн
+      global-scope дүрд, `system_settings_update` RLS-тэй ЯГ тохирно).
+- [x] **Admin-web**: "Буцаалтууд" (`/returns`, `/returns/:id`) дэлгэц —
+      жагсаалт (статусаар шүүх), дэлгэрэнгүй, Зөвшөөрөх/Татгалзах товч
+      (`RejectReturnDialog`), REFUND_FAILED үед "Дахин оролдох" товч.
+      Dashboard-д (тусдаа route зохиогоогүй) `ReturnFeeSettingCard` —
+      зөвхөн global-scope дүрд харагдана.
+- [x] Харилцагчийн буцаалт хүсэх (`POST /returns`) ЗӨВХӨН API/e2e түвшинд
+      шалгасан (Flutter UI Phase 3c-д ороогүй).
+- [x] Тест: unit (`return-refund.util.spec.ts` 100%, `return-request.
+      service.spec.ts`, `system-setting.service.spec.ts`,
+      `savepoint.util.spec.ts` — Phase 3a-ийн `OrderService`-ийн
+      SAVEPOINT логикийг `common/savepoint.util.ts`-руу зөөж хоёр service
+      хооронд дахин ашигласан) + e2e (`test/returns.e2e-spec.ts` — 7
+      хоногийн цонх, давхар идэвхтэй хүсэлт, refund амжилттай/амжилтгүй/
+      дахин оролдох, RLS дүр тус бүрээр, тохиргооны API).
+
 ### Phase 4 — Гүйцэтгэл, хүргэлт, мэдэгдэл (2-3 долоо хоног)
 
 - [ ] Худалдагчийн ажлын урсгал
@@ -500,9 +549,9 @@ SET LOCAL app.accessible_branches = $3;
 ### Phase 5 — Тайлан ба олон-салбарын удирдлага (1-2 долоо хоног)
 (v1.0-той адил)
 
-### Phase 6 — Буцаалт, урамшуулал, дэмжлэг, эрх зүйн бэлтгэл (2-3 долоо хоног) — **өргөтгөсөн**
+### Phase 6 — Урамшуулал, дэмжлэг, эрх зүйн бэлтгэл (2-3 долоо хоног) — **өргөтгөсөн, буцаалт Phase 3c-д шилжсэн**
 
-- [ ] Буцаалт/нөхөн төлбөр
+- [x] ~~Буцаалт/нөхөн төлбөр~~ — Phase 3c-д хийгдсэн (дээрх Phase 3c-г үз)
 - [ ] Купон/урамшуулал
 - [ ] Сэтгэгдэл/үнэлгээ
 - [ ] Харилцагчийн үйлчилгээний тасалбар

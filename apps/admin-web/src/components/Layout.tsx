@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: "/products", label: "Бүтээгдэхүүн" },
   { to: "/inventory", label: "Агуулах" },
   { to: "/orders", label: "Захиалгууд" },
+  { to: "/returns", label: "Буцаалтууд" },
 ];
 
 export function Layout() {
