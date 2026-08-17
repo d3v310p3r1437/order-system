@@ -65,6 +65,21 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 - Мэдээлэл өөрчилдөг endpoint бүрт audit log дуудалт заавал орно
 - API алдааны бүтэц: `{ "error": { "code", "message", "details" } }`
 
+## Тестийн стандарт — RLS mutation policy (дэлгэрэнгүй: docs/plan.md §4.5, §9)
+- **RLS mutation (INSERT/UPDATE/DELETE) policy-ийн тестийг ЗААВАЛ service
+  давхаргыг тойрсон (raw SQL эсвэл шууд Prisma transaction) аргаар нэмж
+  шалгах ёстой** — учир нь service давхаргын урьдчилсан SELECT/`findUnique`
+  шалгалт (жиш: "энэ мөр надад харагдахгүй бол 404" гэсэн pre-check)
+  policy-ийн `WITH CHECK`/`USING` кодын мөрийг бодитоор ХЭЗЭЭ Ч
+  ажиллуулахгүй нуух боломжтой — HTTP-ээр дамжуулж бичсэн тест "ногоон"
+  гарсан ч, энэ нь policy өөрөө зөв гэдгийг батлахгүй, зөвхөн pre-check
+  зөв гэдгийг л батална. `PrismaService.runRequestTransaction(userId, tx =>
+  ...)`-оор (эсвэл ижил зориулалттай туслах функцээр) service-ийг бүрэн
+  тойрч, шууд raw INSERT/UPDATE оролдуулж RLS-ээр цуцлагдаж байгааг тусад
+  нь баталгаажуулна (returns PR #7-ийн олдворын жишээ, commit
+  `d3ff639`-ыг үз — `test/returns.e2e-spec.ts`-ийн
+  `return_requests_insert RLS policy: ...` тест).
+
 ## Хэзээ ч дараах зүйлийг бүү хий
 - `.env` файлыг commit хийхгүй
 - RLS-гүй шинэ хүснэгт нэмэхгүй
