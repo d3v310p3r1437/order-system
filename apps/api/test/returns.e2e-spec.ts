@@ -88,6 +88,7 @@ describe('Returns (e2e)', () => {
   let otherCustomerToken: string;
   let customerId: string;
   let otherCustomerId: string;
+  let salespersonAId: string;
 
   let variantId: string;
   let variantBasePrice: number;
@@ -124,7 +125,7 @@ describe('Returns (e2e)', () => {
 
     const superAdminId = randomUUID();
     const branchManagerAId = randomUUID();
-    const salespersonAId = randomUUID();
+    salespersonAId = randomUUID();
     const branchManagerBId = randomUUID();
     otherCustomerId = randomUUID();
     customerId = randomUUID();
@@ -361,6 +362,35 @@ describe('Returns (e2e)', () => {
       expect(leaked).toBeNull();
     });
 
+    // return_requests_insert-ийн WITH CHECK-ийн эхний нөхцөл
+    // (`requestedByUserId = app_current_user_id()`) ганцаараа хангагдсан
+    // ч (SALESPERSON ӨӨРИЙНХӨӨ userId-г requestedByUserId болгож
+    // илгээвэл) хоёр дахь нөхцөл (`o."customerId" = app_current_user_id()`)
+    // тэр SALESPERSON харилцагч БИШ тул хэзээ ч биелэхгүй — өөрөөр
+    // хэлбэл "CUSTOMER бус дүр огт буцаалт хүсэж чадахгүй" гэдэг
+    // §7 модуль #9 8-р зүйлийн заавар зөвхөн @Roles('CUSTOMER')-оор
+    // биш, RLS-ийн өөрийнх нь түвшинд ч давхар хамгаалагдсаныг батална.
+    it('return_requests_insert RLS policy: CUSTOMER БУС дүр (SALESPERSON) requestedByUserId=өөрийнхөөр ч raw INSERT хийж чадахгүй', async () => {
+      const order = await checkoutAndComplete(branchA.id, branchManagerAToken);
+      const orderItemId = order.items[0].id;
+
+      await expect(
+        prismaService.runRequestTransaction(
+          salespersonAId,
+          (tx) =>
+            tx.$executeRaw`
+            INSERT INTO return_requests (id, "orderItemId", "requestedByUserId", reason)
+            VALUES (${randomUUID()}, ${orderItemId}, ${salespersonAId}, 'SALESPERSON RLS цоорхойг шалгах оролдлого')
+          `,
+        ),
+      ).rejects.toThrow(/row-level security/i);
+
+      const leaked = await superuserPrisma.returnRequest.findFirst({
+        where: { orderItemId, requestedByUserId: salespersonAId },
+      });
+      expect(leaked).toBeNull();
+    });
+
     it('хүчинтэй хүсэлт REQUESTED төлөвтэй үүсэж, audit лог бичигдэнэ, давхар идэвхтэй хүсэлт 409', async () => {
       const order = await checkoutAndComplete(branchA.id, branchManagerAToken);
 
@@ -427,6 +457,56 @@ describe('Returns (e2e)', () => {
         .set('Authorization', `Bearer ${salespersonAToken}`)
         .expect(403);
       expect((res.body as ErrorBody).error.code).toBe('FORBIDDEN');
+    });
+
+    // ⚠️ Дээрх 403-той тест ЗӨВХӨН RolesGuard-ийн (@Roles(...REVIEW_ROLES))
+    // controller-түвшний шалгалтыг л шалгадаг — SALESPERSON хүсэлт бүр
+    // HTTP давхаргад БҮР RolesGuard-аар цуцлагддаг тул
+    // `return_requests_update` RLS policy-ийн SALESPERSON-г ХАСДАГ өөрийнх
+    // нь заалт (return_requests_select-ийн SALESPERSON-г ОРУУЛСАН заалттай
+    // ЯЛГААТАЙ) хэзээ ч ганцаараа (RolesGuard-гүйгээр) шалгагдаж үзээгүй
+    // байсан. RolesGuard-ыг БҮРЭН тойрч, service-ийг ч тойрч, шууд
+    // `PrismaService.runRequestTransaction()`-оор SALESPERSON-ийн session
+    // нээж, raw UPDATE оролдуулав.
+    //
+    // ⚠️ Нээлт (INSERT-ээс ЯЛГААТАЙ зан төлөв): анх `.rejects.toThrow(/row-level
+    // security/i)` гэж таамагласан ч БОДИТООР `$executeRaw` АМЖИЛТТАЙ
+    // resolve хийж, 0-г буцаадаг нь тогтоогдсон — PostgreSQL-ийн RLS-ийн
+    // UPDATE/DELETE-д зориулсан `USING` заалт нь `WITH CHECK`-ээс (INSERT-д
+    // ашиглагддаг, "шинэ мөрийг татгалзвал алдаа шидэх") ЗАРЧМЫН хувьд өөр:
+    // `USING`-д тохирохгүй мөр зүгээр л "харагдахгүй" (candidate болохгүй)
+    // тул UPDATE команд 0 мөр өөрчилсөн гэж АМЖИЛТТАЙ дуусна, алдаа огт
+    // шидэгдэхгүй (docs/adr/001-ийн "0 мөр... ЖИНХЭНЭ Postgres алдаа БИШ"
+    // нээлттэй яг ижил зарчим, OrderService.adjustInventory()-ийн
+    // тайлбарыг үз). Тиймээс энд "throw биш", "0 мөр л өөрчлөгдсөн, DB-ийн
+    // бодит төлөв өөрчлөгдөөгүй" гэдгийг шалгах нь зөв — CLAUDE.md-ийн
+    // шинэ "RLS mutation policy" зарчмыг баримтлахдаа ирээдүйд UPDATE/
+    // DELETE-ийн хувьд ЭНЭ ялгааг анхаарах ёстой.
+    it('return_requests_update RLS policy: SALESPERSON (RolesGuard-ыг БҮРЭН тойрсон, шууд SQL) UPDATE-г 0 мөрөөр "чимээгүй" татгалзана', async () => {
+      const order = await checkoutAndComplete(branchA.id, branchManagerAToken);
+      const createRes = await request(app.getHttpServer())
+        .post('/returns')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ orderItemId: order.items[0].id, reason: 'RLS UPDATE шалгалт' })
+        .expect(201);
+      const returnId = (createRes.body as ReturnRequestBody).id;
+
+      const affectedRows = await prismaService.runRequestTransaction(
+        salespersonAId,
+        (tx) =>
+          tx.$executeRaw`
+            UPDATE return_requests SET status = 'APPROVED'::"ReturnStatus"
+            WHERE id = ${returnId}
+          `,
+      );
+      // `$executeRaw` алдаа шидэхгүй, харин "0 мөр өөрчлөгдсөн" гэж
+      // амжилттай буцаана — энэ ӨӨРӨӨ л RLS-ийн бодит хамгаалалт.
+      expect(affectedRows).toBe(0);
+
+      const unchanged = await superuserPrisma.returnRequest.findUniqueOrThrow({
+        where: { id: returnId },
+      });
+      expect(unchanged.status).toBe('REQUESTED');
     });
 
     it('өөр салбарын менежер (B) харах/зөвшөөрөх оролдвол 404 (RLS)', async () => {

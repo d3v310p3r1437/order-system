@@ -79,6 +79,20 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
   нь баталгаажуулна (returns PR #7-ийн олдворын жишээ, commit
   `d3ff639`-ыг үз — `test/returns.e2e-spec.ts`-ийн
   `return_requests_insert RLS policy: ...` тест).
+- ⚠️ **INSERT ба UPDATE/DELETE-ийн хувьд RLS татгалзах ЗАН ТӨЛӨВ ӨӨР**
+  (returns PR #7-ийн 2 дахь давхар шалгалтаар нотлогдсон, `test/
+  returns.e2e-spec.ts`-ийн `return_requests_update RLS policy: ...`
+  тест): `INSERT`-ийн `WITH CHECK` татгалзвал Postgres бодит алдаа
+  ("new row violates row-level security policy") ШИДНЭ (`.rejects.
+  toThrow(/row-level security/i)`-ээр шалгана) — харин `UPDATE`/
+  `DELETE`-ийн `USING` заалтад тохирохгүй мөр зүгээр л "харагдахгүй"
+  (candidate болохгүй) тул команд АМЖИЛТТАЙ дуусаж, **0 мөр
+  өөрчлөгдсөн** гэж чимээгүй буцаана (алдаа ОГТ шидэхгүй) — ADR 001-ийн
+  "UPDATE/DELETE-ийн 0 мөр... ЖИНХЭНЭ Postgres алдаа БИШ" нээлттэй яг
+  ижил зарчим. Тиймээс UPDATE/DELETE policy-г шууд SQL-ээр шалгахдаа
+  `.rejects.toThrow()`-ыг БИШ, `$executeRaw`-ийн буцаах утга (affected
+  rows) `0` эсэх, БОЛОН DB-ийн бодит төлөв өөрчлөгдөөгүй эсэхийг
+  (өөр connection-оор дахин уншиж) шалгах ёстой.
 
 ## Хэзээ ч дараах зүйлийг бүү хий
 - `.env` файлыг commit хийхгүй
@@ -479,3 +493,14 @@ Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, P
   "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
   шаардлагатай хэвээр), QPay бодит sandbox credential ирмэгц ADR 006-ийн
   checklist гүйцээх, webhook endpoint-д rate-limit нэмэх (backlog).
+- **(backlog, жижиг PR)** `OrderService.updateStatus()`-ийн `orders_update`
+  RLS policy-д (`PATCH /orders/:id/status`) дээрх "Тестийн стандарт — RLS
+  mutation policy"-той ЯГ ижил шууд SQL шалгалт (`PrismaService.
+  runRequestTransaction()`-оор service/RolesGuard-ыг бүрэн тойрч) нэмэх —
+  `OrderService.updateStatus()` мөн адил `findOne(id)` (SELECT,
+  `orders_select`) pre-check хийсний ДАРАА л `.update()`
+  (`orders_update`) дуудсан тул CUSTOMER-ийн "зөвхөн CREATED→CANCELLED"
+  хязгаарлалт (`orders_update`-ийн `WITH CHECK`) бодитоор JS
+  state-machine шалгалтаар (`order.status !== 'CREATED' ...`) НУУГДСАН
+  хэвээр — returns PR #7-д яг энэ загварыг илрүүлж/шалгасан ч цаг
+  хугацааны хувьд зөвхөн буцаалтын модульд л засварлав.
