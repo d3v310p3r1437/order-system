@@ -21,6 +21,29 @@ interface ErrorBody {
   error: { code: string; message: string; details: unknown };
 }
 
+// RlsMiddleware-ийн request-scoped transaction (ADR 001) COMMIT хийгдэх нь
+// HTTP хариу клиент рүү очихоос бага зэрэг ХОЙШ (`res.once('finish', ...)`
+// дараа Prisma COMMIT илгээдэг) явагддаг тул supertest-ийн `.expect(200)`
+// амжилттай буцсан ч audit_logs мөр ХАРАХ баталгаагүй агшин байж болно —
+// test/returns.e2e-spec.ts-ийн ижил зорилготой waitFor()-той адил.
+async function waitFor<T>(
+  fn: () => Promise<T | null>,
+  timeoutMs = 1000,
+  intervalMs = 25,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await fn();
+    if (result !== null) {
+      return result;
+    }
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: хугацаа дууслаа, нөхцөл хангагдсангүй');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 async function getKeycloakAdminToken(keycloakUrl: string): Promise<string> {
   const res = await fetch(
     `${keycloakUrl}/realms/master/protocol/openid-connect/token`,
@@ -152,15 +175,16 @@ describe('Auth Staff (e2e)', () => {
   // §4.4, §7 модуль #15: login нь audit_logs-д (AuditInterceptor-ээр)
   // "staff.login" мөр бичсэн эсэхийг шалгана.
   it('login хийсний дараа audit_logs-д "staff.login" мөр орсон байна', async () => {
-    const row = await superuserPrisma.auditLog.findFirst({
-      where: {
-        tableName: 'users',
-        recordId: localUserId,
-        action: 'staff.login',
-      },
-    });
-    expect(row).not.toBeNull();
-    expect((row?.afterData as { accessToken?: string })?.accessToken).toBe(
+    const row = await waitFor(() =>
+      superuserPrisma.auditLog.findFirst({
+        where: {
+          tableName: 'users',
+          recordId: localUserId,
+          action: 'staff.login',
+        },
+      }),
+    );
+    expect((row.afterData as { accessToken?: string })?.accessToken).toBe(
       accessToken,
     );
   });

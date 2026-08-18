@@ -632,18 +632,31 @@ auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `
     хэрэглэгч (`playwright-verify@order-system.mn`, SUPER_ADMIN)
     үүсгэсэн — dev DB/Keycloak-д үлдсэн, устгах шаардлагагүй (бусад e2e
     тестийн өгөгдөлтэй адил зөвхөн dev орчны debris).
-  - ⚠️ **Ажиглагдсан, ЭНЭ ажилтай ХОЛБООГҮЙ, өмнөх Phase-аас өвлөгдсөн
-    нээлт:** `pnpm run test:e2e`-ийг БҮХ spec файлтай зэрэг (parallel
-    Jest worker) ажиллуулахад `test/auth-staff.e2e-spec.ts` болон
-    `test/returns.e2e-spec.ts` заримдаа санамсаргүй унадаг (тус тусад нь
-    ажиллуулахад үргэлж 100% ногоон) — Keycloak/Postgres руу N зэрэгцээ
-    Nest app instance холбогдох үеийн нөөцийн (connection pool/timing)
-    хомсдолтой холбоотой байж магадгүй, энэ даалгаврын шинэ
-    e2e файлуудаас (`product-image.e2e-spec.ts`, `search.e2e-spec.ts`)
-    үүсээгүй нь тус тусад нь турших замаар баталгаажсан. Засах ажил энэ
-    даалгаврын хүрээнд БИШ, ирээдүйд Jest-ийн параллель тохиргоо
-    (`maxWorkers`) эсвэл CI-ийн орчинд анхаарууштай зүйл гэж энд
-    тэмдэглэв.
+  - ⚠️ **Олдож, ЗАСАГДСАН — ЭНЭ ажилтай шууд холбоогүй ч CI-г улаан
+    гаргаж байсан, өмнөх Phase-аас өвлөгдсөн 2 зэрэгцээ асуудал:**
+    (1) `pnpm run test:e2e`-ийг олон spec файлтай ЗЭРЭГ (parallel Jest
+    worker, анхдагч) ажиллуулахад N Nest app instance зэрэг Postgres/
+    Keycloak руу холбогдож нөөцийн (connection pool) хомсдолд орж,
+    `test/returns.e2e-spec.ts`/`test/catalog-inventory.e2e-spec.ts`-ийн
+    `checkoutAndComplete`-ийн PATCH дундаас санамсаргүй 400/404 буцаадаг
+    байсныг GH Actions CI дээр БОДИТООР ажиглав (локал дээр ч давтагдав)
+    — `apps/api/package.json`-ийн `test:e2e` script-д `--runInBand`
+    нэмж (Jest-ийн spec файлуудыг цуврал ажиллуулна, "хурд" биш
+    "найдвартай байдал" илүү чухал гэж үзэв) шийдэв. (2)
+    `test/auth-staff.e2e-spec.ts` БОЛОН `test/catalog-inventory.
+    e2e-spec.ts`-ийн audit_logs шалгалт хоёул `waitFor()`-гүйгээр шууд
+    `findFirst()` дуудаж байсан нь `--runInBand`-аар ч арилаагүй ганц
+    үлдсэн race байв: RlsMiddleware-ийн request-scoped transaction (ADR
+    001) COMMIT нь HTTP хариу клиент рүү очихоос (`res.once('finish')`)
+    бага зэрэг ХОЙШ (Prisma `$transaction` callback дуусаад л COMMIT
+    илгээдэг) явагддаг тул supertest-ийн `.expect(200)` амжилттай
+    буцсан агшинд ч audit_logs мөр ХАРАГДАХ баталгаагүй — яг ижил
+    учир шалтгаанаар Phase 3c-д `test/returns.e2e-spec.ts`-д аль хэдийн
+    `waitFor()` нэвтрүүлсэн байсан (харин auth-staff/catalog-inventory
+    хоёр файл Phase 1/2-д (`waitFor` идиом гарахаас өмнө) бичигдсэн тул
+    энэ засварыг авч чадаагүй байв) — хоёуланд нь ЯГ ижил `waitFor()`
+    helper нэмж зассан. 3 удаа дараалан (`--runInBand`) 93/93 тестийг
+    100% тогтвортой ногоон гаргаснаар баталгаажуулав.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
   хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
