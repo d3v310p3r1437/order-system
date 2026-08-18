@@ -120,8 +120,21 @@ export interface ProductVariantWithAvailability extends ProductVariant {
   availability: AvailabilityResult;
 }
 
+// apps/api/src/catalog/product-image/product-image.service.ts-ийн
+// upload()-ийн буцаах хариу (url — MinioService.getPublicUrl()).
+export interface ProductImage {
+  id: string;
+  productId: string;
+  objectKey: string;
+  displayOrder: number;
+  altText: string | null;
+  createdAt: string;
+  url: string;
+}
+
 export interface ProductDetail extends Product {
   variants: ProductVariantWithAvailability[];
+  images: ProductImage[];
 }
 
 // InventoryItem.quantity-г ЭНД шууд бичихгүй (§Даалгавар архитектурын
@@ -289,6 +302,26 @@ async function apiFetch<T>(
   return (await res.json()) as T;
 }
 
+// multipart/form-data upload-д зориулсан тусдаа хувилбар — apiFetch()-ийн
+// адил "body байвал Content-Type: application/json" таамаглал энд БУРУУ
+// (FormData-ийн boundary-г browser өөрөө автоматаар тохируулах ёстой,
+// Content-Type-г ГАРААР бичвэл эвдэрнэ).
+async function apiUpload<T>(
+  path: string,
+  accessToken: string,
+  formData: FormData,
+): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    await parseErrorOrThrow(res);
+  }
+  return (await res.json()) as T;
+}
+
 // §6.2: admin-web Keycloak руу шууд хандахгүй, зөвхөн backend-ийн
 // /auth/staff/login proxy endpoint-оор дамжина.
 export async function staffLogin(
@@ -380,6 +413,41 @@ export function updateProduct(
     method: "PATCH",
     body: JSON.stringify(dto),
   });
+}
+
+// apps/api/src/catalog/product-image/product-image.controller.ts-ийн
+// POST /products/:productId/images (multipart/form-data).
+export function uploadProductImage(
+  accessToken: string,
+  productId: string,
+  file: File,
+  opts: { displayOrder?: number; altText?: string } = {},
+): Promise<ProductImage> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (opts.displayOrder !== undefined) {
+    formData.append("displayOrder", String(opts.displayOrder));
+  }
+  if (opts.altText) {
+    formData.append("altText", opts.altText);
+  }
+  return apiUpload<ProductImage>(
+    `/products/${productId}/images`,
+    accessToken,
+    formData,
+  );
+}
+
+export function deleteProductImage(
+  accessToken: string,
+  productId: string,
+  imageId: string,
+): Promise<ProductImage> {
+  return apiFetch<ProductImage>(
+    `/products/${productId}/images/${imageId}`,
+    accessToken,
+    { method: "DELETE" },
+  );
 }
 
 export function getProductVariants(
@@ -543,4 +611,19 @@ export function updateReturnFeePercent(
     method: "PUT",
     body: JSON.stringify({ value }),
   });
+}
+
+// apps/api/src/catalog/search/search.controller.ts-ийн GET /catalog/search —
+// @Roles()-гүй (нэвтэрсэн ямар ч дүр дуудна), Meilisearch-аар нэрээр хайж,
+// availability-тэй хамт буцаана (ProductDetail-тэй ижил хэлбэр).
+export function searchProducts(
+  accessToken: string,
+  filter: { q?: string; categoryId?: string; branchId?: string },
+): Promise<ProductDetail[]> {
+  const params = new URLSearchParams();
+  if (filter.q) params.set("q", filter.q);
+  if (filter.categoryId) params.set("categoryId", filter.categoryId);
+  if (filter.branchId) params.set("branchId", filter.branchId);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<ProductDetail[]>(`/catalog/search${qs}`, accessToken);
 }

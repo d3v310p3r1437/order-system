@@ -30,6 +30,15 @@ env:
   # тухайн алхамд тооцогдож $GITHUB_ENV-д нэмэгдэнэ).
   KEYCLOAK_ADMIN: admin
   KEYCLOAK_ADMIN_PASSWORD: ci_only_dummy_admin_password
+  # test/product-image.e2e-spec.ts (§8 Phase 2 Хэсэг A)-д зориулав —
+  # доорх "MinIO container асаах" алхам яг ЭДГЭЭР credential-ээр асаана.
+  MINIO_URL: http://localhost:9000
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: ci_only_dummy_minio_password
+  MINIO_BUCKET: product-images
+  # test/search.e2e-spec.ts (§8 Phase 2 Хэсэг B)-д зориулав.
+  MEILI_URL: http://localhost:7700
+  MEILI_MASTER_KEY: ci_only_dummy_meili_master_key
   NODE_ENV: test
 
 jobs:
@@ -59,6 +68,19 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # MinIO-той адилгүй, Meilisearch-ийн Docker image-ийн анхдагч CMD нь
+      # аргументгүйгээр шууд ажилладаг тул (MinIO шиг "server /data" гэсэн
+      # заавал шаардлагатай аргумент байхгүй) job-level `services:`-ээр
+      # шууд асаах боломжтой — MinIO-г доор тусад нь "docker run"-аар
+      # (Keycloak-той адил шалтгаанаар, `services:` нь `command:`
+      # дэмждэггүй тул) асаана.
+      meilisearch:
+        image: getmeili/meilisearch:latest
+        env:
+          MEILI_MASTER_KEY: ci_only_dummy_meili_master_key
+          MEILI_NO_ANALYTICS: "true"
+        ports: ["7700:7700"]
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -74,6 +96,17 @@ jobs:
             -e KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN" \
             -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
             quay.io/keycloak/keycloak:latest start-dev
+
+      # MinIO-ийн Docker image ("server /data" гэсэн аргумент заавал
+      # шаардлагатай) job-level `services:`-ээр асаах боломжгүй тул
+      # (тэдгээр нь `command:` дэмждэггүй) Keycloak-той ижил "docker run"
+      # аргаар асаана.
+      - name: MinIO container асаах (background-д boot хийнэ)
+        run: |
+          docker run -d --name minio-ci -p 9000:9000 -p 9001:9001 \
+            -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
+            -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
+            minio/minio server /data --console-address ":9001"
 
       - name: psql суулгах (app_runtime role үүсгэхэд хэрэгтэй)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
@@ -202,6 +235,11 @@ jobs:
             -H "Authorization: Bearer $ADMIN_TOKEN" | jq -r .value)
           echo "::add-mask::$CLIENT_SECRET"
           echo "KEYCLOAK_CLIENT_SECRET=$CLIENT_SECRET" >> "$GITHUB_ENV"
+
+      - name: MinIO/Meilisearch бэлэн болохыг хүлээх
+        run: |
+          timeout 60 bash -c 'until curl -sf "$MINIO_URL/minio/health/live" >/dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf "$MEILI_URL/health" >/dev/null; do sleep 2; done'
 
       - name: E2E тест (бодит Postgres/Redis/RLS-тэй)
         working-directory: apps/api
