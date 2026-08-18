@@ -602,6 +602,31 @@ auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `
     боломжгүй) БОЛОН Meilisearch (`services:`-ээр шууд, анхдагч CMD
     аргумент шаардахгүй тул) нэмэгдэв, `MINIO_*`/`MEILI_*` env бүгд
     нэмэгдсэн, e2e-ийн өмнө хоёуланг нь `curl`-аар бэлэн болохыг хүлээдэг.
+    ⚠️ **Чухал заль (pnpm strict node_modules):** `product-image.
+    controller.ts` `multer`-ээс шууд `import { memoryStorage }` хийдэг ч
+    зөвхөн `@types/multer` devDependency-д нэмсэн байсан — `multer`
+    өөрөө `@nestjs/platform-express`-ийн transitive dependency тул dev/
+    test-д (ts-jest-ийн module resolution-оор) санамсаргүй ажилласан ч
+    prod build-ийн `dist/src/main.js`-г шууд `node`-оор ажиллуулахад
+    (§10.2-ийн "Build дараах smoke test" CI алхам) pnpm-ийн strict
+    node_modules-ээр `Cannot find module 'multer'` (MODULE_NOT_FOUND)
+    болж унасан — GH Actions дээр л (локал `pnpm run build` + unit/e2e
+    бүгд ажилладаг байсан тул анзаарагдаагүй) илэрсэн. Сургамж: гуравдагч
+    сангаас ШУУД `import` хийдэг бол, тэр нь зөвхөн өөр dependency-ийн
+    transitive dep байсан ч, `@types/*`-ийн хажууд бодит package-ийг ч
+    ЗААВАЛ шууд `dependencies`-д нэмэх ёстой.
+  - ⚠️ **Чухал заль (e2e тогтвортой байдал):** `apps/api/package.json`-ийн
+    `test:e2e`-д `--runInBand` нэмсэн (spec файлуудыг цуврал ажиллуулна)
+    — N Nest app instance зэрэг Postgres/Keycloak руу холбогдоход
+    нөөцийн (connection pool) хомсдол үүсч `checkoutAndComplete`-ийн
+    зарим PATCH санамсаргүй 400/404 буцаадаг байсныг GH Actions CI дээр
+    бодитоор ажиглаж (локал дээр ч давтагдав) шийдэв. Нэмэлтээр
+    `test/auth-staff.e2e-spec.ts`/`test/catalog-inventory.e2e-spec.ts`-ийн
+    audit_logs шалгалт хоёул `waitFor()`-гүйгээр шууд `findFirst()`
+    дуудаж байсан нь `--runInBand`-аар ч арилаагүй ганц race байсан
+    (RlsMiddleware-ийн transaction COMMIT HTTP хариунаас бага зэрэг хойш
+    явагддаг тул) — `test/returns.e2e-spec.ts`-д Phase 3c-д аль хэдийн
+    нэвтрүүлсэн ЯГ ижил `waitFor()` idiom-ыг хоёуланд нь нэмж зассан.
   - **Admin-web:** `src/components/ProductImageGallery.tsx` (drag-drop
     БОЛОН file picker хоёулаа — товшиж эсвэл чирж оруулж болно, gallery
     grid, hover дээр гарч ирэх "Устгах" товч) `/products/:id`-д
@@ -632,31 +657,12 @@ auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `
     хэрэглэгч (`playwright-verify@order-system.mn`, SUPER_ADMIN)
     үүсгэсэн — dev DB/Keycloak-д үлдсэн, устгах шаардлагагүй (бусад e2e
     тестийн өгөгдөлтэй адил зөвхөн dev орчны debris).
-  - ⚠️ **Олдож, ЗАСАГДСАН — ЭНЭ ажилтай шууд холбоогүй ч CI-г улаан
-    гаргаж байсан, өмнөх Phase-аас өвлөгдсөн 2 зэрэгцээ асуудал:**
-    (1) `pnpm run test:e2e`-ийг олон spec файлтай ЗЭРЭГ (parallel Jest
-    worker, анхдагч) ажиллуулахад N Nest app instance зэрэг Postgres/
-    Keycloak руу холбогдож нөөцийн (connection pool) хомсдолд орж,
-    `test/returns.e2e-spec.ts`/`test/catalog-inventory.e2e-spec.ts`-ийн
-    `checkoutAndComplete`-ийн PATCH дундаас санамсаргүй 400/404 буцаадаг
-    байсныг GH Actions CI дээр БОДИТООР ажиглав (локал дээр ч давтагдав)
-    — `apps/api/package.json`-ийн `test:e2e` script-д `--runInBand`
-    нэмж (Jest-ийн spec файлуудыг цуврал ажиллуулна, "хурд" биш
-    "найдвартай байдал" илүү чухал гэж үзэв) шийдэв. (2)
-    `test/auth-staff.e2e-spec.ts` БОЛОН `test/catalog-inventory.
-    e2e-spec.ts`-ийн audit_logs шалгалт хоёул `waitFor()`-гүйгээр шууд
-    `findFirst()` дуудаж байсан нь `--runInBand`-аар ч арилаагүй ганц
-    үлдсэн race байв: RlsMiddleware-ийн request-scoped transaction (ADR
-    001) COMMIT нь HTTP хариу клиент рүү очихоос (`res.once('finish')`)
-    бага зэрэг ХОЙШ (Prisma `$transaction` callback дуусаад л COMMIT
-    илгээдэг) явагддаг тул supertest-ийн `.expect(200)` амжилттай
-    буцсан агшинд ч audit_logs мөр ХАРАГДАХ баталгаагүй — яг ижил
-    учир шалтгаанаар Phase 3c-д `test/returns.e2e-spec.ts`-д аль хэдийн
-    `waitFor()` нэвтрүүлсэн байсан (харин auth-staff/catalog-inventory
-    хоёр файл Phase 1/2-д (`waitFor` идиом гарахаас өмнө) бичигдсэн тул
-    энэ засварыг авч чадаагүй байв) — хоёуланд нь ЯГ ижил `waitFor()`
-    helper нэмж зассан. 3 удаа дараалан (`--runInBand`) 93/93 тестийг
-    100% тогтвортой ногоон гаргаснаар баталгаажуулав.
+  - ⚠️ **Олдож, ЗАСАГДСАН — ЭНЭ ажилтай шууд холбоогүй, өмнөх Phase-аас
+    өвлөгдсөн 2 CI-г улаан гаргаж байсан асуудал** (`multer` dependency
+    + e2e `--runInBand`/`waitFor` race) — дэлгэрэнгүй тайлбарыг дээрх
+    "CI" бүлгээс үз. `gh run watch`-аар PR #8 (`feature/
+    catalog-images-search` → `main`) дээр CI бүрэн ногоон болсныг
+    баталгаажуулсан.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
   хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
