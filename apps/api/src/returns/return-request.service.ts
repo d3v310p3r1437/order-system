@@ -139,41 +139,63 @@ export class ReturnRequestService {
   // байх" — §7 модуль #9 3(д)) энэ ЯГ ЛЭ функцийг дахин ажиллуулна —
   // тусдаа "retry" endpoint зохиогоогүй, зөвхөн REQUESTED-ийн зэрэгцээ
   // REFUND_FAILED-ийг ч эхлэх цэг болгож зөвшөөрөв.
+  //
+  // ⚠️ Playwright-аар (2 tab, бараг нэг зэрэг "Зөвшөөрөх" товч дарах)
+  // илэрсэн race condition: анхны хувилбарт "findOne() → статус шалгах →
+  // refundPayment() дуудах → update()" гэсэн дараалал ATOMIC биш байсан
+  // тул хоёр зэрэг ирсэн хүсэлт ХОЁУЛАА findOne()-оор REQUESTED гэж
+  // харж, ХОЁУЛАА PaymentProvider.refundPayment()-ийг дуудах боломжтой
+  // байсан — санхүүгийн ХОЁР дахин refund хийгдэх ноцтой эрсдэл. Үүнийг
+  // ReturnStatus enum-ийн (өмнө нь ашиглагдаагүй, зөвхөн "vestigial" гэж
+  // тэмдэглэсэн байсан) `APPROVED` утгыг "claim" (эзэмших) тэмдэг
+  // болгож ашиглаж шийдэв: `updateMany({where: {id, status: {in:
+  // [REQUESTED, REFUND_FAILED]}}})`-г PaymentProvider-ийг дуудахаас
+  // ӨМНӨ, withSavepoint-ийн ДОТОР гүйцэтгэнэ. Postgres-ийн UPDATE-ийн
+  // мөрийн lock нь БҮХЭЛ хүсэлтийн транзакц (RlsMiddleware, ADR 001)
+  // COMMIT хийгдэх хүртэл (SAVEPOINT RELEASE-ээр биш) баригддаг тул
+  // зэрэг ирсэн хоёр дахь хүсэлтийн claim UPDATE Request 1-ийн бүхэл
+  // транзакц дуусах хүртэл BLOCKED хүлээгээд, дараа нь committed
+  // төлөвийг (APPROVED/REFUNDED, REQUESTED/REFUND_FAILED БИШ) харж 0 мөр
+  // өөрчилнө — ЭНД Л (PaymentProvider-ийг ХОЁР дахин дуудахаас өмнө)
+  // зогсоно.
   async approve(id: string, reviewingUserId: string) {
     const returnRequest = await this.findOne(id);
-    if (
-      returnRequest.status !== 'REQUESTED' &&
-      returnRequest.status !== 'REFUND_FAILED'
-    ) {
-      throw new ConflictException(RETURN_NOT_PENDING);
-    }
-
-    const feePercent = await this.systemSettings.getReturnFeePercent();
-    const refundAmount = computeRefundAmount(
-      returnRequest.orderItem.unitPriceSnapshot,
-      returnRequest.orderItem.quantity,
-      feePercent,
-    );
-
-    // PaymentProvider дуудлага (гадаад HTTP) — SAVEPOINT-ын ГАДНА, учир нь
-    // юу ч бичихгүй (OrderService.checkout()-ийн createInvoice()-той ижил
-    // зарчим). Амжилттай эсэхээс үл хамааран доор ГАНЦ л удаа бичнэ.
-    let providerRefundId: string | null = null;
-    let refundFailed = false;
-    try {
-      const refund = await this.paymentProvider.refundPayment(
-        returnRequest.orderItem.order.providerInvoiceId ?? '',
-        refundAmount.toNumber(),
-      );
-      providerRefundId = refund.providerRefundId;
-    } catch (error) {
-      refundFailed = true;
-      this.logger.warn(
-        `Буцаалтын refund амжилтгүй боллоо (returnRequestId=${id}): ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
 
     const result = await withSavepoint(this.prisma.tx, async () => {
+      const claim = await this.prisma.tx.returnRequest.updateMany({
+        where: { id, status: { in: ['REQUESTED', 'REFUND_FAILED'] } },
+        data: {
+          status: 'APPROVED',
+          reviewedByUserId: reviewingUserId,
+          reviewedAt: new Date(),
+        },
+      });
+      if (claim.count === 0) {
+        throw new ConflictException(RETURN_NOT_PENDING);
+      }
+
+      const feePercent = await this.systemSettings.getReturnFeePercent();
+      const refundAmount = computeRefundAmount(
+        returnRequest.orderItem.unitPriceSnapshot,
+        returnRequest.orderItem.quantity,
+        feePercent,
+      );
+
+      let providerRefundId: string | null = null;
+      let refundFailed = false;
+      try {
+        const refund = await this.paymentProvider.refundPayment(
+          returnRequest.orderItem.order.providerInvoiceId ?? '',
+          refundAmount.toNumber(),
+        );
+        providerRefundId = refund.providerRefundId;
+      } catch (error) {
+        refundFailed = true;
+        this.logger.warn(
+          `Буцаалтын refund амжилтгүй боллоо (returnRequestId=${id}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       await this.prisma.tx.returnRequest.update({
         where: { id },
         data: {
@@ -181,8 +203,6 @@ export class ReturnRequestService {
           refundFeePercent: feePercent,
           refundAmount,
           providerRefundId,
-          reviewedByUserId: reviewingUserId,
-          reviewedAt: new Date(),
           refundedAt: refundFailed ? null : new Date(),
         },
       });

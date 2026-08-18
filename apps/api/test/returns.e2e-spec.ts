@@ -579,6 +579,66 @@ describe('Returns (e2e)', () => {
       expect(auditRow).not.toBeNull();
     });
 
+    // ⚠️ Playwright-аар (2 tab, admin-web-ийн бодит UI дээр бараг нэг зэрэг
+    // "Зөвшөөрөх" товч дарах гэж оролдоход) илэрсэн race condition-ийн шууд
+    // e2e нотолгоо: HTTP давхаргаас ЯГ ЗЭРЭГ (Promise.all) 2 удаа
+    // /approve дуудвал ЗӨВХӨН НЭГ нь л амжилттай (200, REFUNDED) байх ёстой,
+    // нөгөө нь 409 (RETURN_REQUEST_NOT_PENDING) авах ёстой — хоёулаа
+    // амжилттай болвол PaymentProvider.refundPayment() ХОЁР дахин дуудагдаж
+    // (санхүүгийн ХОЁР дахин refund) байгаагийн шинж тул нөөц ЗӨВХӨН 1
+    // удаа (биш 2 удаа) буцаж нэмэгдсэнээр давхар refund болоогүйг батална.
+    it('ЗЭРЭГ (Promise.all) 2 удаа "Зөвшөөрөх" дуудвал ЗӨВХӨН 1 нь амжилттай, нөгөө нь 409, нөөц ЗӨВХӨН 1 удаа буцна (davhar refund-ийн race)', async () => {
+      const order = await checkoutAndComplete(branchA.id, branchManagerAToken);
+      await request(app.getHttpServer())
+        .post(`/payment/mock/simulate-paid/${order.providerInvoiceId}`)
+        .expect(201);
+
+      const before = await superuserPrisma.inventoryItem.findFirstOrThrow({
+        where: { variantId, branchId: branchA.id },
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/returns')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ orderItemId: order.items[0].id, reason: 'race condition тест' })
+        .expect(201);
+      const returnId = (createRes.body as ReturnRequestBody).id;
+
+      const [resA, resB] = await Promise.all([
+        request(app.getHttpServer())
+          .patch(`/returns/${returnId}/approve`)
+          .set('Authorization', `Bearer ${branchManagerAToken}`),
+        request(app.getHttpServer())
+          .patch(`/returns/${returnId}/approve`)
+          .set('Authorization', `Bearer ${branchManagerAToken}`),
+      ]);
+
+      const statuses = [resA.status, resB.status].sort();
+      expect(statuses).toEqual([200, 409]);
+
+      const successRes = resA.status === 200 ? resA : resB;
+      const failedRes = resA.status === 200 ? resB : resA;
+      expect((successRes.body as ReturnRequestBody).status).toBe('REFUNDED');
+      expect((failedRes.body as ErrorBody).error.code).toBe(
+        'RETURN_REQUEST_NOT_PENDING',
+      );
+
+      const item = await waitFor(async () => {
+        const row = await superuserPrisma.inventoryItem.findUnique({
+          where: { id: before.id },
+        });
+        return row && row.quantity === before.quantity + 1 ? row : null;
+      });
+      // ЗӨВХӨН +1 (биш +2) — restockInventory() ганц удаа л дуудагдсан
+      // гэдгийг нотолно (davhar refund болоогүй).
+      expect(item.quantity).toBe(before.quantity + 1);
+
+      const finalRow = await superuserPrisma.returnRequest.findUniqueOrThrow({
+        where: { id: returnId },
+      });
+      expect(finalRow.status).toBe('REFUNDED');
+    });
+
     it('refund АМЖИЛТГҮЙ (invoice PAID биш) бол REFUND_FAILED болгож, нөөц буцаахгүй', async () => {
       // ⚠️ simulate-paid ЗАВХАН дуудаагүй тул MockPaymentProvider дотор
       // invoice PENDING хэвээр — refundPayment() алдаа шидэнэ.

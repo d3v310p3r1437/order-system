@@ -451,12 +451,41 @@ Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, P
   гадна TS туслах логикт ч хамаарна).
   Зөвшөөрөх урсгал: SystemSetting-ээс шимтгэл унших → snapshot
   (`refundFeePercent`/`refundAmount`) тооцох → идэвхтэй
-  `PaymentProvider.refundPayment()` дуудах (SAVEPOINT-ын ГАДНА, checkout-ийн
-  `createInvoice()`-той ижил зарчим) → амжилттай бол `REFUNDED` + нөөц
+  `PaymentProvider.refundPayment()` дуудах → амжилттай бол `REFUNDED` + нөөц
   буцаах, амжилтгүй бол `REFUND_FAILED`. **REFUND_FAILED-ээс ЯГ ЭНЭ ижил
   `/approve` endpoint-оор дахин дуудаж "гараар дахин оролдох" боломжтой**
   (тусдаа retry endpoint зохиогоогүй) — `approve()` REQUESTED-ийн зэрэгцээ
   REFUND_FAILED-ийг ч эхлэх цэг болгож зөвшөөрдөг.
+  ⚠️🔴 **Ноцтой олдвор — Playwright-аар (2 tab, admin-web дээр бодитоор
+  бараг зэрэг "Зөвшөөрөх" товч дарж) илрүүлсэн санхүүгийн race condition
+  (нэвтрүүлэхийн өмнө ЗААВАЛ шалгасан):** анхны хувилбарт
+  `findOne() → статус шалгах → PaymentProvider.refundPayment() дуудах →
+  update()` гэсэн дараалал АТОМИК БИШ байсан тул (checkout-ийн
+  `createInvoice()`-тэй адилхан "SAVEPOINT-ын гадна" гэсэн зарчмыг энд
+  буруу хэрэглэсэн байсан — checkout дээр давхардал боломжгүй (шинэ
+  orderId бүрд шинэ invoice), харин ЭНД ижил returnRequestId рүү 2
+  зэрэг хүсэлт ирж болзошгүй) зэрэг ирсэн 2 хүсэлт ХОЁУЛАА `findOne()`-оор
+  REQUESTED гэж харж, ХОЁУЛАА `refundPayment()`-ийг дуудах (санхүүгийн
+  ХОЁР дахин refund!) боломжтой байв. **Засвар:** `ReturnStatus` enum-ийн
+  өмнө нь ашиглагдаагүй (зөвхөн "vestigial" гэж тэмдэглэсэн байсан)
+  `APPROVED` утгыг атомик "claim" тэмдэг болгож ашиглав —
+  `returnRequest.updateMany({where: {id, status: {in: [REQUESTED,
+  REFUND_FAILED]}}, data: {status: 'APPROVED', ...}})`-г
+  `PaymentProvider.refundPayment()`-ийг дуудахаас ӨМНӨ, `withSavepoint`-ийн
+  ДОТОР гүйцэтгэнэ. Postgres-ийн UPDATE мөрийн lock нь БҮХЭЛ хүсэлтийн
+  транзакц (RlsMiddleware, ADR 001) COMMIT хийгдэх хүртэл баригддаг тул
+  зэрэг ирсэн 2 дахь хүсэлтийн claim UPDATE эхний хүсэлтийн бүхэл
+  транзакц дуусах хүртэл BLOCKED хүлээгээд, дараа нь committed төлөвийг
+  харж 0 мөр өөрчилнө — `refundPayment()`-ийг ХОЁР дахин дуудахаас яг
+  ЭНД зогсоно (`test/returns.e2e-spec.ts`-ийн "ЗЭРЭГ (Promise.all) 2 удаа
+  'Зөвшөөрөх'..." тест HTTP давхаргаас, unit тест `return-request.
+  service.spec.ts`-ийн claim-ийн дуудлагын дараалал (`invocationCallOrder`)
+  шалгалт mock түвшинд аль алинд нь баталгаажуулсан). **Сургамж:**
+  "SAVEPOINT-ын гадна дуудна" гэсэн загварыг ШИНЭ mutation бичих бүрд
+  сохроор хуулбарлахгүй, тухайн endpoint ижил нөөцийг (мөрийг) 2 удаа
+  зэрэг зорьж болзошгүй эсэхийг (checkout шиг "шинэ мөр үүсгэдэг" үү,
+  эсвэл approve шиг "байгаа мөр рүү зэрэг хандаж болзошгүй" юу) тусад нь
+  бодож үзэх ёстой.
   ⚠️ **Чухал заль (MockPaymentProvider бодитоор ажиллах болгосон):**
   `refundPayment()` өмнө нь аргументаа огт үл тоомсорлож үргэлж амжилттай
   буцдаг байсан тул REFUND_FAILED замыг детерминистикээр (тусгай
@@ -479,10 +508,30 @@ Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, P
   шалгасан (Flutter UI Phase 3c-д ороогүй, өмнөх Phase-үүдтэй ижил зарчим).
   Тест: unit (`return-refund.util.spec.ts` 100%, `return-request.
   service.spec.ts`, `system-setting.service.spec.ts`,
-  `savepoint.util.spec.ts`) + e2e (`test/returns.e2e-spec.ts` — 7 хоногийн
-  цонх хэтрэлт/хэтрээгүй, давхар идэвхтэй хүсэлт татгалзагдах, зөвшөөрөхөд
-  refund+restock хамт явагдах, refund амжилтгүй үед REFUND_FAILED, тэндээс
-  дахин оролдоход амжилттай, RLS дүр тус бүрээр, тохиргооны API).
+  `savepoint.util.spec.ts`) + e2e (`test/returns.e2e-spec.ts`, 24 тест — 7
+  хоногийн цонх хэтрэлт/хэтрээгүй, давхар идэвхтэй хүсэлт татгалзагдах,
+  зөвшөөрөхөд refund+restock хамт явагдах, refund амжилтгүй үед
+  REFUND_FAILED, тэндээс дахин оролдоход амжилттай, RLS дүр тус бүрээр
+  (мутаци policy-г service/RolesGuard-ыг тойрч шууд SQL-ээр ч), тохиргооны
+  API, **ЗЭРЭГ (Promise.all) 2 удаа "Зөвшөөрөх" дуудсан race condition**).
+  **Playwright-аар admin-web UI-г бодит browser-т нэвтрэрч (Keycloak-руу
+  ROPC-оор биш, жинхэнэ `POST /auth/staff/login` урсгалаар) баталгаажуулав**
+  (merge хийхээс өмнөх шаардлага, ad hoc `npm install playwright` —
+  repo-д permanent devDependency болгож нэмээгүй): нэвтрэх → Dashboard-ийн
+  шимтгэлийн карт хадгалж, БҮРЭН ШИНЭ session-ээр (`page.reload()` БИШ,
+  учир нь ADR 004-ийн дагуу F5 хийвэл session бүрмөсөн арилдаг тул илүү
+  хатуу шалгалт) серверээс дахин уншиж баталгаажуулсан → Буцаалтууд
+  жагсаалт/дэлгэрэнгүй → 2 tab-аар БОДИТООР зэрэг "Зөвшөөрөх" дарж дээрх
+  race condition-ыг олж, засварыг мөн Playwright-аар давтан баталгаажуулсан
+  → Агуулах дэлгэцээр нөөц зөв (+1, биш +2) буцсаныг харсан → Татгалзах
+  урсгал (хоосон шалтгаанд товч disabled). ⚠️ **Playwright-ийн UI
+  дадлагаас гарсан сургамж:** admin-web-ийн WebSocket real-time sync
+  маш хурдан тул хоёр дахь "ялагдсан" tab-ийн алдааны мессеж бараг шууд
+  дараагийн refetch-ээр дарагдаж, "Шийдвэр гаргах" карт бүхэлдээ unmount
+  хийгддэг (canDecide/canRetry аль аль нь false болсноор) — тиймээс UI
+  давхаргад "аль нь алдаа заавал үзүүлэх ёстой" гэж ХАТУУ баталгаажуулах
+  боломжгүй (энэ бол UX-ийн давуу тал), харин ЖИНХЭНЭ (санхүүгийн)
+  баталгааг ЗААВАЛ шууд API/DB дуудлагаар (UI-аас тусад нь) шалгах ёстой.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web

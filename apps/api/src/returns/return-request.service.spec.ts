@@ -8,6 +8,10 @@ function buildPrismaMock() {
   const returnRequestCreate = jest.fn();
   const returnRequestFindUnique = jest.fn();
   const returnRequestUpdate = jest.fn();
+  // Атомик "claim" (approve()-ийн race-condition хамгаалалт) — анхдагчаар
+  // амжилттай (1 мөр эзэмшсэн) гэж тооцно, тест бүрт шаардлагатай бол
+  // дахин mockResolvedValue хийж {count: 0} болгож болно.
+  const returnRequestUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
   const queryRaw = jest
     .fn()
     .mockResolvedValue([{ app_adjust_inventory_for_order: 1 }]);
@@ -20,6 +24,7 @@ function buildPrismaMock() {
       create: returnRequestCreate,
       findUnique: returnRequestFindUnique,
       update: returnRequestUpdate,
+      updateMany: returnRequestUpdateMany,
     },
     $queryRaw: queryRaw,
     $executeRawUnsafe: executeRawUnsafe,
@@ -39,6 +44,7 @@ function buildPrismaMock() {
       returnRequestCreate,
       returnRequestFindUnique,
       returnRequestUpdate,
+      returnRequestUpdateMany,
       queryRaw,
       executeRawUnsafe,
     },
@@ -173,12 +179,13 @@ describe('ReturnRequestService.create', () => {
 });
 
 describe('ReturnRequestService.approve', () => {
-  it('refund амжилттай бол REFUNDED болгож, нөөц буцааж, event нийтэлнэ', async () => {
+  it('refund амжилттай бол claim хийж (updateMany), REFUNDED болгож, нөөц буцааж, event нийтэлнэ', async () => {
     const { prisma, mocks } = buildPrismaMock();
     const orderItem = completedOrderItem();
     mocks.returnRequestFindUnique
       .mockResolvedValueOnce({ id: 'rr-1', status: 'REQUESTED', orderItem })
       .mockResolvedValueOnce({ id: 'rr-1', status: 'REFUNDED', orderItem });
+    mocks.returnRequestUpdateMany.mockResolvedValue({ count: 1 });
     mocks.returnRequestUpdate.mockResolvedValue({});
 
     const paymentProvider = buildPaymentProviderMock();
@@ -194,6 +201,21 @@ describe('ReturnRequestService.approve', () => {
       orderEvents,
     );
     const result = await service.approve('rr-1', 'staff-1');
+
+    const claimArgs = (
+      mocks.returnRequestUpdateMany.mock.calls[0] as unknown[]
+    )[0] as { where: Record<string, unknown>; data: Record<string, unknown> };
+    expect(claimArgs.where).toEqual({
+      id: 'rr-1',
+      status: { in: ['REQUESTED', 'REFUND_FAILED'] },
+    });
+    expect(claimArgs.data.status).toBe('APPROVED');
+    // claim (updateMany) refundPayment()-ээс ӨМНӨ дуудагдсан эсэхийг
+    // дуудлагын дараалал (mock.invocationCallOrder)-аар шалгана —
+    // энэ бол race-ийн засварын гол цөм (davhar refund-оос сэргийлэх).
+    expect(
+      mocks.returnRequestUpdateMany.mock.invocationCallOrder[0],
+    ).toBeLessThan(paymentProvider.refundPayment.mock.invocationCallOrder[0]);
 
     expect(paymentProvider.refundPayment).toHaveBeenCalledWith(
       'mock_inv_1',
@@ -223,6 +245,7 @@ describe('ReturnRequestService.approve', () => {
         status: 'REFUND_FAILED',
         orderItem,
       });
+    mocks.returnRequestUpdateMany.mockResolvedValue({ count: 1 });
     mocks.returnRequestUpdate.mockResolvedValue({});
 
     const paymentProvider = buildPaymentProviderMock();
@@ -254,6 +277,7 @@ describe('ReturnRequestService.approve', () => {
     mocks.returnRequestFindUnique
       .mockResolvedValueOnce({ id: 'rr-1', status: 'REFUND_FAILED', orderItem })
       .mockResolvedValueOnce({ id: 'rr-1', status: 'REFUNDED', orderItem });
+    mocks.returnRequestUpdateMany.mockResolvedValue({ count: 1 });
     mocks.returnRequestUpdate.mockResolvedValue({});
 
     const paymentProvider = buildPaymentProviderMock();
@@ -268,19 +292,46 @@ describe('ReturnRequestService.approve', () => {
     expect(mocks.queryRaw).toHaveBeenCalled();
   });
 
-  it('аль хэдийн шийдвэрлэгдсэн (REQUESTED/REFUND_FAILED биш) бол ConflictException шидэнэ', async () => {
+  it('аль хэдийн шийдвэрлэгдсэн (claim 0 мөр өөрчилсөн) бол ConflictException шидэж, PaymentProvider-ийг ОГТ дуудахгүй', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.returnRequestFindUnique.mockResolvedValue({
       id: 'rr-1',
       status: 'REFUNDED',
       orderItem: completedOrderItem(),
     });
+    mocks.returnRequestUpdateMany.mockResolvedValue({ count: 0 });
 
-    const service = newService(prisma);
+    const paymentProvider = buildPaymentProviderMock();
+    const service = newService(prisma, buildSettingsMock(), paymentProvider);
     await expect(service.approve('rr-1', 'staff-1')).rejects.toThrow(
       ConflictException,
     );
+    // Race-ийн засварын гол баталгаа: claim амжилтгүй бол refundPayment()
+    // ЯМАР Ч тохиолдолд дуудагдахгүй — давхар санхүүгийн refund-оос
+    // сэргийлнэ (Playwright-аар илэрсэн race, доорх commit-ийг үз).
+    expect(paymentProvider.refundPayment).not.toHaveBeenCalled();
     expect(mocks.returnRequestUpdate).not.toHaveBeenCalled();
+  });
+
+  it('ЗЭРЭГ ирсэн хоёр дахь claim оролдлого (updateMany 0 мөр) PaymentProvider-ийг дуудахгүй — davhar refund-ийн race-ийн шууд симуляц', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    const orderItem = completedOrderItem();
+    mocks.returnRequestFindUnique.mockResolvedValue({
+      id: 'rr-1',
+      status: 'REQUESTED',
+      orderItem,
+    });
+    // Эхний хүсэлт аль хэдийн claim хийчихсэн (committed) гэдгийг simulate
+    // хийхийн тулд ЭНЭ хүсэлтийн updateMany 0 мөр буцаана.
+    mocks.returnRequestUpdateMany.mockResolvedValue({ count: 0 });
+
+    const paymentProvider = buildPaymentProviderMock();
+    const service = newService(prisma, buildSettingsMock(), paymentProvider);
+
+    await expect(service.approve('rr-1', 'staff-2')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(paymentProvider.refundPayment).not.toHaveBeenCalled();
   });
 });
 
