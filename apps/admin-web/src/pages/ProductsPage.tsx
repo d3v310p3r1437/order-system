@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { getCategories, getProducts, type Product } from "@/lib/api";
+import {
+  getCategories,
+  getProducts,
+  searchProducts,
+  type Product,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { PRODUCT_CREATE_ROLES, PRODUCT_UPDATE_ROLES } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -24,8 +31,17 @@ export function ProductsPage() {
   const canUpdate = hasRole(PRODUCT_UPDATE_ROLES);
 
   const [categoryFilter, setCategoryFilter] = useState(ALL_CATEGORIES);
+  const [searchInput, setSearchInput] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+
+  // docs/plan.md §8 Phase 2 Хэсэг B, даалгавар #11: debounce-той хайлтын
+  // талбар, GET /catalog/search дуудна. Хоосон бол энгийн ангилалаар
+  // шүүсэн GET /products жагсаалт руу буцна.
+  const debouncedSearch = useDebouncedValue(searchInput.trim(), 300);
+  const isSearching = debouncedSearch.length > 0;
+  const activeCategoryId =
+    categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter;
 
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -33,16 +49,22 @@ export function ProductsPage() {
   });
 
   const productsQuery = useQuery({
-    queryKey: [
-      "products",
-      categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter,
-    ],
-    queryFn: () =>
-      getProducts(
-        accessToken,
-        categoryFilter === ALL_CATEGORIES ? undefined : categoryFilter,
-      ),
+    queryKey: ["products", activeCategoryId],
+    queryFn: () => getProducts(accessToken, activeCategoryId),
+    enabled: !isSearching,
   });
+
+  const searchResultsQuery = useQuery({
+    queryKey: ["catalog-search", debouncedSearch, activeCategoryId],
+    queryFn: () =>
+      searchProducts(accessToken, {
+        q: debouncedSearch,
+        categoryId: activeCategoryId,
+      }),
+    enabled: isSearching,
+  });
+
+  const listQuery = isSearching ? searchResultsQuery : productsQuery;
 
   const categoryNameById = new Map(
     (categoriesQuery.data ?? []).map((c) => [c.id, c.name]),
@@ -74,39 +96,50 @@ export function ProductsPage() {
         )}
       </div>
 
-      <div className="w-full max-w-xs">
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-full">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_CATEGORIES}>Бүх ангилал</SelectItem>
-            {(categoriesQuery.data ?? []).map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="w-full max-w-xs">
+          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CATEGORIES}>Бүх ангилал</SelectItem>
+              {(categoriesQuery.data ?? []).map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="w-full max-w-xs">
+          <Input
+            placeholder="Нэрээр хайх…"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
       </div>
 
       <Card>
         <CardContent>
-          {productsQuery.isLoading && (
+          {listQuery.isLoading && (
             <p className="text-sm text-muted-foreground">Ачааллаж байна…</p>
           )}
-          {productsQuery.isError && (
+          {listQuery.isError && (
             <p className="text-sm text-destructive">
               Бүтээгдэхүүн татахад алдаа гарлаа.
             </p>
           )}
-          {productsQuery.isSuccess && productsQuery.data.length === 0 && (
+          {listQuery.isSuccess && listQuery.data.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              Бүтээгдэхүүн олдсонгүй.
+              {isSearching
+                ? "Хайлтад тохирох бүтээгдэхүүн олдсонгүй."
+                : "Бүтээгдэхүүн олдсонгүй."}
             </p>
           )}
           <ul className="divide-y divide-border">
-            {(productsQuery.data ?? []).map((p) => (
+            {(listQuery.data ?? []).map((p) => (
               <li
                 key={p.id}
                 className="flex items-center justify-between gap-3 py-2.5"

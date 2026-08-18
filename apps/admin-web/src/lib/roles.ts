@@ -23,6 +23,11 @@ export const PRODUCT_UPDATE_ROLES = [
 export const VARIANT_CREATE_ROLES = PRODUCT_CREATE_ROLES;
 export const VARIANT_UPDATE_ROLES = PRODUCT_UPDATE_ROLES;
 
+// ↔ apps/api/src/catalog/product-image/product-image.controller.ts
+// (IMAGE_WRITE_ROLES) — PRODUCT_CREATE_ROLES-той яг ижил (BRANCH_MANAGER
+// ороогүй, зураг upload/устгах "structural" үйлдэл гэж үзсэн).
+export const PRODUCT_IMAGE_WRITE_ROLES = PRODUCT_CREATE_ROLES;
+
 export const INVENTORY_WRITE_ROLES = [
   "SUPER_ADMIN",
   "ALL_BRANCH_MANAGER",

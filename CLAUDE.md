@@ -113,9 +113,10 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон)
-дууссан; geolocation auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй:
-`docs/plan.md` §8.
+Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮРЭН дууссан (MinIO зураг
++ Meilisearch хайлт, Phase 3c-ийн дараа буцаж гүйцээв). Phase 3c — Буцаалт
+ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон) дууссан; geolocation
+auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -532,8 +533,137 @@ Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, P
   давхаргад "аль нь алдаа заавал үзүүлэх ёстой" гэж ХАТУУ баталгаажуулах
   боломжгүй (энэ бол UX-ийн давуу тал), харин ЖИНХЭНЭ (санхүүгийн)
   баталгааг ЗААВАЛ шууд API/DB дуудлагаар (UI-аас тусад нь) шалгах ёстой.
+- **Каталог + агуулах (Phase 2) БҮРЭН дууссан — MinIO зураг (Хэсэг A) +
+  Meilisearch хайлт (Хэсэг B)**, Phase 3c-ийн дараа буцаж гүйцээв:
+  - **Хэсэг A (MinIO):** `ProductImage` Prisma загвар + migration
+    (`add_product_images`, `enable_product_images_rls`) — Category/
+    Product-той ЯГ ижил RLS зарчим (SELECT бүх нэвтэрсэн хэрэглэгчид, CUD
+    зөвхөн `products_insert`/`products_delete`-тэй ижил дүрүүдэд:
+    SUPER_ADMIN/ALL_BRANCH_MANAGER/BRANCH_ADMIN, BRANCH_MANAGER орохгүй)
+    — шинэ SECURITY DEFINER функц ШААРДААГҮЙ (ADR 005-ийн "эхлээд байгаа
+    RLS зарчмаа дахин ашигла" зарчим). `src/storage/minio.service.ts`
+    (`MinioService.onModuleInit()` bucket-ийг idempotent үүсгэж
+    (`bucketExists`→`makeBucket`) public-read bucket policy тавина —
+    даалгаврын шууд заавраар presigned URL БИШ, учир нь бүтээгдэхүүний
+    зураг угаасаа нийтэд харагдах учиртай). `src/catalog/product-image`
+    (`ProductImageController`/`Service`) — `POST/DELETE
+    /products/:productId/images(/:id)` (`FileInterceptor('file',
+    {storage: memoryStorage(), limits: {fileSize: 5MB}})`, mimetype
+    whitelist jpg/png/webp). ⚠️ **Чухал нээлт:** multer-ийн
+    `limits.fileSize`-аас давсан файл NestJS-ийн `transformException()`-ээр
+    `PayloadTooLargeException` (413, `PAYLOAD_TOO_LARGE`) болж хувирдаг
+    (interceptor түвшинд, controller/service-д ХҮРЭХГҮЙ) — тул
+    `ProductImageService`-ийн өөрийн `file.size` шалгалт (400
+    `FILE_TOO_LARGE`) зөвхөн interceptor-ыг тойрсон/өөр орж ирэх замд
+    (жиш: service-ийг шууд unit-тестлэх) хэрэгждэг, HTTP-ийн жинхэнэ
+    их файл 413-аар баригдана — e2e тест хоёуланг нь тусад нь баталгаажуулсан.
+    Route param-ыг DELETE-д ЗОРИУДАА `:imageId` биш `:id` гэж нэрлэсэн —
+    `AuditInterceptor.captureBeforeData()`/`extractIdField()`-ийн
+    анхдагч `req.params.id`-тай санамсаргүй бус давхацуулж, custom
+    `recordId()` бичих шаардлагагүй болгосон (audit.decorator.ts-ийн
+    зорилготой чинь давхар нийцүүлэв). `GET /products/:id` одоо
+    `images` массивыг (`displayOrder`-оор эрэмбэлсэн, `MinioService.
+    getPublicUrl()`-ээр нэмсэн `url`-тэй) хариунд нэгтгэдэг —
+    `ProductService.hydrateProduct()` (`findOne`/`findManyWithAvailability`
+    хоёуланд нь дахин ашигласан ганц газар, логик давхардуулаагүй).
+  - **Хэсэг B (Meilisearch):** `src/search` (`MeilisearchService`,
+    `SearchIndexer`) — Phase 3b-ийн `OrderEventsPublisher`-тэй ЯГ ИЖИЛ
+    `RequestContextService.onCommit()` gated загвар (даалгаврын шууд
+    зааврын дагуу WebSocket Gateway-ийн загварыг дахин ашиглав): RLS
+    transaction (ADR 001) бодитоор COMMIT хийгдсэний ДАРАА л Meilisearch
+    рүү индексжинэ, `onCommit` callback дотор `.catch()`-оор алдааг
+    заавал барьж лог бичдэг (RlsMiddleware-ийн callback array нь async
+    reject-ийг барьдаггүй тул — эс бөгөөс unhandled rejection-оор
+    процесс унах эрсдэлтэй, `search-indexer.service.spec.ts`-д тусад нь
+    баталгаажуулсан). `ProductService.create/update/remove()` автоматаар
+    (category нэрийг тусад нь уншиж денормалчилж) индекс шинэчилдэг/
+    устгадаг. `GET /catalog/search?q=&categoryId=&branchId=`
+    (`src/catalog/search`) — @Roles()-гүй, ProductController.findOne-тэй
+    ЯГ ижил зарчим ("бүх нэвтэрсэн дүрд", учир нь `products_select` RLS
+    policy `app_current_user_id() IS NOT NULL` шаарддаг тул интернэтэд
+    БҮРЭН анонимаар нээлттэй болгох нь одоо байгаа бүх каталогийн RLS-ийн
+    урьдал нөхцлийг өөрчлөх том архитектурын шийдвэр — тиймээс энэ
+    даалгаврын хүрээнд "public" гэдгийг зориудаар "ямар ч @Roles()
+    шаардахгүй" гэж уламжлалт утгаар нь ойлгосон). `isActive=true` filter
+    үргэлж хэрэгждэг (идэвхгүй бүтээгдэхүүн хайлтад хэзээ ч гарахгүй).
+    ⚠️ **Чухал нээлт (e2e тестээр илэрсэн):** Meilisearch-ийн анхдагч
+    `matchingStrategy: 'last'` нь query-ийн СҮҮЛИЙН үгсийг "хаяж" илүү
+    олон (сул холбогдолтой, өөр бүтээгдэхүүнтэй ч давхцаж болзошгүй)
+    үр дүн буцаадаг нь e2e тестийн санамсаргүй "давхцал" (өөр тестийн
+    өгөгдөл холилдох) байдлаар нээгдсэн — `MeilisearchService.search()`-д
+    `matchingStrategy: 'all'`-г ЗААВАЛ тавьж (бүх query үг тохирохыг
+    шаардана) илүү тодорхой/урьдчилан таамаглаж болохуйц хайлтын үр
+    дүнтэй болгосон. `POST /catalog/search/reindex` (SUPER_ADMIN,
+    `@Audit` шаардлагагүй — DB мутаци биш, зөвхөн унших+Meilisearch руу
+    бичих).
+  - **CI:** `.github/workflows/ci.yml`-д MinIO (`docker run`-аар,
+    Keycloak-той ижил шалтгаанаар — GH Actions-ийн job-level `services:`
+    нь `command:` дэмждэггүй тул "server /data" аргумент дамжуулах
+    боломжгүй) БОЛОН Meilisearch (`services:`-ээр шууд, анхдагч CMD
+    аргумент шаардахгүй тул) нэмэгдэв, `MINIO_*`/`MEILI_*` env бүгд
+    нэмэгдсэн, e2e-ийн өмнө хоёуланг нь `curl`-аар бэлэн болохыг хүлээдэг.
+    ⚠️ **Чухал заль (pnpm strict node_modules):** `product-image.
+    controller.ts` `multer`-ээс шууд `import { memoryStorage }` хийдэг ч
+    зөвхөн `@types/multer` devDependency-д нэмсэн байсан — `multer`
+    өөрөө `@nestjs/platform-express`-ийн transitive dependency тул dev/
+    test-д (ts-jest-ийн module resolution-оор) санамсаргүй ажилласан ч
+    prod build-ийн `dist/src/main.js`-г шууд `node`-оор ажиллуулахад
+    (§10.2-ийн "Build дараах smoke test" CI алхам) pnpm-ийн strict
+    node_modules-ээр `Cannot find module 'multer'` (MODULE_NOT_FOUND)
+    болж унасан — GH Actions дээр л (локал `pnpm run build` + unit/e2e
+    бүгд ажилладаг байсан тул анзаарагдаагүй) илэрсэн. Сургамж: гуравдагч
+    сангаас ШУУД `import` хийдэг бол, тэр нь зөвхөн өөр dependency-ийн
+    transitive dep байсан ч, `@types/*`-ийн хажууд бодит package-ийг ч
+    ЗААВАЛ шууд `dependencies`-д нэмэх ёстой.
+  - ⚠️ **Чухал заль (e2e тогтвортой байдал):** `apps/api/package.json`-ийн
+    `test:e2e`-д `--runInBand` нэмсэн (spec файлуудыг цуврал ажиллуулна)
+    — N Nest app instance зэрэг Postgres/Keycloak руу холбогдоход
+    нөөцийн (connection pool) хомсдол үүсч `checkoutAndComplete`-ийн
+    зарим PATCH санамсаргүй 400/404 буцаадаг байсныг GH Actions CI дээр
+    бодитоор ажиглаж (локал дээр ч давтагдав) шийдэв. Нэмэлтээр
+    `test/auth-staff.e2e-spec.ts`/`test/catalog-inventory.e2e-spec.ts`-ийн
+    audit_logs шалгалт хоёул `waitFor()`-гүйгээр шууд `findFirst()`
+    дуудаж байсан нь `--runInBand`-аар ч арилаагүй ганц race байсан
+    (RlsMiddleware-ийн transaction COMMIT HTTP хариунаас бага зэрэг хойш
+    явагддаг тул) — `test/returns.e2e-spec.ts`-д Phase 3c-д аль хэдийн
+    нэвтрүүлсэн ЯГ ижил `waitFor()` idiom-ыг хоёуланд нь нэмж зассан.
+  - **Admin-web:** `src/components/ProductImageGallery.tsx` (drag-drop
+    БОЛОН file picker хоёулаа — товшиж эсвэл чирж оруулж болно, gallery
+    grid, hover дээр гарч ирэх "Устгах" товч) `/products/:id`-д
+    нэмэгдэв. `src/pages/ProductsPage.tsx`-д debounce-той (300мс,
+    `src/lib/use-debounced-value.ts`) хайлтын талбар нэмэгдэж, хоосон
+    үед энгийн `GET /products`, бичихэд `GET /catalog/search` рүү
+    шилждэг. `src/lib/roles.ts`-д `PRODUCT_IMAGE_WRITE_ROLES`
+    (`PRODUCT_CREATE_ROLES`-тэй ижил) нэмэгдэв. Vitest+RTL smoke тест
+    (`ProductImageGallery.test.tsx`, `ProductsPage.test.tsx`).
+    **Playwright-аар (ad hoc, Phase 3c-ийн адил, repo-д devDependency
+    болгож нэмээгүй) бодит browser-т бүрэн урсгал баталгаажуулав:**
+    нэвтрэх → ангилал/бүтээгдэхүүн үүсгэх → зураг upload (жинхэнэ PNG
+    файл) → gallery-д харагдав, MinIO-ээс public URL (auth-гүй, 200 OK)
+    зөв ирсэн → Устгах товч дарж gallery-ээс алга болов → хайлтын
+    талбараар тухайн бүтээгдэхүүнээ олов; console алдаа 0.
+    ⚠️ **Энэ дадлагаас олдсон, каталогтой шууд хамааралгүй ч чухал 2
+    орчны засвар:** (1) `apps/admin-web/.env`-ийн `VITE_API_URL` энэ
+    хөгжүүлэлтийн машин дээр байнга ажиллаж байсан backend-ийн бодит
+    порттой (`3001`, учир нь `3000` порт өөр төслийн docker container-т
+    аль хэдийн эзэмшигдсэн байсан) таарахгүй хуучирсан (`3000`) утгатай
+    байсан — ЗАСАВ. (2) admin-web-ийн dev server нь vite-ийн анхдагч
+    `5173`-аас өөр (`5174`) порт дээр гарч ирсэн байсан бол
+    `main.ts`-ийн CORS `origin: 'http://localhost:5173'` хатуу заасан
+    утгатай ХЭЗЭЭ Ч таарахгүй тул бүх хүсэлт чимээгүй block хийгддэг —
+    vite-г ЗОРИУДАА `--port 5173 --strictPort`-ээр дахин асаав (код
+    дотор ямар ч өөрчлөлт хийгээгүй, зөвхөн локал dev орчны тохиргоо).
+    Playwright баталгаажуулалтад зориулж түр Keycloak тестийн
+    хэрэглэгч (`playwright-verify@order-system.mn`, SUPER_ADMIN)
+    үүсгэсэн — dev DB/Keycloak-д үлдсэн, устгах шаардлагагүй (бусад e2e
+    тестийн өгөгдөлтэй адил зөвхөн dev орчны debris).
+  - ⚠️ **Олдож, ЗАСАГДСАН — ЭНЭ ажилтай шууд холбоогүй, өмнөх Phase-аас
+    өвлөгдсөн 2 CI-г улаан гаргаж байсан асуудал** (`multer` dependency
+    + e2e `--runInBand`/`waitFor` race) — дэлгэрэнгүй тайлбарыг дээрх
+    "CI" бүлгээс үз. `gh run watch`-аар PR #8 (`feature/
+    catalog-images-search` → `main`) дээр CI бүрэн ногоон болсныг
+    баталгаажуулсан.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
-  MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
   хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
   устгах/SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
@@ -553,3 +683,17 @@ Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, P
   state-machine шалгалтаар (`order.status !== 'CREATED' ...`) НУУГДСАН
   хэвээр — returns PR #7-д яг энэ загварыг илрүүлж/шалгасан ч цаг
   хугацааны хувьд зөвхөн буцаалтын модульд л засварлав.
+- **(backlog, яаралтай биш, зөвхөн тэмдэглэл)** `apps/api/package.json`-ийн
+  `test:e2e`-д нэмсэн `--runInBand` (спец файлуудыг цуврал ажиллуулах,
+  §8 Phase 2-ийн e2e тогтвортой байдлын засвар) нь Postgres/Keycloak
+  connection pool-ийн хомсдлыг арилгасан ч, үүний хажуугийн зардал бол
+  CI-ийн e2e ажиллах ХУГАЦАА spec файлын тоотой ШУЛУУН пропорциональ
+  (шугаман) өсдөг болсон явдал — файлууд зэрэгцээ биш дараалан ажилладаг
+  тул. Spec файлын тоо цаашид өсөх тусам ("Phase" бүрд шинэ
+  `*.e2e-spec.ts` нэмэгдэх хандлагатай) энэ нь CI-ийн хамгийн удаан
+  алхам болох эрсдэлтэй. Ирээдүйд шаардлагатай болвол авч болох
+  чиглэл: тестийн өгөгдлийг (Meilisearch индекс, Postgres мөр)
+  spec файл БҮРД тусгаарлах загвар руу шилжиж (жиш: өвөрмөц prefix/
+  schema-ээр тусгаарлах) дахин зэрэгцээ ажиллуулах, эсвэл Jest
+  `--shard`-аар CI job-ыг хэд хэдэд хуваах. Одоогоор яаралтай биш,
+  учир нь CI-ийн нийт хугацаа хараахан тэвчиж болохуйц хэвээр байна.

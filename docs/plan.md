@@ -341,8 +341,30 @@ SET LOCAL app.accessible_branches = $3;
       `app_inventory_snapshot_for_variant()` SECURITY DEFINER функц зөвхөн
       серверийн санах ойд зориулсан түүхий баганыг буцаадаг, HTTP хариунд
       квант/салбар шууд гардаггүй; migration `add_public_availability_lookup_function`).
-- [ ] MinIO зураг байршуулах endpoint
-- [ ] Meilisearch индексжилтийн pipeline
+- [x] **(Хэсэг A)** MinIO зураг байршуулах endpoint: `ProductImage` Prisma
+      загвар + migration (`add_product_images`, `enable_product_images_rls`
+      — Category/Product-той ижил RLS: SELECT бүх нэвтэрсэн хэрэглэгчид, CUD
+      зөвхөн products_insert/delete-тэй ижил дүрүүдэд, шинэ SECURITY
+      DEFINER функц шаардлагагүй). `src/storage/minio.service.ts`
+      (`onModuleInit`-д bucket idempotent үүсгэж public-read policy
+      тавина — presigned URL биш, шууд public URL). `POST/DELETE
+      /products/:productId/images(/:id)` (`src/catalog/product-image`),
+      multer `memoryStorage` + 5MB limit (interceptor түвшинд 413,
+      service түвшинд 400 хос давхар хамгаалалт), mimetype whitelist
+      (jpg/png/webp). `GET /products/:id` одоо `images` массивыг
+      (displayOrder-оор эрэмбэлсэн, public url-тэй) нэгтгэдэг.
+- [x] **(Хэсэг B)** Meilisearch индексжилтийн pipeline: `src/search`
+      (`MeilisearchService`, `SearchIndexer`) — Phase 3b-ийн
+      `OrderEventsPublisher`-тэй ЯГ ижил `RequestContextService.onCommit()`
+      gated загвар (RLS transaction commit хийгдсэний ДАРАА л Meilisearch
+      рүү бичнэ). `ProductService.create/update/remove()` автоматаар
+      индекс шинэчилдэг/устгадаг. `GET /catalog/search?q=&categoryId=&branchId=`
+      (`src/catalog/search`, @Roles()-гүй — ProductController.findOne-тэй
+      адил "бүх нэвтэрсэн дүрд", бүрэн анонимд БИШ), `isActive=true`
+      filter үргэлж хэрэгжинэ, `matchingStrategy: 'all'` (Meilisearch-ийн
+      анхдагч "last" сул холбоотой үр дүн буцаадгийг e2e тестээр илрүүлж
+      илүү тодорхой болгов). `POST /catalog/search/reindex`
+      (SUPER_ADMIN) — bulk reindex.
 - [x] Салбар тус бүрийн нөөцийн хүснэгт, дутагдлын сэрэмжлүүлэг:
       `InventoryItem.lowStockThreshold` талбар нэмэгдсэн (сэрэмжлүүлэг
       ИЛГЭЭХ мэдэгдлийн урсгал өөрөө Phase 4-ийн мэдэгдлийн модультай хамт

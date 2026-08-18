@@ -29,6 +29,28 @@ function getJwtSecret(): Uint8Array {
   return new TextEncoder().encode(process.env.JWT_SECRET ?? '');
 }
 
+// RlsMiddleware-ийн request-scoped transaction (ADR 001) COMMIT хийгдэх нь
+// HTTP хариу клиент рүү очихоос бага зэрэг ХОЙШ явагддаг тул supertest-ийн
+// `.expect(200)` амжилттай буцсан ч audit_logs мөр ХАРАХ баталгаагүй агшин
+// байж болно — test/returns.e2e-spec.ts-ийн ижил зорилготой waitFor()-той адил.
+async function waitFor<T>(
+  fn: () => Promise<T | null>,
+  timeoutMs = 1000,
+  intervalMs = 25,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const result = await fn();
+    if (result !== null) {
+      return result;
+    }
+    if (Date.now() > deadline) {
+      throw new Error('waitFor: хугацаа дууслаа, нөхцөл хангагдсангүй');
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+}
+
 // docs/adr/002: JWT (custom эсвэл Keycloak) хоёулаа зөвхөн "identity"
 // нотолно, role/branch ХЭЗЭЭ Ч JWT-д ордоггүй тул TokenVerifierService-ийн
 // custom (HS256, CUSTOMER_JWT_ISSUER) заманд ямар ч дүртэй тестийн
@@ -311,15 +333,16 @@ describe('Catalog & Inventory (e2e)', () => {
   });
 
   it('нөөцийн өөрчлөлт бүрт audit лог (inventory_items.quantity_adjusted) бичигдэнэ', async () => {
-    const row = await superuserPrisma.auditLog.findFirst({
-      where: {
-        tableName: 'inventory_items',
-        recordId: inventoryItemAId,
-        action: 'inventory_items.quantity_adjusted',
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    expect(row).not.toBeNull();
+    await waitFor(() =>
+      superuserPrisma.auditLog.findFirst({
+        where: {
+          tableName: 'inventory_items',
+          recordId: inventoryItemAId,
+          action: 'inventory_items.quantity_adjusted',
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    );
   });
 
   // admin-web-ийн салбар сонгох dropdown-д зориулсан минимал GET /branches

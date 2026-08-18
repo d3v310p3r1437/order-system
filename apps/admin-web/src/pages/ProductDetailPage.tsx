@@ -5,6 +5,7 @@ import { getBranches, getProduct, type ProductVariant } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import {
   INVENTORY_WRITE_ROLES,
+  PRODUCT_IMAGE_WRITE_ROLES,
   VARIANT_CREATE_ROLES,
   VARIANT_UPDATE_ROLES,
 } from "@/lib/roles";
@@ -13,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AvailabilityBadge } from "@/components/AvailabilityBadge";
 import { InventoryPanel } from "@/components/InventoryPanel";
+import { ProductImageGallery } from "@/components/ProductImageGallery";
 import { VariantDialog } from "@/components/VariantDialog";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +24,7 @@ export function ProductDetailPage() {
   const canCreateVariant = hasRole(VARIANT_CREATE_ROLES);
   const canUpdateVariant = hasRole(VARIANT_UPDATE_ROLES);
   const canWriteInventory = hasRole(INVENTORY_WRITE_ROLES);
+  const canWriteImages = hasRole(PRODUCT_IMAGE_WRITE_ROLES);
 
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     null,
@@ -105,6 +108,19 @@ export function ProductDetailPage() {
           {product.slug}
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Зураг</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ProductImageGallery
+            productId={product.id}
+            images={product.images}
+            canWrite={canWriteImages}
+          />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">

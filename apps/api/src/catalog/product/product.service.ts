@@ -4,13 +4,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { ProductVariant } from '@prisma/client';
+import type { Product, ProductVariant } from '@prisma/client';
 import {
   isForeignKeyViolation,
   isRecordNotFoundError,
   isUniqueConstraintViolation,
 } from '../../common/prisma-errors.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { SearchIndexer } from '../../search/search-indexer.service.js';
+import { toProductSearchDocument } from '../../search/product-search-document.js';
+import { MinioService } from '../../storage/minio.service.js';
 import {
   computeAvailabilityStatus,
   type AvailabilityResult,
@@ -35,7 +38,11 @@ interface InventorySnapshotRow {
 
 @Injectable()
 export class ProductService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly searchIndexer: SearchIndexer,
+    private readonly minio: MinioService,
+  ) {}
 
   findAll(categoryId?: string) {
     return this.prisma.tx.product.findMany({
@@ -56,7 +63,10 @@ export class ProductService {
   async findOne(id: string, branchId?: string) {
     const product = await this.prisma.tx.product.findUnique({
       where: { id },
-      include: { variants: true },
+      include: {
+        variants: true,
+        images: { orderBy: { displayOrder: 'asc' } },
+      },
     });
     if (!product) {
       throw new NotFoundException({
@@ -64,14 +74,51 @@ export class ProductService {
         message: 'Бүтээгдэхүүн олдсонгүй',
       });
     }
+    return this.hydrateProduct(product, branchId);
+  }
 
+  // §8 Phase 2 Хэсэг B, даалгавар #9: Meilisearch-ээс ирсэн (эрэмбэлэгдсэн)
+  // id жагсаалтаар Product-уудыг availability-тэй хамт буцаана —
+  // findOne()-той ЯГ ижил hydrateProduct()-г дахин ашиглав (логик
+  // давхардуулахгүй байх зарчим). Meilisearch-ийн эрэмбэ (relevance)
+  // хадгалагдах ёстой тул findMany()-ийн үр дүнг дахин id жагсаалтаар эрэмбэлнэ.
+  async findManyWithAvailability(ids: string[], branchId?: string) {
+    if (ids.length === 0) {
+      return [];
+    }
+    const products = await this.prisma.tx.product.findMany({
+      where: { id: { in: ids } },
+      include: {
+        variants: true,
+        images: { orderBy: { displayOrder: 'asc' } },
+      },
+    });
+    const byId = new Map(products.map((p) => [p.id, p]));
+    const ordered = ids
+      .map((id) => byId.get(id))
+      .filter((p): p is (typeof products)[number] => p !== undefined);
+    return Promise.all(
+      ordered.map((product) => this.hydrateProduct(product, branchId)),
+    );
+  }
+
+  private async hydrateProduct<
+    T extends {
+      variants: ProductVariant[];
+      images: { objectKey: string }[];
+    },
+  >(product: T, branchId: string | undefined) {
     const variants = await Promise.all(
       product.variants.map(async (variant) => ({
         ...variant,
         availability: await this.computeVariantAvailability(variant, branchId),
       })),
     );
-    return { ...product, variants };
+    const images = product.images.map((image) => ({
+      ...image,
+      url: this.minio.getPublicUrl(image.objectKey),
+    }));
+    return { ...product, variants, images };
   }
 
   private async computeVariantAvailability(
@@ -103,7 +150,7 @@ export class ProductService {
 
   async create(dto: CreateProductDto) {
     try {
-      return await this.prisma.tx.product.create({
+      const product = await this.prisma.tx.product.create({
         data: {
           name: dto.name,
           slug: dto.slug,
@@ -113,6 +160,8 @@ export class ProductService {
           isActive: dto.isActive,
         },
       });
+      await this.indexProduct(product);
+      return product;
     } catch (error) {
       if (isUniqueConstraintViolation(error)) {
         throw new ConflictException(SLUG_TAKEN);
@@ -129,7 +178,7 @@ export class ProductService {
 
   async update(id: string, dto: UpdateProductDto) {
     try {
-      return await this.prisma.tx.product.update({
+      const product = await this.prisma.tx.product.update({
         where: { id },
         data: {
           name: dto.name,
@@ -140,6 +189,8 @@ export class ProductService {
           isActive: dto.isActive,
         },
       });
+      await this.indexProduct(product);
+      return product;
     } catch (error) {
       if (isRecordNotFoundError(error)) {
         throw new NotFoundException({
@@ -162,7 +213,9 @@ export class ProductService {
 
   async remove(id: string) {
     try {
-      return await this.prisma.tx.product.delete({ where: { id } });
+      const product = await this.prisma.tx.product.delete({ where: { id } });
+      this.searchIndexer.deleteProduct(product.id);
+      return product;
     } catch (error) {
       if (isRecordNotFoundError(error)) {
         throw new NotFoundException({
@@ -172,5 +225,30 @@ export class ProductService {
       }
       throw error;
     }
+  }
+
+  // create()/update() хоёуланд нь ашиглагдана — categoryName-г
+  // денормалчлахын тулд category мөрийг тусад нь уншина (Product.create/
+  // update-ийн буцаах утга categoryId-г л агуулдаг, category.name биш).
+  private async indexProduct(product: Product): Promise<void> {
+    const category = await this.prisma.tx.category.findUnique({
+      where: { id: product.categoryId },
+    });
+    this.searchIndexer.indexProduct(
+      toProductSearchDocument(product, category?.name ?? ''),
+    );
+  }
+
+  // Bulk reindex (§8 Phase 2, даалгавар #10) — одоо байгаа бүх Product-ыг
+  // Meilisearch рүү дахин бичнэ (жиш: индекс алдагдсан/анх удаа бэлдэх үед).
+  async reindexAll(): Promise<number> {
+    const products = await this.prisma.tx.product.findMany({
+      include: { category: true },
+    });
+    const docs = products.map((product) =>
+      toProductSearchDocument(product, product.category.name),
+    );
+    await this.searchIndexer.reindexAll(docs);
+    return docs.length;
   }
 }
