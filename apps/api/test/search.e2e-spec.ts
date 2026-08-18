@@ -271,6 +271,61 @@ describe('Catalog search (e2e)', () => {
     expect(results.map((p) => p.id)).toContain(productId);
   });
 
+  // GET /products/:id-ийн "мэдээлэл алдагдаагүй" e2e загварын (test/
+  // catalog-inventory.e2e-spec.ts-ийн "quantity/branchId дотоод
+  // мэдээлэл харагдахгүй" тест) ЯГ ижил зарчмаар GET /catalog/search-г
+  // мөн баталгаажуулна — findManyWithAvailability() нь findOne()-той адил
+  // hydrateProduct()-г дахин ашигладаг ч, энэ баталгааг хайлтын замаар ч
+  // тусад нь батлах ёстой (endpoint тус бүр өөрийн гэсэн e2e нотолгоотой
+  // байх ёстой, findOne()-ийн тест дотоод хэрэгжилтийн дэлгэрэнгүйг
+  // мэдэхгүй тул).
+  it('CUSTOMER-ийн хайлтын хариунд InventoryItem-ийн raw quantity/branchId ил гардаггүй, зөвхөн тооцоолсон availability status буцна', async () => {
+    const tag = freshTag();
+    const branch = await superuserPrisma.branch.create({
+      data: { name: `Хайлтын салбар ${tag}` },
+    });
+    const productId = await createProduct({
+      name: `${tag} Нөөцтэй бараа`,
+      categoryId: categoryA.id,
+    });
+    const variantRes = await request(app.getHttpServer())
+      .post('/product-variants')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        productId,
+        name: 'Стандарт',
+        sku: `search-sku-${tag}`,
+        basePrice: 10000,
+      })
+      .expect(201);
+    const variantId = (variantRes.body as { id: string }).id;
+
+    await request(app.getHttpServer())
+      .post('/inventory-items')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ variantId, branchId: branch.id, quantity: 42 })
+      .expect(201);
+
+    const results = await waitFor(async () => {
+      const hits = await searchFor(customerToken, {
+        q: `${tag} Нөөцтэй бараа`,
+        branchId: branch.id,
+      });
+      return hits.length >= 1 ? hits : null;
+    });
+
+    const product = results.find((p) => p.id === productId);
+    const variant = product?.variants.find((v) => v.id === variantId);
+    expect(variant?.availability).toEqual({
+      status: 'IN_STOCK',
+      leadDays: null,
+    });
+    expect(variant?.availability).not.toHaveProperty('quantity');
+    expect(variant?.availability).not.toHaveProperty('branchId');
+    expect(JSON.stringify(results)).not.toContain('"quantity"');
+    expect(JSON.stringify(results)).not.toContain('"branchId"');
+  });
+
   it('PATCH /products/:id-ээр нэр өөрчлөгдвөл индекс шинэчлэгдэж, шинэ нэрээр олддог болно', async () => {
     const tag = freshTag();
     const productId = await createProduct({
