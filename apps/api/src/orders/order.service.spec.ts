@@ -163,11 +163,13 @@ describe('OrderService.updateStatus', () => {
     const service = newService(prisma);
     await service.updateStatus('o-1', 'cust-1', { status: 'CANCELLED' });
 
+    // common/savepoint.util.ts нь давхцалгүй нэр өгөхийн тулд тоолуур
+    // залгадаг (sp_1, sp_2, ...) тул яг тоог биш хэв маягийг л шалгана.
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
-      'SAVEPOINT order_service_mutation',
+      expect.stringMatching(/^SAVEPOINT sp_\d+$/),
     );
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
-      'RELEASE SAVEPOINT order_service_mutation',
+      expect.stringMatching(/^RELEASE SAVEPOINT sp_\d+$/),
     );
     const updateArgs = (mocks.orderUpdate.mock.calls[0] as unknown[])[0] as {
       where: { id: string };
@@ -252,10 +254,10 @@ describe('OrderService.checkout', () => {
     ).rejects.toThrow(ConflictException);
 
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
-      'SAVEPOINT order_service_mutation',
+      expect.stringMatching(/^SAVEPOINT sp_\d+$/),
     );
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
-      'ROLLBACK TO SAVEPOINT order_service_mutation',
+      expect.stringMatching(/^ROLLBACK TO SAVEPOINT sp_\d+$/),
     );
   });
 });

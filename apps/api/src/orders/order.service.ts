@@ -13,6 +13,7 @@ import {
   isCheckConstraintViolation,
   isForeignKeyViolation,
 } from '../common/prisma-errors.js';
+import { withSavepoint } from '../common/savepoint.util.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
 import {
   PAYMENT_PROVIDER,
@@ -109,10 +110,10 @@ export class OrderService {
   // хүсэлтийг нэг interactive transaction-д ороосон байдаг (docs/adr/001)
   // тул энд `prisma.$transaction`-ыг ДАХИН дуудахгүй (interactive
   // TransactionClient дээр $transaction методгүй) — оронд нь
-  // withSavepoint()-оор SAVEPOINT ашиглаж, cart-ийн аль нэг мөр
-  // амжилтгүй болвол ЗӨВХӨН энэ checkout-ийн бичсэн зүйлсийг (Order,
-  // OrderItem-үүд, өмнөх амжилттай decrement-үүд) ROLLBACK TO SAVEPOINT-оор
-  // буцаана — доорх withSavepoint()-ийн тайлбарыг үз.
+  // common/savepoint.util.ts-ийн withSavepoint()-оор SAVEPOINT ашиглаж,
+  // cart-ийн аль нэг мөр амжилтгүй болвол ЗӨВХӨН энэ checkout-ийн бичсэн
+  // зүйлсийг (Order, OrderItem-үүд, өмнөх амжилттай decrement-үүд)
+  // ROLLBACK TO SAVEPOINT-оор буцаана — тэр файлын тайлбарыг үз.
   async checkout(customerId: string, dto: CheckoutOrderDto) {
     // Үнэ тооцоолол (READ-ONLY) — SAVEPOINT-ын гадна, учир нь юу ч бичихгүй.
     const resolvedItems = await Promise.all(
@@ -145,7 +146,7 @@ export class OrderService {
       totalAmount.toNumber(),
     );
 
-    const result = await this.withSavepoint(async () => {
+    const result = await withSavepoint(this.prisma.tx, async () => {
       const order = await this.createOrderRow(
         orderId,
         customerId,
@@ -207,7 +208,7 @@ export class OrderService {
       throw new BadRequestException(INVALID_TRANSITION);
     }
 
-    const result = await this.withSavepoint(async () => {
+    const result = await withSavepoint(this.prisma.tx, async () => {
       if (isRestockingTransition(dto.status)) {
         for (const item of order.items) {
           await this.adjustInventory(
@@ -358,38 +359,6 @@ export class OrderService {
       this.logger.warn(
         `Нөөц буцаах InventoryItem олдсонгүй (variantId=${variantId}, branchId=${branchId}) — алгасав`,
       );
-    }
-  }
-
-  // RlsMiddleware-ийн request-scoped transaction (docs/adr/001) дотор
-  // SAVEPOINT нээж, cart дэх аль нэг мөрийн decrement CHECK constraint
-  // зөрчигдвөл (эсвэл InventoryItem мөр байхгүй бол) ЗӨВХӨН энэ checkout/
-  // status-update-ийн бичсэн зүйлсийг (Order/OrderItem үүсгэлт, өмнөх
-  // амжилттай decrement/increment-үүд) ROLLBACK TO SAVEPOINT-оор буцаана.
-  //
-  // ⚠️ Чухал заль: Prisma-гийн interactive TransactionClient (`tx`) дээр
-  // `$transaction` метод байхгүй (deny-list-д орсон) тул nested
-  // транзакц ашиглах боломжгүй. Мөн Postgres-ийн "0 мөр олдсонгүй" (жиш:
-  // InventoryItem мөр байхгүй) нь ЖИНХЭНЭ Postgres алдаа БИШ (statement
-  // амжилттай, зүгээр 0 мөр өөрчилсөн) тул CHECK constraint зөрчил шиг
-  // транзакцыг автоматаар "aborted" болгодоггүй — Order/OrderItem зэрэг
-  // өмнөх мөрүүд SAVEPOINT-гүйгээр committed үлдэх эрсдэлтэй байсан.
-  // Иймд аль ч төрлийн алдаа (JS-level throw эсвэл Postgres CHECK
-  // constraint violation) гарсан ч ROLLBACK TO SAVEPOINT-ыг ЗААВАЛ
-  // дуудна — энэ нь транзакцыг (aborted эсэх үл хамааран) SAVEPOINT-ийн
-  // өмнөх эрүүл төлөвт буцаана.
-  private async withSavepoint<T>(fn: () => Promise<T>): Promise<T> {
-    const tx = this.prisma.tx;
-    await tx.$executeRawUnsafe('SAVEPOINT order_service_mutation');
-    try {
-      const result = await fn();
-      await tx.$executeRawUnsafe('RELEASE SAVEPOINT order_service_mutation');
-      return result;
-    } catch (error) {
-      await tx.$executeRawUnsafe(
-        'ROLLBACK TO SAVEPOINT order_service_mutation',
-      );
-      throw error;
     }
   }
 }

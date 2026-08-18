@@ -190,6 +190,57 @@ export interface Order {
   items: OrderItem[];
 }
 
+export type ReturnStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "REFUNDED"
+  | "REFUND_FAILED";
+
+// apps/api/src/returns/return-request.service.ts-ийн ORDER_ITEM_INCLUDE-тэй
+// адил (orderItem.order) — детэйл дэлгэцэд захиалгын дугаар/дүн харуулахад
+// хэрэгтэй.
+export interface ReturnRequestOrderItem {
+  id: string;
+  orderId: string;
+  variantId: string;
+  quantity: number;
+  unitPriceSnapshot: string;
+  order: {
+    id: string;
+    branchId: string;
+    customerId: string;
+    status: OrderStatus;
+    providerInvoiceId: string | null;
+  };
+}
+
+export interface ReturnRequest {
+  id: string;
+  orderItemId: string;
+  requestedByUserId: string;
+  status: ReturnStatus;
+  reason: string;
+  rejectedReason: string | null;
+  // refundFeePercent/refundAmount — Prisma Decimal тул JSON-д string
+  // (basePrice/totalAmount-тай адил), зөвшөөрөгдөх хүртэл null.
+  refundFeePercent: string | null;
+  refundAmount: string | null;
+  providerRefundId: string | null;
+  reviewedByUserId: string | null;
+  requestedAt: string;
+  reviewedAt: string | null;
+  refundedAt: string | null;
+  orderItem: ReturnRequestOrderItem;
+}
+
+export interface ReturnFeeSetting {
+  key: string;
+  value: string;
+  updatedByUserId: string | null;
+  updatedAt: string | null;
+}
+
 interface ApiErrorBody {
   error: { code: string; message: string; details: unknown };
 }
@@ -436,5 +487,60 @@ export function updateOrderStatus(
   return apiFetch<Order>(`/orders/${id}/status`, accessToken, {
     method: "PATCH",
     body: JSON.stringify({ status }),
+  });
+}
+
+// RLS (return_requests_select) хэн ямар мөрийг харахыг шийднэ — status
+// filter зөвхөн тодруулга (apps/api/src/returns/return-request.controller.ts).
+export function getReturnRequests(
+  accessToken: string,
+  filter: { status?: ReturnStatus },
+): Promise<ReturnRequest[]> {
+  const qs = filter.status ? `?status=${encodeURIComponent(filter.status)}` : "";
+  return apiFetch<ReturnRequest[]>(`/returns${qs}`, accessToken);
+}
+
+export function getReturnRequest(
+  accessToken: string,
+  id: string,
+): Promise<ReturnRequest> {
+  return apiFetch<ReturnRequest>(`/returns/${id}`, accessToken);
+}
+
+// Нэг PATCH дотор шимтгэл тооцож, refund дуудаад REFUNDED/REFUND_FAILED
+// болгоно (apps/api/src/returns/return-request.service.ts-ийн approve()).
+export function approveReturnRequest(
+  accessToken: string,
+  id: string,
+): Promise<ReturnRequest> {
+  return apiFetch<ReturnRequest>(`/returns/${id}/approve`, accessToken, {
+    method: "PATCH",
+  });
+}
+
+export function rejectReturnRequest(
+  accessToken: string,
+  id: string,
+  rejectedReason: string,
+): Promise<ReturnRequest> {
+  return apiFetch<ReturnRequest>(`/returns/${id}/reject`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ rejectedReason }),
+  });
+}
+
+export function getReturnFeePercent(
+  accessToken: string,
+): Promise<ReturnFeeSetting> {
+  return apiFetch<ReturnFeeSetting>("/settings/return-fee-percent", accessToken);
+}
+
+export function updateReturnFeePercent(
+  accessToken: string,
+  value: number,
+): Promise<ReturnFeeSetting> {
+  return apiFetch<ReturnFeeSetting>("/settings/return-fee-percent", accessToken, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
   });
 }

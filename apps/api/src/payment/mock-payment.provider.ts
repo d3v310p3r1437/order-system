@@ -38,7 +38,24 @@ export class MockPaymentProvider implements PaymentProvider {
     });
   }
 
-  refundPayment(): Promise<RefundPaymentResult> {
+  // docs/plan.md §8 Phase 3c (буцаалт): жинхэнэ QPay-тай адил зөвхөн PAID
+  // invoice-ийг буцаах боломжтой гэдгийг simulate хийнэ — өмнө нь
+  // аргумент үл тоомсорлож үргэлж амжилттай буцдаг байсан тул
+  // ReturnRequestService-ийн REFUND_FAILED замыг (§7 модуль #9-ийн
+  // "refund API алдаа өгвөл status=REFUND_FAILED") e2e/нэгж тестээр
+  // детерминистикээр (тусгай simulate-endpoint шаардлагагүйгээр) турших
+  // боломжгүй байсан. Promise.reject (throw биш) ашиглав — эс бөгөөс
+  // энэ функц async биш тул алдаа promise-ийн rejection БИШ, шууд
+  // синхрон throw болж дуудагчийн `await ...rejects` шалгалттай
+  // нийцэхгүй байх байсан.
+  refundPayment(providerPaymentId: string): Promise<RefundPaymentResult> {
+    if (this.invoices.get(providerPaymentId) !== 'PAID') {
+      return Promise.reject(
+        new Error(
+          `MockPaymentProvider: буцаалт хийх боломжгүй — invoice "${providerPaymentId}" PAID төлөвт байхгүй`,
+        ),
+      );
+    }
     return Promise.resolve({ providerRefundId: `mock_refund_${randomUUID()}` });
   }
 

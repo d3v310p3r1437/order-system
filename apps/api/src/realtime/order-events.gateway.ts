@@ -17,10 +17,12 @@ import { RedisService } from '../redis/redis.service.js';
 import {
   ORDER_PAYMENT_CONFIRMED_EVENT,
   ORDER_STATUS_CHANGED_EVENT,
+  RETURN_STATUS_CHANGED_EVENT,
   branchRoom,
   orderRoom,
   type OrderPaymentConfirmedPayload,
   type OrderStatusChangedPayload,
+  type ReturnStatusChangedPayload,
 } from './order-events.types.js';
 
 interface SocketData {
@@ -181,6 +183,15 @@ export class OrderEventsGateway
       .to(orderRoom(payload.orderId))
       .to(branchRoom(payload.branchId))
       .emit(ORDER_PAYMENT_CONFIRMED_EVENT, payload);
+  }
+
+  // ReturnRequestService-ээс (зөвхөн RLS transaction амжилттай commit
+  // хийгдсэний дараа) дуудагдана — §7 модуль #9, §8 Phase 3c.
+  emitReturnStatusChanged(payload: ReturnStatusChangedPayload): void {
+    this.server
+      .to(orderRoom(payload.orderId))
+      .to(branchRoom(payload.branchId))
+      .emit(RETURN_STATUS_CHANGED_EVENT, payload);
   }
 
   private extractToken(client: Socket): string | null {

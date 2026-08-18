@@ -65,6 +65,35 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 - Мэдээлэл өөрчилдөг endpoint бүрт audit log дуудалт заавал орно
 - API алдааны бүтэц: `{ "error": { "code", "message", "details" } }`
 
+## Тестийн стандарт — RLS mutation policy (дэлгэрэнгүй: docs/plan.md §4.5, §9)
+- **RLS mutation (INSERT/UPDATE/DELETE) policy-ийн тестийг ЗААВАЛ service
+  давхаргыг тойрсон (raw SQL эсвэл шууд Prisma transaction) аргаар нэмж
+  шалгах ёстой** — учир нь service давхаргын урьдчилсан SELECT/`findUnique`
+  шалгалт (жиш: "энэ мөр надад харагдахгүй бол 404" гэсэн pre-check)
+  policy-ийн `WITH CHECK`/`USING` кодын мөрийг бодитоор ХЭЗЭЭ Ч
+  ажиллуулахгүй нуух боломжтой — HTTP-ээр дамжуулж бичсэн тест "ногоон"
+  гарсан ч, энэ нь policy өөрөө зөв гэдгийг батлахгүй, зөвхөн pre-check
+  зөв гэдгийг л батална. `PrismaService.runRequestTransaction(userId, tx =>
+  ...)`-оор (эсвэл ижил зориулалттай туслах функцээр) service-ийг бүрэн
+  тойрч, шууд raw INSERT/UPDATE оролдуулж RLS-ээр цуцлагдаж байгааг тусад
+  нь баталгаажуулна (returns PR #7-ийн олдворын жишээ, commit
+  `d3ff639`-ыг үз — `test/returns.e2e-spec.ts`-ийн
+  `return_requests_insert RLS policy: ...` тест).
+- ⚠️ **INSERT ба UPDATE/DELETE-ийн хувьд RLS татгалзах ЗАН ТӨЛӨВ ӨӨР**
+  (returns PR #7-ийн 2 дахь давхар шалгалтаар нотлогдсон, `test/
+  returns.e2e-spec.ts`-ийн `return_requests_update RLS policy: ...`
+  тест): `INSERT`-ийн `WITH CHECK` татгалзвал Postgres бодит алдаа
+  ("new row violates row-level security policy") ШИДНЭ (`.rejects.
+  toThrow(/row-level security/i)`-ээр шалгана) — харин `UPDATE`/
+  `DELETE`-ийн `USING` заалтад тохирохгүй мөр зүгээр л "харагдахгүй"
+  (candidate болохгүй) тул команд АМЖИЛТТАЙ дуусаж, **0 мөр
+  өөрчлөгдсөн** гэж чимээгүй буцаана (алдаа ОГТ шидэхгүй) — ADR 001-ийн
+  "UPDATE/DELETE-ийн 0 мөр... ЖИНХЭНЭ Postgres алдаа БИШ" нээлттэй яг
+  ижил зарчим. Тиймээс UPDATE/DELETE policy-г шууд SQL-ээр шалгахдаа
+  `.rejects.toThrow()`-ыг БИШ, `$executeRaw`-ийн буцаах утга (affected
+  rows) `0` эсэх, БОЛОН DB-ийн бодит төлөв өөрчлөгдөөгүй эсэхийг
+  (өөр connection-оор дахин уншиж) шалгах ёстой.
+
 ## Хэзээ ч дараах зүйлийг бүү хий
 - `.env` файлыг commit хийхгүй
 - RLS-гүй шинэ хүснэгт нэмэхгүй
@@ -84,7 +113,7 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 request-scoped transaction pattern-тай нэг дор ажиллах ёстой).
 
 ## Одоогийн Phase
-Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц (Mock+QPay stub)
+Phase 3c — Буцаалт ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон)
 дууссан; geolocation auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй:
 `docs/plan.md` §8.
 
@@ -384,6 +413,125 @@ Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц 
   4 дэх багана (`actual_provider_invoice_id`) нэмж өргөтгөж, ERROR
   лог-д "webhook-ээр ирсэн vs DB-д бодитоор байгаа" зөрүүг тодорхой
   бичих боломжтой болгов. `docs/adr/006`-ийн тус хэсгийг үз.
+- **Буцаалт ба нөхөн төлбөр (Phase 3c) дууссан** (`docs/plan.md` §7 модуль
+  #9, §8 Phase 3c — анх Phase 6-д төлөвлөгдсөн байсан ч энэ даалгаварт
+  зориулж эрт орсон): `SystemSetting` (`key`/`value`, RLS: SELECT бүх
+  нэвтэрсэн, UPDATE зөвхөн `app_has_global_scope()`) + `ReturnRequest`
+  (`ReturnStatus`: REQUESTED/APPROVED/REJECTED/REFUNDED/REFUND_FAILED)
+  Prisma загвар + migration (`add_returns_and_settings`, RLS
+  `enable_returns_settings_rls` — Phase 1-ийн `app_current_user_id()`/
+  `app_has_global_scope()`/`app_can_manage_branch()`-г л дахин ашигласан,
+  шинэ SECURITY DEFINER функц НЭМЭЭГҮЙ). `RETURN_FEE_PERCENT` анхны утга
+  (10%) migration дотор seed хийсэн тул `SystemSettingService`-д null
+  fallback-ийг тусад нь шалгах шаардлагагүй (эелдэг fallback хэвээр
+  үлдсэн ч). `src/returns` (`ReturnRequestService`/`Controller`),
+  `src/settings` (`SystemSettingService`/`Controller`) модуль.
+  ⚠️ **Чухал заль (ADR 005-ийн WRITE зарчмыг практикт нотолсон жишээ):**
+  зөвшөөрөх урсгалд (`PATCH /returns/:id/approve`) нөөц буцаахдаа шинэ
+  SECURITY DEFINER функц ЗОХИОГООГҮЙ — Phase 3a-ийн
+  `app_adjust_inventory_for_order()`-г ШУУД дахин ашигласан, учир нь энд
+  (checkout/cancel-ийн CUSTOMER/SALESPERSON-ээс ЯЛГААТАЙ нь) дуудагч
+  ЗААВАЛ staff (BRANCH_ADMIN/BRANCH_MANAGER/global) байдаг тул тэр функцийн
+  дотоод `app_can_manage_branch()` зөвшөөрлийн нөхцлийг shuud хангадаг —
+  ADR 005-ийн "өмнө нь бичигдсэн ижил зорилготой функц байхгүй эсэхийг
+  эхлээд шалга" зарчим анх удаа бодитоор "шинэ функц ЗОХИОХГҮЙ" гэсэн үр
+  дүнд хүргэсэн тохиолдол. `ReturnRequest` UPDATE (approve/reject) мөн
+  энгийн typed Prisma `.update()`-ээр шууд ажилладаг — учир нь
+  `return_requests_update` RLS policy-ийн нөхцөл яг ижил
+  `app_can_manage_branch()`-д тулгуурладаг тул staff аль хэдийн SELECT/
+  UPDATE аль алиныг нь давхар хангадаг (ADR 001-ийн "UPDATE-д SELECT
+  policy давхар шаардагддаг" нээлт энд асуудал үүсгээгүй).
+  ⚠️ **Чухал заль (SAVEPOINT дахин ашиглалт):** Phase 3a-д
+  `OrderService`-ийн private method байсан SAVEPOINT логикийг
+  `src/common/savepoint.util.ts`-руу зөөж (`withSavepoint(tx, fn)`,
+  давхцалгүй нэрийн тоолуур залгасан) `OrderService`-г ч мөн шинэчлэн
+  дахин ашигласан — хоёр дахь service (`ReturnRequestService`) яг ижил
+  "хэсэгчилсэн rollback" хэрэгцээтэй болсноор код давхардуулахаас
+  сэргийлэв (CLAUDE.md-ийн "логик давхардуулахгүй" зарчим SQL функцээс
+  гадна TS туслах логикт ч хамаарна).
+  Зөвшөөрөх урсгал: SystemSetting-ээс шимтгэл унших → snapshot
+  (`refundFeePercent`/`refundAmount`) тооцох → идэвхтэй
+  `PaymentProvider.refundPayment()` дуудах → амжилттай бол `REFUNDED` + нөөц
+  буцаах, амжилтгүй бол `REFUND_FAILED`. **REFUND_FAILED-ээс ЯГ ЭНЭ ижил
+  `/approve` endpoint-оор дахин дуудаж "гараар дахин оролдох" боломжтой**
+  (тусдаа retry endpoint зохиогоогүй) — `approve()` REQUESTED-ийн зэрэгцээ
+  REFUND_FAILED-ийг ч эхлэх цэг болгож зөвшөөрдөг.
+  ⚠️🔴 **Ноцтой олдвор — Playwright-аар (2 tab, admin-web дээр бодитоор
+  бараг зэрэг "Зөвшөөрөх" товч дарж) илрүүлсэн санхүүгийн race condition
+  (нэвтрүүлэхийн өмнө ЗААВАЛ шалгасан):** анхны хувилбарт
+  `findOne() → статус шалгах → PaymentProvider.refundPayment() дуудах →
+  update()` гэсэн дараалал АТОМИК БИШ байсан тул (checkout-ийн
+  `createInvoice()`-тэй адилхан "SAVEPOINT-ын гадна" гэсэн зарчмыг энд
+  буруу хэрэглэсэн байсан — checkout дээр давхардал боломжгүй (шинэ
+  orderId бүрд шинэ invoice), харин ЭНД ижил returnRequestId рүү 2
+  зэрэг хүсэлт ирж болзошгүй) зэрэг ирсэн 2 хүсэлт ХОЁУЛАА `findOne()`-оор
+  REQUESTED гэж харж, ХОЁУЛАА `refundPayment()`-ийг дуудах (санхүүгийн
+  ХОЁР дахин refund!) боломжтой байв. **Засвар:** `ReturnStatus` enum-ийн
+  өмнө нь ашиглагдаагүй (зөвхөн "vestigial" гэж тэмдэглэсэн байсан)
+  `APPROVED` утгыг атомик "claim" тэмдэг болгож ашиглав —
+  `returnRequest.updateMany({where: {id, status: {in: [REQUESTED,
+  REFUND_FAILED]}}, data: {status: 'APPROVED', ...}})`-г
+  `PaymentProvider.refundPayment()`-ийг дуудахаас ӨМНӨ, `withSavepoint`-ийн
+  ДОТОР гүйцэтгэнэ. Postgres-ийн UPDATE мөрийн lock нь БҮХЭЛ хүсэлтийн
+  транзакц (RlsMiddleware, ADR 001) COMMIT хийгдэх хүртэл баригддаг тул
+  зэрэг ирсэн 2 дахь хүсэлтийн claim UPDATE эхний хүсэлтийн бүхэл
+  транзакц дуусах хүртэл BLOCKED хүлээгээд, дараа нь committed төлөвийг
+  харж 0 мөр өөрчилнө — `refundPayment()`-ийг ХОЁР дахин дуудахаас яг
+  ЭНД зогсоно (`test/returns.e2e-spec.ts`-ийн "ЗЭРЭГ (Promise.all) 2 удаа
+  'Зөвшөөрөх'..." тест HTTP давхаргаас, unit тест `return-request.
+  service.spec.ts`-ийн claim-ийн дуудлагын дараалал (`invocationCallOrder`)
+  шалгалт mock түвшинд аль алинд нь баталгаажуулсан). **Сургамж:**
+  "SAVEPOINT-ын гадна дуудна" гэсэн загварыг ШИНЭ mutation бичих бүрд
+  сохроор хуулбарлахгүй, тухайн endpoint ижил нөөцийг (мөрийг) 2 удаа
+  зэрэг зорьж болзошгүй эсэхийг (checkout шиг "шинэ мөр үүсгэдэг" үү,
+  эсвэл approve шиг "байгаа мөр рүү зэрэг хандаж болзошгүй" юу) тусад нь
+  бодож үзэх ёстой.
+  ⚠️ **Чухал заль (MockPaymentProvider бодитоор ажиллах болгосон):**
+  `refundPayment()` өмнө нь аргументаа огт үл тоомсорлож үргэлж амжилттай
+  буцдаг байсан тул REFUND_FAILED замыг детерминистикээр (тусгай
+  simulate-endpoint шаардлагагүйгээр) e2e/нэгж тестээр турших боломжгүй
+  байсан — одоо зөвхөн invoice PAID төлөвт байх үед л амжилттай ажилладаг
+  (QPay-тай адил бодит хязгаарлалт simulate хийсэн) болгож, тест-д
+  simulate-paid дуудсан эсэхээс шалтгаалж REFUNDED/REFUND_FAILED хоёуланг
+  нь детерминистикээр гаргадаг болгов.
+  WebSocket: `return.status_changed` event (Phase 3b-ийн `onCommit()`
+  gated pattern-ийг дахин ашигласан, шинэ room зохиогоогүй — `orderRoom`/
+  `branchRoom`-г л ашигласан). Тохиргооны API: `GET/PUT
+  /settings/return-fee-percent` (PUT зөвхөн `SUPER_ADMIN`/`OWNER`/
+  `ALL_BRANCH_MANAGER` — `system_settings_update` RLS-тэй ЯГ тохирно,
+  admin-web-ийн `RETURN_FEE_WRITE_ROLES`-той давхар нийцүүлсэн).
+  Admin-web: "Буцаалтууд" (`/returns`, `/returns/:id`) дэлгэц (жагсаалт,
+  дэлгэрэнгүй, Зөвшөөрөх/Татгалзах товч, REFUND_FAILED үед "Дахин оролдох"
+  товч), `RejectReturnDialog`; тусдаа "Тохиргоо" route зохиогоогүй,
+  Dashboard-д `ReturnFeeSettingCard`-ыг зөвхөн global-scope дүрд харуулна.
+  Харилцагчийн буцаалт хүсэх (`POST /returns`) зөвхөн API/e2e түвшинд
+  шалгасан (Flutter UI Phase 3c-д ороогүй, өмнөх Phase-үүдтэй ижил зарчим).
+  Тест: unit (`return-refund.util.spec.ts` 100%, `return-request.
+  service.spec.ts`, `system-setting.service.spec.ts`,
+  `savepoint.util.spec.ts`) + e2e (`test/returns.e2e-spec.ts`, 24 тест — 7
+  хоногийн цонх хэтрэлт/хэтрээгүй, давхар идэвхтэй хүсэлт татгалзагдах,
+  зөвшөөрөхөд refund+restock хамт явагдах, refund амжилтгүй үед
+  REFUND_FAILED, тэндээс дахин оролдоход амжилттай, RLS дүр тус бүрээр
+  (мутаци policy-г service/RolesGuard-ыг тойрч шууд SQL-ээр ч), тохиргооны
+  API, **ЗЭРЭГ (Promise.all) 2 удаа "Зөвшөөрөх" дуудсан race condition**).
+  **Playwright-аар admin-web UI-г бодит browser-т нэвтрэрч (Keycloak-руу
+  ROPC-оор биш, жинхэнэ `POST /auth/staff/login` урсгалаар) баталгаажуулав**
+  (merge хийхээс өмнөх шаардлага, ad hoc `npm install playwright` —
+  repo-д permanent devDependency болгож нэмээгүй): нэвтрэх → Dashboard-ийн
+  шимтгэлийн карт хадгалж, БҮРЭН ШИНЭ session-ээр (`page.reload()` БИШ,
+  учир нь ADR 004-ийн дагуу F5 хийвэл session бүрмөсөн арилдаг тул илүү
+  хатуу шалгалт) серверээс дахин уншиж баталгаажуулсан → Буцаалтууд
+  жагсаалт/дэлгэрэнгүй → 2 tab-аар БОДИТООР зэрэг "Зөвшөөрөх" дарж дээрх
+  race condition-ыг олж, засварыг мөн Playwright-аар давтан баталгаажуулсан
+  → Агуулах дэлгэцээр нөөц зөв (+1, биш +2) буцсаныг харсан → Татгалзах
+  урсгал (хоосон шалтгаанд товч disabled). ⚠️ **Playwright-ийн UI
+  дадлагаас гарсан сургамж:** admin-web-ийн WebSocket real-time sync
+  маш хурдан тул хоёр дахь "ялагдсан" tab-ийн алдааны мессеж бараг шууд
+  дараагийн refetch-ээр дарагдаж, "Шийдвэр гаргах" карт бүхэлдээ unmount
+  хийгддэг (canDecide/canRetry аль аль нь false болсноор) — тиймээс UI
+  давхаргад "аль нь алдаа заавал үзүүлэх ёстой" гэж ХАТУУ баталгаажуулах
+  боломжгүй (энэ бол UX-ийн давуу тал), харин ЖИНХЭНЭ (санхүүгийн)
+  баталгааг ЗААВАЛ шууд API/DB дуудлагаар (UI-аас тусад нь) шалгах ёстой.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
   MinIO зураг байршуулах endpoint, Meilisearch индексжилт,
   **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
@@ -394,3 +542,14 @@ Phase 3b — Бодит цаг (WebSocket), төлбөрийн абстракц 
   "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
   шаардлагатай хэвээр), QPay бодит sandbox credential ирмэгц ADR 006-ийн
   checklist гүйцээх, webhook endpoint-д rate-limit нэмэх (backlog).
+- **(backlog, жижиг PR)** `OrderService.updateStatus()`-ийн `orders_update`
+  RLS policy-д (`PATCH /orders/:id/status`) дээрх "Тестийн стандарт — RLS
+  mutation policy"-той ЯГ ижил шууд SQL шалгалт (`PrismaService.
+  runRequestTransaction()`-оор service/RolesGuard-ыг бүрэн тойрч) нэмэх —
+  `OrderService.updateStatus()` мөн адил `findOne(id)` (SELECT,
+  `orders_select`) pre-check хийсний ДАРАА л `.update()`
+  (`orders_update`) дуудсан тул CUSTOMER-ийн "зөвхөн CREATED→CANCELLED"
+  хязгаарлалт (`orders_update`-ийн `WITH CHECK`) бодитоор JS
+  state-machine шалгалтаар (`order.status !== 'CREATED' ...`) НУУГДСАН
+  хэвээр — returns PR #7-д яг энэ загварыг илрүүлж/шалгасан ч цаг
+  хугацааны хувьд зөвхөн буцаалтын модульд л засварлав.
