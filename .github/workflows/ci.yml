@@ -39,6 +39,14 @@ env:
   # test/search.e2e-spec.ts (§8 Phase 2 Хэсэг B)-д зориулав.
   MEILI_URL: http://localhost:7700
   MEILI_MASTER_KEY: ci_only_dummy_meili_master_key
+  # test/notification.e2e-spec.ts (§8 Phase 4, Хэсэг B)-д зориулав —
+  # Mailpit бодит SMTP-ээр email хүлээн авч, REST API-аар баталгаажуулна.
+  SMTP_HOST: localhost
+  SMTP_PORT: "1025"
+  MAILPIT_API_URL: http://localhost:8025
+  # test/delivery-routing.e2e-spec.ts-д зориулав — CI/e2e-д бодит OSRM
+  # сүлжээ рүү хэзээ ч хандахгүй (анхдагч mock хэвээр).
+  ROUTING_PROVIDER: mock
   NODE_ENV: test
 
 jobs:
@@ -80,6 +88,12 @@ jobs:
           MEILI_MASTER_KEY: ci_only_dummy_meili_master_key
           MEILI_NO_ANALYTICS: "true"
         ports: ["7700:7700"]
+
+      # Mailpit-ийн Docker image-ийн анхдагч CMD аргументгүйгээр ажилладаг
+      # тул Meilisearch-тэй адил шууд `services:`-ээр асаах боломжтой.
+      mailpit:
+        image: axllent/mailpit
+        ports: ["1025:1025", "8025:8025"]
 
     steps:
       - name: Checkout
@@ -236,10 +250,11 @@ jobs:
           echo "::add-mask::$CLIENT_SECRET"
           echo "KEYCLOAK_CLIENT_SECRET=$CLIENT_SECRET" >> "$GITHUB_ENV"
 
-      - name: MinIO/Meilisearch бэлэн болохыг хүлээх
+      - name: MinIO/Meilisearch/Mailpit бэлэн болохыг хүлээх
         run: |
           timeout 60 bash -c 'until curl -sf "$MINIO_URL/minio/health/live" >/dev/null; do sleep 2; done'
           timeout 60 bash -c 'until curl -sf "$MEILI_URL/health" >/dev/null; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf "$MAILPIT_API_URL/api/v1/info" >/dev/null; do sleep 2; done'
 
       - name: E2E тест (бодит Postgres/Redis/RLS-тэй)
         working-directory: apps/api

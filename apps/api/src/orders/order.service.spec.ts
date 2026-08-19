@@ -67,15 +67,30 @@ function buildOrderEventsPublisherMock() {
   return { publishOrderStatusChanged: jest.fn() };
 }
 
+function buildRoutingProviderMock() {
+  return { getRoute: jest.fn() };
+}
+
+function buildNotificationTriggerMock() {
+  return {
+    notifyOrderStatusChanged: jest.fn().mockResolvedValue(undefined),
+    notifyReturnStatusChanged: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function newService(
   prisma: unknown,
   paymentProvider = buildPaymentProviderMock(),
   orderEvents = buildOrderEventsPublisherMock(),
+  routingProvider = buildRoutingProviderMock(),
+  notificationTrigger = buildNotificationTriggerMock(),
 ) {
   return new OrderService(
     prisma as ConstructorParameters<typeof OrderService>[0],
     paymentProvider,
-    orderEvents as ConstructorParameters<typeof OrderService>[2],
+    routingProvider,
+    orderEvents as ConstructorParameters<typeof OrderService>[3],
+    notificationTrigger as ConstructorParameters<typeof OrderService>[4],
   );
 }
 

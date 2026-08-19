@@ -15,12 +15,18 @@ import {
 } from '../common/prisma-errors.js';
 import { withSavepoint } from '../common/savepoint.util.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
+import { NotificationTrigger } from '../notification/notification-trigger.service.js';
 import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
 } from '../payment/payment-provider.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrderEventsPublisher } from '../realtime/order-events.publisher.js';
+import {
+  ROUTING_PROVIDER,
+  type RouteResult,
+  type RoutingProvider,
+} from '../routing/routing-provider.interface.js';
 import type {
   CheckoutOrderDto,
   CheckoutOrderItemDto,
@@ -42,6 +48,14 @@ const OUT_OF_STOCK = {
 const INVALID_TRANSITION = {
   code: 'INVALID_ORDER_STATUS_TRANSITION',
   message: 'Захиалгын энэ төлөвийн шилжилт зөвшөөрөгдөөгүй байна',
+};
+const NOT_DELIVERY_ORDER = {
+  code: 'NOT_DELIVERY_ORDER',
+  message: 'Зөвхөн DELIVERY захиалгад чиглэл тооцох боломжтой',
+};
+const BRANCH_LOCATION_MISSING = {
+  code: 'BRANCH_LOCATION_MISSING',
+  message: 'Салбарын байршил (latitude/longitude) бүртгэгдээгүй байна',
 };
 
 // PATCH /orders/:id/status-ыг дуудаж болох "staff" дүрс (§6.1 матриц:
@@ -81,7 +95,9 @@ export class OrderService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
+    @Inject(ROUTING_PROVIDER) private readonly routingProvider: RoutingProvider,
     private readonly orderEvents: OrderEventsPublisher,
+    private readonly notificationTrigger: NotificationTrigger,
   ) {}
 
   findAll(filter: { status?: OrderStatus; branchId?: string }) {
@@ -103,6 +119,36 @@ export class OrderService {
       throw new NotFoundException(ORDER_NOT_FOUND);
     }
     return order;
+  }
+
+  // docs/plan.md §8 Phase 4, Хэсэг A #5: DELIVERY захиалгын салбараас
+  // хүргэх цэг хүртэлх чиглэлийг RoutingProvider-аар тооцож буцаана —
+  // зөвхөн унших үйлдэл тул withSavepoint/@Audit шаардлагагүй.
+  async getRoute(id: string): Promise<RouteResult> {
+    const order = await this.findOne(id);
+    if (order.deliveryMethod !== 'DELIVERY') {
+      throw new BadRequestException(NOT_DELIVERY_ORDER);
+    }
+    // CheckoutOrderDto-ийн IsDeliveryField validation-аар DELIVERY захиалга
+    // бүрт эдгээр талбар заавал бөглөгдсөн байх ёстой тул энэ бол
+    // хамгаалалтын сүүлчийн шат (defensive), практикт хэзээ ч ажиллахгүй.
+    if (order.deliveryLatitude == null || order.deliveryLongitude == null) {
+      throw new BadRequestException(NOT_DELIVERY_ORDER);
+    }
+
+    // branches_select RLS-ийг л дахин ашиглана (§6.1 "Салбар" мөр) —
+    // staff энэ endpoint-ыг дуудахад аль хэдийн харах эрхтэй.
+    const branch = await this.prisma.tx.branch.findUnique({
+      where: { id: order.branchId },
+    });
+    if (!branch || branch.latitude == null || branch.longitude == null) {
+      throw new BadRequestException(BRANCH_LOCATION_MISSING);
+    }
+
+    return this.routingProvider.getRoute(
+      { lat: branch.latitude, lng: branch.longitude },
+      { lat: order.deliveryLatitude, lng: order.deliveryLongitude },
+    );
   }
 
   // Checkout: Order + OrderItem-үүдийг үүсгээд InventoryItem.quantity-г
@@ -153,6 +199,7 @@ export class OrderService {
         dto.branchId,
         totalAmount,
         invoice.providerInvoiceId,
+        dto,
       );
 
       await this.prisma.tx.orderItem.createMany({
@@ -239,6 +286,17 @@ export class OrderService {
       newStatus: dto.status,
     });
 
+    // docs/plan.md §8 Phase 4, Хэсэг B #14: NotificationTrigger-тэй ЯГ
+    // ИЖИЛ COMMIT-ийн ДАРАА гэйт хамааралтай (SearchIndexer-тэй адил) ч,
+    // харилцагчийн phone/email-г tx хараахан нээлттэй байхад уншихын
+    // тулд (notification-trigger.service.ts-ийн тайлбарыг үз) ЗААВАЛ
+    // `await` хийнэ.
+    await this.notificationTrigger.notifyOrderStatusChanged({
+      orderId: order.id,
+      customerId: order.customerId,
+      newStatus: dto.status,
+    });
+
     return result;
   }
 
@@ -281,6 +339,13 @@ export class OrderService {
     branchId: string,
     totalAmount: Prisma.Decimal,
     providerInvoiceId: string,
+    delivery: Pick<
+      CheckoutOrderDto,
+      | 'deliveryMethod'
+      | 'deliveryAddress'
+      | 'deliveryLatitude'
+      | 'deliveryLongitude'
+    >,
   ) {
     try {
       return await this.prisma.tx.order.create({
@@ -291,6 +356,10 @@ export class OrderService {
           status: 'CREATED',
           totalAmount,
           providerInvoiceId,
+          deliveryMethod: delivery.deliveryMethod,
+          deliveryAddress: delivery.deliveryAddress,
+          deliveryLatitude: delivery.deliveryLatitude,
+          deliveryLongitude: delivery.deliveryLongitude,
         },
       });
     } catch (error) {

@@ -50,6 +50,14 @@ services:
     ports: ["7700:7700"]
     volumes: ["meilidata:/meili_data"]
 
+  # Phase 4 §8 Хэсэг B #11: Email мэдэгдлийг БОДИТООР (nodemailer + SMTP)
+  # dev/CI-д турших зориулалттай — бодит и-мэйл хэзээ ч явахгүй, бүх
+  # илгээсэн зурвасыг localhost:8025 web UI-аар харах боломжтой.
+  mailpit:
+    image: axllent/mailpit
+    restart: unless-stopped
+    ports: ["8025:8025", "1025:1025"]
+
 volumes:
   pgdata:
   redisdata:
