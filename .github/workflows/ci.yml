@@ -266,11 +266,13 @@ jobs:
 
       - name: Build дараах smoke test — сервер бодитоор асаж байгааг шалгах
         working-directory: apps/api
+        # PORT env энд ТОДОРХОЙ ГАРГААГҮЙ — main.ts-ийн `process.env.PORT ??
+        # 3100` анхдагч утгад найдана (2026-08-19 порт шилжилт).
         run: |
           node dist/src/main.js &
           SERVER_PID=$!
           for i in $(seq 1 15); do
-            BODY=$(curl -sf http://localhost:3000/health || true)
+            BODY=$(curl -sf http://localhost:3100/health || true)
             if [ "$BODY" = '{"status":"ok"}' ]; then
               echo "✅ Сервер амжилттай асаж, /health-ээс зөв хариу өглөө"
               kill $SERVER_PID

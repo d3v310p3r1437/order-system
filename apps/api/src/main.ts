@@ -16,7 +16,9 @@ async function bootstrap() {
   app.useWebSocketAdapter(new IoAdapter(app));
   // admin-web (Vite dev server)-ээс browser-аар шууд дуудахыг зөвшөөрнө —
   // §6.2: admin-web Keycloak руу шууд хандахгүй, зөвхөн энэ backend-ээр дамжина.
-  app.enableCors({ origin: 'http://localhost:5173', credentials: true });
+  // ⚠️ 5273 — vite.config.ts-ийн server.port-той ЯГ таарах ёстой (2026-08-19
+  // порт шилжилт, CLAUDE.md-ийн "Дев серверийн порт" тэмдэглэлийг үз).
+  app.enableCors({ origin: 'http://localhost:5273', credentials: true });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -25,6 +27,9 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new HttpExceptionFilter());
-  await app.listen(process.env.PORT ?? 3000);
+  // 2026-08-19 порт шилжилт: анхдагч 3000-аас 3100 боллоо — CLAUDE.md-ийн
+  // "Дев серверийн порт" тэмдэглэлийг үз (3000/5173 нь хэт түгээмэл тул
+  // энэ хөгжүүлэлтийн машин дээр өөр процесстэй давтагдаж мөргөлддөг байсан).
+  await app.listen(process.env.PORT ?? 3100);
 }
 void bootstrap();

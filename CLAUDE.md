@@ -31,6 +31,10 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 - `pnpm --filter api test` — backend тест
 - `pnpm --filter api lint` — lint
 - `cd apps/mobile && flutter run` — mobile апп ажиллуулах
+- `pnpm --filter api start:dev` — backend dev сервер (**порт 3100**, доорх
+  "Дев серверийн порт" тэмдэглэлийг үз)
+- `pnpm --filter admin-web dev` — admin-web dev сервер (**порт 5273**,
+  `vite.config.ts`-ийн `server.port`-оор тодорхой тогтоосон)
 
 ## Хөгжүүлэлтийн орчны тохиргоо
 
@@ -56,6 +60,33 @@ $p = [Environment]::GetEnvironmentVariable('Path','User')
 PATH-д ороогүй ч Program Files дор бодитоор оршдог") гарвал яг ижил
 аргыг (хэрэглэгчийн PATH-д Windows-ийн бодит суулгасан замыг нэмэх,
 `.bashrc`-д давхардуулах) ашиглана.
+
+**Дев серверийн порт (2026-08-19, шийдэгдсэн):** backend (apps/api)-ийн
+анхдагч порт **3000 → 3100**, admin-web (Vite dev server)-ийн порт
+**5173 → 5273** боллоо. Шалтгаан: 3000/5173 хэдийн энэ хөгжүүлэлтийн
+машин дээр (болон ерөнхийдөө өргөн хэрэглэгддэг анхдагч тоо учир) БУСАД
+процесстэй (жиш: өөр төслийн docker container, өмнөх сессээс үлдсэн vite
+процесс) байнга мөргөлдөж байсан — Phase 2-ийн Playwright тэмдэглэл
+(доор, "MinIO бүтээгдэхүүний зураг..." хэсэгт) яг ЭНЭ мөргөлдөөнөөс
+болж `VITE_API_URL`-г 3001, vite-г гараар `--port 5173 --strictPort`-оор
+асаах шаардлагатай болсныг баримтжуулсан байдаг. Одоо:
+- `apps/api/src/main.ts`-ийн `process.env.PORT ?? 3100` (`.env`/
+  `.env.example`-д `PORT=3100`-г тодорхой бичсэн), `enableCors()`-ийн
+  origin, `order-events.gateway.ts`-ийн WebSocket CORS origin бүгд
+  `http://localhost:5273`.
+- `apps/admin-web/vite.config.ts`-д `server: { port: 5273, strictPort:
+  true }` — ТОДОРХОЙ тавьсан (Vite-ийн "эзэлсэн бол дараагийн чөлөөтэй
+  порт руу чимээгүй шилжих" анхдагч зан төлөвт ИТГЭХГҮЙ, учир нь тэр
+  зан төлөв яг дээрх Phase 2 асуудлыг үүсгэсэн — CORS origin тогтмол
+  утгатай учраас vite өөр порт руу "чимээгүй" шилжвэл бүх хүсэлт
+  тайлбаргүй block хийгддэг). `--strictPort`-той тул 5273 эзэлсэн бол
+  vite ЭХЛЭХГҮЙ, тодорхой алдаа өгнө — өмнөх шиг нуугдмал мөргөлдөөн
+  ҮҮСГЭХГҮЙ.
+- `apps/admin-web/.env`-ийн `VITE_API_URL=http://localhost:3100`.
+- 3001/5173/5174 хуучин утгуудыг ашигласан ямар ч шинэ баримт бичиг
+  (жиш: шинэ ADR, шинэ Phase тэмдэглэл) бичихдээ 3100/5273-г ашигла —
+  доорх Phase 2-ийн түүхэн тэмдэглэлийг л (тухайн үеийн бодит явдлын
+  бүртгэл тул) ӨӨРЧЛӨӨГҮЙ орхив.
 
 ## Кодын стандарт (дэлгэрэнгүй: docs/plan.md §4)
 - TypeScript strict mode, ESLint+Prettier заавал
