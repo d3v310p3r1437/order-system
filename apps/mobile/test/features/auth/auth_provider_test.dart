@@ -17,12 +17,18 @@ class _FakeAuthRepository implements AuthRepository {
   Future<void> login({required String phone, required String password}) async {
     loginCalled = true;
     if (shouldFailLogin) {
-      throw const ApiException(code: 'INVALID_CREDENTIALS', message: 'Буруу нэвтрэлт');
+      throw const ApiException(
+        code: 'INVALID_CREDENTIALS',
+        message: 'Буруу нэвтрэлт',
+      );
     }
   }
 
   @override
-  Future<void> register({required String phone, required String password}) async {
+  Future<void> register({
+    required String phone,
+    required String password,
+  }) async {
     registerCalled = true;
     if (shouldFailRegister) {
       throw const ApiException(code: 'CONFLICT', message: 'Бүртгэлтэй дугаар');

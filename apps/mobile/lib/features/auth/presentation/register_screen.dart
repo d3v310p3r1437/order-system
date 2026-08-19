@@ -30,7 +30,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     }
     await ref
         .read(authProvider.notifier)
-        .register(phone: _phoneController.text.trim(), password: _passwordController.text);
+        .register(
+          phone: _phoneController.text.trim(),
+          password: _passwordController.text,
+        );
   }
 
   @override
@@ -41,7 +44,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     ref.listen(authProvider, (previous, next) {
       final error = next.error;
       if (error != null) {
-        final message = error is ApiException ? error.message : 'Бүртгүүлэхэд алдаа гарлаа';
+        final message = error is ApiException
+            ? error.message
+            : 'Бүртгүүлэхэд алдаа гарлаа';
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(message)));

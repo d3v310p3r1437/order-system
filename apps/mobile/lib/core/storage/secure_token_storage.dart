@@ -37,6 +37,18 @@ class SecureTokenStorage {
     await _storage.write(key: _phoneKey, value: phone);
   }
 
+  /// `POST /auth/customer/refresh`-ийн дараа зөвхөн token хосыг шинэчилнэ —
+  /// `phone` энд ХОЛБОГДОХГҮЙ (identity өөрчлөгдөхгүй, зөвхөн token
+  /// сунгагдаж байгаа тул `saveTokens`-ийг дахин дуудаж `phone`-г дахин
+  /// унших/бичихийг ЗОРИУДАА зайлсхийсэн).
+  Future<void> updateTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    await _storage.write(key: _accessTokenKey, value: accessToken);
+    await _storage.write(key: _refreshTokenKey, value: refreshToken);
+  }
+
   Future<void> clear() async {
     await _storage.delete(key: _accessTokenKey);
     await _storage.delete(key: _refreshTokenKey);

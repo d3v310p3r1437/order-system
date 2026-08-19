@@ -13,7 +13,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          secureTokenStorageProvider.overrideWithValue(FakeSecureTokenStorage()),
+          secureTokenStorageProvider.overrideWithValue(
+            FakeSecureTokenStorage(),
+          ),
         ],
         child: const OrderSystemApp(),
       ),

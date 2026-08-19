@@ -17,7 +17,11 @@ class AuthRepository {
   final SecureTokenStorage _tokenStorage;
 
   Future<void> register({required String phone, required String password}) =>
-      _authenticate('/auth/customer/register', phone: phone, password: password);
+      _authenticate(
+        '/auth/customer/register',
+        phone: phone,
+        password: password,
+      );
 
   Future<void> login({required String phone, required String password}) =>
       _authenticate('/auth/customer/login', phone: phone, password: password);

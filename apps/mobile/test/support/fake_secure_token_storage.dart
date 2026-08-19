@@ -28,6 +28,15 @@ class FakeSecureTokenStorage extends SecureTokenStorage {
   }
 
   @override
+  Future<void> updateTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
+  }
+
+  @override
   Future<void> clear() async {
     _accessToken = null;
     _refreshToken = null;

@@ -27,7 +27,9 @@ class AuthNotifier extends _$AuthNotifier {
   Future<void> login({required String phone, required String password}) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(authRepositoryProvider).login(phone: phone, password: password);
+      await ref
+          .read(authRepositoryProvider)
+          .login(phone: phone, password: password);
       return AuthState.authenticated(phone: phone);
     });
   }
@@ -38,7 +40,9 @@ class AuthNotifier extends _$AuthNotifier {
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      await ref.read(authRepositoryProvider).register(phone: phone, password: password);
+      await ref
+          .read(authRepositoryProvider)
+          .register(phone: phone, password: password);
       return AuthState.authenticated(phone: phone);
     });
   }

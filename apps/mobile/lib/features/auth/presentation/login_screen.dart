@@ -31,7 +31,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
     await ref
         .read(authProvider.notifier)
-        .login(phone: _phoneController.text.trim(), password: _passwordController.text);
+        .login(
+          phone: _phoneController.text.trim(),
+          password: _passwordController.text,
+        );
   }
 
   @override
@@ -42,7 +45,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     ref.listen(authProvider, (previous, next) {
       final error = next.error;
       if (error != null) {
-        final message = error is ApiException ? error.message : 'Нэвтрэхэд алдаа гарлаа';
+        final message = error is ApiException
+            ? error.message
+            : 'Нэвтрэхэд алдаа гарлаа';
         ScaffoldMessenger.of(context)
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(content: Text(message)));
@@ -104,7 +109,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
                   TextButton(
-                    onPressed: isLoading ? null : () => context.push('/register'),
+                    onPressed: isLoading
+                        ? null
+                        : () => context.push('/register'),
                     child: const Text('Шинэ хэрэглэгч бүртгүүлэх'),
                   ),
                 ],
