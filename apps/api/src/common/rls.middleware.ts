@@ -37,25 +37,67 @@ export class RlsMiddleware implements NestMiddleware {
       return;
     }
 
-    let finishResponse: () => void;
-    const responseFinished = new Promise<void>((resolve) => {
-      finishResponse = resolve;
+    // ⚠️ ЧУХАЛ ЗАСВАР (2026-08-19, orders.e2e-spec.ts/returns.e2e-spec.ts/
+    // realtime.e2e-spec.ts-д давтан гарсан CI incident, PR #8/#10/#12):
+    // `res.end()`-ийг (HTTP хариу бодитоор клиент рүү явах цэг) доорх
+    // транзакц бодитоор COMMIT хийгдэх хүртэл түр саатуулна.
+    //
+    // Өмнөх алдаатай хувилбарт `res.once('finish', ...)` (хариу АЛЬ ХЭДИЙН
+    // явсны ДАРАА гарах event)-ийг ашиглаж, зөвхөн ТҮҮНИЙ дараа Prisma-ийн
+    // `$transaction()` callback-аа буцааж COMMIT хийдэг байсан — өөрөөр
+    // хэлбэл, HTTP хариу ЗААВАЛ COMMIT-ээс ӨМНӨ клиент рүү явдаг байсан.
+    // Үр дүнд нь: клиент (тест эсвэл mobile апп) хариу хүлээн авангуутаа
+    // ШУУД дараагийн хүсэлт (жиш: checkout → шууд PATCH .../status) илгээвэл,
+    // тэр шинэ хүсэлтийн ӨӨР transaction анхны бичилтийг ХАРААХАН commit
+    // хийгдээгүй үед (race) харж чадахгүй 404 (`ORDER_NOT_FOUND`)/400
+    // (`INVALID_ORDER_STATUS_TRANSITION`, өмнөх шатны бичилт хараахан
+    // харагдаагүйгээс шалтгаалж) буцаадаг байсныг локал `node`
+    // reproduce-скриптээр (дараалсан, delay=0, 1000 оролдлогод ~1 удаа)
+    // бодитоор баталсан.
+    //
+    // Одоо `res.end()`-ийг monkey-patch хийж, controller дуудсан МӨЧИД
+    // (`signalControllerDone()`-ээр) транзакцын callback-ыг чөлөөлж
+    // (→ Prisma COMMIT хийнэ), харин ЖИНХЭНЭ `originalEnd()`-ийг зөвхөн
+    // `transactionSettled` биелсний (COMMIT/ROLLBACK аль аль нь дуусаж)
+    // ДАРАА л дуудна. Ингэснээр клиент хариу хүлээн авах мөчид DB
+    // транзакц ЗААВАЛ commit (эсвэл rollback) хийгдсэн байх нь баталгаатай
+    // болно.
+    let signalControllerDone: () => void;
+    const controllerDone = new Promise<void>((resolve) => {
+      signalControllerDone = resolve;
     });
-    res.once('finish', () => finishResponse());
-    res.once('close', () => finishResponse());
+    // Controller-ийн response бичих механизм ер нь res.end()-ээр төгсдөггүй
+    // тохиолдол (жиш: клиент холболтоо цуцалсан) гарвал ч транзакц мөнхөд
+    // "нээлттэй" зогсохгүйн тулд 'close' дээр ч давхар чөлөөлнө.
+    res.once('close', () => signalControllerDone());
+
+    // `res.end`-ийн Express-ийн overload бүхий төрөл `.bind()`-ийн дараа
+    // `any` болж хувирдаг тул (eslint `no-unsafe-*`) тодорхой төрөл зааж
+    // өгсөн.
+    const originalEnd = res.end.bind(res) as (
+      ...args: Parameters<Response['end']>
+    ) => Response;
+    let transactionSettled: Promise<void> = Promise.resolve();
+    res.end = ((...args: Parameters<Response['end']>) => {
+      signalControllerDone();
+      void transactionSettled.finally(() => {
+        originalEnd(...args);
+      });
+      return res;
+    }) as Response['end'];
 
     // Энэ массивыг `run()`-д дамжуулсан context-той ИЖИЛ reference-ээр
     // хуваалцаж, доор (transaction амжилттай commit хийгдсэний дараа) дахин
     // ашиглана — array бол доторх мөрөнд push хийхэд reference өөрчлөгдөхгүй.
     const afterCommitCallbacks: Array<() => void> = [];
 
-    this.prisma
+    transactionSettled = this.prisma
       .runRequestTransaction(userId, (tx) =>
         this.requestContext.run(
           { tx, userId, afterCommitCallbacks },
           async () => {
             next();
-            await responseFinished;
+            await controllerDone;
           },
         ),
       )
