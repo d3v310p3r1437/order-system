@@ -30,7 +30,17 @@ Node.js 22 + NestJS + Prisma + PostgreSQL (RLS) + Redis + Keycloak (staff auth)
 - `pnpm install` — root dependency суулгах
 - `pnpm --filter api test` — backend тест
 - `pnpm --filter api lint` — lint
-- `cd apps/mobile && flutter run` — mobile апп ажиллуулах
+- `cd apps/mobile && flutter pub get` — mobile dependency суулгах
+- `cd apps/mobile && dart run build_runner watch --delete-conflicting-outputs`
+  — freezed/riverpod_generator-ийн код автоматаар дахин үүсгэх (хөгжүүлэлтийн
+  үед ажиллуулсан хэвээр байх ёстой — `AuthState`/`AuthNotifier` зэрэг
+  `@freezed`/`@riverpod` annotation-той класс бүр `*.g.dart`/`*.freezed.dart`
+  файл шаарддаг, эдгээр нь `.gitignore`-д орсон тул commit хийгдэхгүй, CI
+  болон шинэ clone бүрд дахин үүсгэх ёстой)
+- `cd apps/mobile && flutter test` — mobile тест
+- `cd apps/mobile && flutter run` — mobile апп ажиллуулах (⚠️ Android
+  emulator дээр backend рүү хандахдаа `localhost` БИШ `10.0.2.2` ашиглана
+  — `apps/mobile/README.md`-ийг үз)
 
 ## Хөгжүүлэлтийн орчны тохиргоо
 
