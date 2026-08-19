@@ -270,7 +270,21 @@ SET LOCAL app.accessible_branches = $3;
 - [ ] **(шинэ)** `.github/workflows/deploy-staging.yml`, `deploy-prod.yml` — GHCR image push + SSH deploy script skeleton (§10.2)
 - [ ] **(шинэ)** `.github/workflows/weekly-security-audit.yml` — cron skeleton (§5.4)
 - [ ] VS Code + Claude Code өргөтгөл суулгах
-- [ ] Node.js 22 + pnpm, Flutter SDK, Android Studio + AVD эмулятор
+- [x] Node.js 22 + pnpm, Flutter SDK, Android Studio + AVD эмулятор суулгасан,
+      **`apps/mobile`-д Flutter харилцагчийн апп scaffold хийсэн** (org
+      `mn.order_system`): `flutter_riverpod`+`riverpod_generator`,
+      `go_router`, `dio`, `flutter_secure_storage`, `socket_io_client`,
+      `freezed`+`json_serializable`; feature-based фолдер бүтэц
+      (`lib/{app,core/{theme,network,storage},features/{auth,catalog,
+      cart,orders,returns,profile}}`); admin-web-ийн cobalt-indigo
+      палеттай тохирсон Material 3 theme; `ApiClient` (dio, Authorization
+      header interceptor, 401→logout, Android emulator-д зориулсан
+      `10.0.2.2` host зохицуулалт); `SecureTokenStorage`
+      (`docs/adr/008-mobile-token-storage.md` — admin-web-ийн in-memory
+      загвараас (ADR 004) яагаад ялгаатай эсэхийг тайлбарласан); нэвтрэлт/
+      бүртгэлийн бүрэн урсгал (`AuthRepository`/`AuthNotifier`/
+      `LoginScreen`/`RegisterScreen`, backend-ийн `auth-customer`-тай
+      холбогдсон) + redirect logic-той `go_router`; unit/widget тест.
 - [ ] **(шинэ)** 2-3 бодит Android төхөөрөмж (Монголд түгээмэл хямд загвар орсон) тест lab болгож бэлдэх — асуудал #7
 - [ ] `docker compose -f docker-compose.dev.yml up -d` бүх сервис healthy
 - [ ] **(шинэ)** ORM/RLS spike: Prisma + transaction interceptor загвар турших, ADR бичих (§6.3)

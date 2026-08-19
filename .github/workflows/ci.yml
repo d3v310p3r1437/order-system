@@ -281,3 +281,40 @@ jobs:
           echo "::error::Сервер 15 секундэд /health-ээс зөв хариу ({\"status\":\"ok\"}) өгсөнгүй"
           kill $SERVER_PID 2>/dev/null || true
           exit 1
+
+  # apps/mobile нь Postgres/Redis/Keycloak гэх мэт backend сервис ОГТ
+  # шаардахгүй (Flutter native апп, backend-ийг зөвхөн runtime-д HTTP-ээр
+  # дуудна) тул дээрх `ci` job-той ЗЭРЭГЦЭЭ ажиллах тусдаа job болгосон —
+  # admin-web шиг нэг job дотор steps болгосон бол backend-ийн урт e2e
+  # шатыг дэмий хүлээх байсан.
+  mobile:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Flutter суулгах
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Dependency суулгах
+        working-directory: apps/mobile
+        run: flutter pub get
+
+      # freezed/riverpod_generator-ийн үүсгэдэг *.g.dart/*.freezed.dart
+      # файлууд repo-д commit хийгдээгүй (.gitignore-д стандартаар орсон)
+      # тул analyze/test-ийн өмнө ЗААВАЛ дахин үүсгэнэ.
+      - name: Код үүсгэх (freezed/riverpod_generator)
+        working-directory: apps/mobile
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        working-directory: apps/mobile
+        run: flutter analyze
+
+      - name: Unit/widget тест
+        working-directory: apps/mobile
+        run: flutter test

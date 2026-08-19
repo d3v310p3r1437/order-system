@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ЗӨВХӨН debug build variant-д (src/debug/) хэрэглэгдэнэ — release/main
+  манифестад ямар ч cleartext зөвшөөрөл ОРОХГҮЙ (production Traefik+TLS-ийн
+  ард HTTPS-ээр ажиллана, docs/plan.md §2). Android 9+ (API 28+)-ээс
+  анхдагчаар cleartext (http://) хүсэлтийг бүхэлд нь блоклодог тул
+  `apps/mobile/lib/core/network/api_base_url.dart`-ийн локал dev backend
+  (Android emulator-ийн 10.0.2.2, iOS/бодит төхөөрөмжийн localhost/LAN IP)
+  рүү зөвхөн ЭДГЭЭР тодорхой хаягт л cleartext зөвшөөрнө.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>
