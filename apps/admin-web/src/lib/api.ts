@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+// 2026-08-19 порт шилжилт: backend-ийн анхдагч порт 3100 боллоо
+// (CLAUDE.md-ийн "Дев серверийн порт" тэмдэглэлийг үз).
+const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3100";
 
 export interface StaffTokenPair {
   accessToken: string;

@@ -43,7 +43,8 @@ interface SocketData {
 //   тухайн Order-ыг RLS-ээр (orders_select) харах эрхтэй бол л нэгдэнэ
 //   (`verifyOrderAccess`).
 @WebSocketGateway({
-  cors: { origin: 'http://localhost:5173', credentials: true },
+  // main.ts-ийн enableCors()-той ЯГ адил 5273 (2026-08-19 порт шилжилт).
+  cors: { origin: 'http://localhost:5273', credentials: true },
   namespace: '/ws/orders',
 })
 export class OrderEventsGateway
