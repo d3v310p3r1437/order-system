@@ -244,6 +244,15 @@ enum OrderStatus {
   CANCELLED
 }
 
+// Phase 4 (docs/plan.md §8, Хэсэг A): PICKUP — харилцагч салбар дээр очиж
+// авна (delivery талбарууд NULL байх ёстой), DELIVERY — заасан хаяг/
+// координат руу хүргэнэ (delivery талбарууд заавал, CheckoutOrderDto-ийн
+// @ValidateIf-аар хоёр чиглэлд нь давхар хамгаалагдсан).
+enum OrderDeliveryMethod {
+  PICKUP
+  DELIVERY
+}
+
 model Order {
   id         String      @id @default(uuid())
   customerId String
@@ -254,6 +263,29 @@ model Order {
   totalAmount Decimal    @db.Decimal(12, 2)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+  // Phase 4 §8 Хэсэг A: хүргэлтийн арга + (DELIVERY-д л заавал) хаяг/
+  // координат. RLS policy өөрчлөлт шаардлагагүй (мөр-түвшний, багана
+  // нэмэхэд нөлөөлдөггүй — Phase 2-ийн add_branch_geo_and_catalog_fields-тэй
+  // адил урьдал жишээ).
+  deliveryMethod    OrderDeliveryMethod @default(PICKUP)
+  deliveryAddress   String?
+  deliveryLatitude  Float?
+  deliveryLongitude Float?
+  // Кэш (§8 Phase 4 засвар): GET /orders/:id/route эхний удаа дуудагдахад
+  // RoutingProvider.getRoute()-ийн үр дүнг ЭНД бичиж, дараагийн дуудлагад
+  // (ялангуяа OsrmRoutingProvider-ийн public demo server рүү) ДАХИН
+  // хандахгүйгээр шууд буцаана — `order.service.ts`-ийн `getRoute()`-ийг
+  // үз. deliveryLatitude/Longitude/branchId одоогоор ЗАСВАРЛАГДАХГҮЙ
+  // (checkout-ийн дараа Order.branchId/delivery талбар өөрчлөх endpoint
+  // байхгүй) тул кэш "хэзээ ч хуучрахгүй" — ирээдүйд ийм endpoint
+  // нэмэгдвэл (жиш: staff хаяг засварлах) яг ТЭР update дотор эдгээр 3
+  // талбарыг NULL болгож "хүчингүй болгох" (invalidate) ёстой.
+  routeDistanceMeters  Float?
+  routeDurationSeconds Float?
+  // [number, number][] (routing-provider.interface.ts-ийн geometry-тэй
+  // адил [lng, lat] дараалалтай) — Prisma-д массив тохирсон scalar төрөл
+  // байхгүй тул jsonb-аар хадгална.
+  routeGeometry        Json?
   // Phase 3c-ийн 7-хоногийн буцаалтын цонжинд хэрэгтэй тул одоо л оруулав.
   completedAt DateTime?
   cancelledAt DateTime?

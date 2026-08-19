@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { ReturnStatus } from '@prisma/client';
 import { withSavepoint } from '../common/savepoint.util.js';
+import { NotificationTrigger } from '../notification/notification-trigger.service.js';
 import {
   PAYMENT_PROVIDER,
   type PaymentProvider,
@@ -65,6 +66,7 @@ export class ReturnRequestService {
     private readonly systemSettings: SystemSettingService,
     @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
     private readonly orderEvents: OrderEventsPublisher,
+    private readonly notificationTrigger: NotificationTrigger,
   ) {}
 
   // RLS (return_requests_select) нь дүрд харагдахгүй мөрийг өөрөө шүүж
@@ -222,6 +224,16 @@ export class ReturnRequestService {
       status: result.status,
     });
 
+    // docs/plan.md §8 Phase 4, Хэсэг B #14: NotificationTrigger-ийн
+    // notification-trigger.service.ts-д тайлбарласны дагуу ASYNC —
+    // харилцагчийн phone/email-г tx хараахан нээлттэй байхад уншихын
+    // тулд ЗААВАЛ `await` хийнэ.
+    await this.notificationTrigger.notifyReturnStatusChanged({
+      returnRequestId: id,
+      customerId: returnRequest.orderItem.order.customerId,
+      status: result.status,
+    });
+
     return result;
   }
 
@@ -251,6 +263,16 @@ export class ReturnRequestService {
       returnRequestId: id,
       orderId: returnRequest.orderItem.orderId,
       branchId: returnRequest.orderItem.order.branchId,
+      customerId: returnRequest.orderItem.order.customerId,
+      status: result.status,
+    });
+
+    // docs/plan.md §8 Phase 4, Хэсэг B #14: NotificationTrigger-ийн
+    // notification-trigger.service.ts-д тайлбарласны дагуу ASYNC —
+    // харилцагчийн phone/email-г tx хараахан нээлттэй байхад уншихын
+    // тулд ЗААВАЛ `await` хийнэ.
+    await this.notificationTrigger.notifyReturnStatusChanged({
+      returnRequestId: id,
       customerId: returnRequest.orderItem.order.customerId,
       status: result.status,
     });

@@ -71,17 +71,25 @@ function buildOrderEventsMock() {
   return { publishReturnStatusChanged: jest.fn() };
 }
 
+function buildNotificationTriggerMock() {
+  return { notifyReturnStatusChanged: jest.fn().mockResolvedValue(undefined) };
+}
+
 function newService(
   prisma: unknown,
   settings = buildSettingsMock(),
   paymentProvider = buildPaymentProviderMock(),
   orderEvents = buildOrderEventsMock(),
+  notificationTrigger = buildNotificationTriggerMock(),
 ) {
   return new ReturnRequestService(
     prisma as ConstructorParameters<typeof ReturnRequestService>[0],
     settings as ConstructorParameters<typeof ReturnRequestService>[1],
     paymentProvider,
     orderEvents as ConstructorParameters<typeof ReturnRequestService>[3],
+    notificationTrigger as ConstructorParameters<
+      typeof ReturnRequestService
+    >[4],
   );
 }
 

@@ -32,6 +32,17 @@ const STATUS_UPDATE_ROLES = [
   'CUSTOMER',
 ] as const;
 
+// docs/plan.md §8 Phase 4, Хэсэг A #5: "staff эрхтэй" — STATUS_UPDATE_ROLES-с
+// CUSTOMER хассан (харилцагч өөрийн захиалгын чиглэлийг харах шаардлага
+// энэ даалгаварт тодорхой заагаагүй тул нэмээгүй, зөвхөн staff).
+const ROUTE_VIEW_ROLES = [
+  'SUPER_ADMIN',
+  'ALL_BRANCH_MANAGER',
+  'BRANCH_ADMIN',
+  'BRANCH_MANAGER',
+  'SALESPERSON',
+] as const;
+
 @Controller('orders')
 @UseGuards(RolesGuard)
 export class OrderController {
@@ -54,6 +65,14 @@ export class OrderController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.orderService.findOne(id);
+  }
+
+  // docs/plan.md §8 Phase 4, Хэсэг A #5: зөвхөн унших тул @Audit()
+  // шаардлагагүй (мутаци биш).
+  @Get(':id/route')
+  @Roles(...ROUTE_VIEW_ROLES)
+  getRoute(@Param('id') id: string) {
+    return this.orderService.getRoute(id);
   }
 
   // Checkout нь ЗӨВХӨН CUSTOMER-ийн өөрийнх нь нэрийн өмнөөс хийгддэг

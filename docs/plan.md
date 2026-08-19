@@ -563,10 +563,34 @@ SET LOCAL app.accessible_branches = $3;
 
 ### Phase 4 — Гүйцэтгэл, хүргэлт, мэдэгдэл (2-3 долоо хоног)
 
-- [ ] Худалдагчийн ажлын урсгал
-- [ ] Хүргэлт/pickup
-- [ ] Мэдэгдлийн модуль (push/SMS/email)
-- [ ] **(шинэ)** Бэлэн болсон feature-үүдийг Phase 0-д бэлдсэн **жинхэнэ Android төхөөрөмж дээр** турших — асуудал #7
+- [ ] Худалдагчийн ажлын урсгал (backlog — Mobile UI-тай хамт, доор тэмдэглэсэн)
+- [x] **Хүргэлт/pickup**: `Order.deliveryMethod` (PICKUP/DELIVERY) +
+      deliveryAddress/Latitude/Longitude (DELIVERY-д заавал, PICKUP-д
+      хориотой — checkout DTO validation-аар хоёр чиглэлд нь хамгаалсан).
+      `RoutingProvider` абстракц (`src/routing/`, PaymentProvider-тэй ижил
+      загвар) — `MockRoutingProvider` (Haversine, анхдагч) +
+      `OsrmRoutingProvider` (router.project-osrm.org public demo,
+      `docs/adr/007-osm-osrm-routing.md`). `GET /orders/:id/route`
+      (staff-only) чиглэл/зай/ETA буцаана — үр дүнг `Order.routeDistanceMeters`/
+      `routeDurationSeconds`/`routeGeometry` (migration `add_order_route_cache`)
+      талбар дээр **кэшилдэг** (эхний дуудлагад л RoutingProvider дуудна,
+      дараагийн дуудлага бүрд кэшийг л буцаана — `OsrmRoutingProvider`-ийн
+      public demo рүү давхардуулж хандахаас сэргийлнэ). Admin-web: Order дэлгэрэнгүй
+      дэлгэц дээр (DELIVERY захиалганд) Leaflet + OSM tile газрын зураг
+      (`DeliveryRouteMap.tsx`) — 2 marker + route polyline, Playwright-аар
+      бодит browser-т баталгаажуулсан. Checkout координат сонгогч UI
+      (харилцагчийн тал) admin-web-д ОРООГҮЙ — Mobile-ийн хамрах хүрээ
+      (өмнөх бүх Phase-ийн "харилцагчийн UI Flutter-д" тогтсон зарчим).
+- [x] **Мэдэгдлийн модуль**: `NotificationProvider` абстракц
+      (`src/notification/`, `sendSms`/`sendEmail`) — `MockNotificationProvider`
+      (dev/тест, анхдагч) + `SmtpNotificationProvider` (Email БОДИТООР,
+      nodemailer+Mailpit; SMS хараахан vendor сонгогдоогүй тул стаб).
+      `NotificationTrigger` (`SearchIndexer`-тэй ижил `onCommit()`-гэйт
+      загвар) — захиалгын CONFIRMED/READY/COMPLETED, буцаалтын APPROVED/
+      REJECTED статуст харилцагчийн бүртгэлтэй phone/email рүү илгээнэ.
+      Push мэдэгдэл (Mobile push notification) backlog-т үлдсэн — Flutter
+      апп эхлээгүй тул хүлээн авах төхөөрөмж алга.
+- [ ] **(шинэ)** Бэлэн болсон feature-үүдийг Phase 0-д бэлдсэн **жинхэнэ Android төхөөрөмж дээр** турших — асуудал #7 (Mobile UI эхлээгүй тул хойшилсон)
 
 ### Phase 5 — Тайлан ба олон-салбарын удирдлага (1-2 долоо хоног)
 (v1.0-той адил)

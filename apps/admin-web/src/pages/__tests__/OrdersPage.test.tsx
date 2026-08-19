@@ -28,6 +28,10 @@ const SAMPLE_ORDER: api.Order = {
   cancelledAt: null,
   providerInvoiceId: null,
   paidAt: null,
+  deliveryMethod: "PICKUP",
+  deliveryAddress: null,
+  deliveryLatitude: null,
+  deliveryLongitude: null,
   items: [
     {
       id: "item-1",

@@ -115,8 +115,12 @@ request-scoped transaction pattern-тай нэг дор ажиллах ёсто�
 ## Одоогийн Phase
 Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮРЭН дууссан (MinIO зураг
 + Meilisearch хайлт, Phase 3c-ийн дараа буцаж гүйцээв). Phase 3c — Буцаалт
-ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон) дууссан; geolocation
-auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `docs/plan.md` §8.
+ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон) дууссан. Phase 4 —
+Хүргэлт/чиглүүлэлт + мэдэгдэл (§7 модуль #8, #12) дууссан (Худалдагчийн
+ажлын урсгал + Mobile UI хараахан үлдсэн). Geolocation auto-routing
+(автоматаар хамгийн ойрхон салбар сонгох — Phase 4-ийн хүргэлтийн
+чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog хэвээр. Дэлгэрэнгүй:
+`docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -663,15 +667,160 @@ auto-routing, mobile UI хараахан үлдсэн. Дэлгэрэнгүй: `
     "CI" бүлгээс үз. `gh run watch`-аар PR #8 (`feature/
     catalog-images-search` → `main`) дээр CI бүрэн ногоон болсныг
     баталгаажуулсан.
-- Дараагийн ажил: geolocation auto-routing (backlog, "should-have"),
-  **Mobile-ийн каталог/агуулах/захиалгын/сагс/бодит цагийн UI** (admin-web
-  хийгдсэн, Flutter тал хараахан эхлээгүй), `DebugController`-ыг
-  устгах/SUPER_ADMIN-д хязгаарлах, refresh token revocation store (хэрэгцээ
-  гарвал), admin-web-ийн салбар удирдах хуудас (CUD, одоо зөвхөн уншихад
-  зориулсан `GET /branches` байгаа), admin-web session persist (ADR 004-ийн
-  "Ирээдүйн сайжруулалт" хэсэг — одоогоор F5 хийвэл дахин нэвтрэх
-  шаардлагатай хэвээр), QPay бодит sandbox credential ирмэгц ADR 006-ийн
-  checklist гүйцээх, webhook endpoint-д rate-limit нэмэх (backlog).
+- **Хүргэлт/чиглүүлэлт + мэдэгдэл (Phase 4) дууссан** (`docs/plan.md` §7
+  модуль #8 "Хүргэлт ба хүлээлгэн өгөлт", #12 "Мэдэгдэл", §8 Phase 4):
+  - **Хэсэг A (хүргэлт/чиглүүлэлт):** migration `add_order_delivery_fields`
+    — `Order.deliveryMethod` (`OrderDeliveryMethod` enum: PICKUP/DELIVERY,
+    `@default(PICKUP)`) + `deliveryAddress`/`deliveryLatitude`/
+    `deliveryLongitude` (DELIVERY-д заавал, PICKUP-д ХОРИОТОЙ). RLS
+    policy өөрчлөлт шаардлагагүй (мөр-түвшний, багана нэмэхэд
+    нөлөөлдөггүй — Phase 2-ийн `add_branch_geo_and_catalog_fields`-тэй
+    адил урьдал жишээ). ⚠️ **Чухал заль (DTO validation):**
+    `deliveryAddress`/`Latitude`/`Longitude`-ийн "DELIVERY-д заавал, PICKUP-д
+    хориотой" хос чиглэлийн шаардлагыг class-validator-ийн `@ValidateIf`-ыг
+    НЭГ property дээр ХЭД ХЭДЭН удаа давхар зарлахаас ЗОРИУДАА зайлсхийж
+    (AND/OR аль аргаар нэгддэгийг эх сурвалжаас тодорхой батлах
+    боломжгүй байсан тул, input validation аюулгүй байдлын критик хэсэг
+    учир таамаглалаар бичээгүй), `registerDecorator`-т суурилсан ганц
+    custom validator (`IsDeliveryField`, `checkout-order.dto.ts`) ашиглаж
+    хоёр чиглэлийг НЭГ функц дотор ХАМТ шалгасан. ⚠️ **Чухал заль
+    (backward compatibility):** `deliveryMethod`-ийг `@IsOptional()`
+    болгож, DTO/service түвшинд өгөгдөөгүй бол PICKUP гэж үзсэн (Prisma
+    schema-ийн `@default(PICKUP)`-тай нийцүүлсэн) — учир нь өмнөх бүх
+    Phase-ийн checkout е2е тест (`test/orders.e2e-spec.ts`,
+    `test/payment.e2e-spec.ts` гэх мэт) энэ талбарыг ОГТ илгээдэггүй байсныг
+    заавал шаардах маягаар өөрчилбөл бүгд 400 болж эвдэрнэ байсан.
+    `RoutingProvider` абстракц (`src/routing/`, `PaymentProvider`-тэй ЯГ
+    ижил `ROUTING_PROVIDER` DI сонголтын загвар): `MockRoutingProvider`
+    (Haversine томъёо, `haversine.util.ts`, анхдагч dev/CI) +
+    `OsrmRoutingProvider` (router.project-osrm.org public demo сервер,
+    зөвхөн HTTP mock unit тестээр шалгагдсан — `docs/adr/007-osm-osrm-routing.md`,
+    Google Maps Directions API-тай зардлын харьцуулалт + ирээдүйд өөрийн
+    OSRM container руу шилжих төлөвлөгөө). `geometry`-ийн координатын
+    дараалал ЗОРИУДАА `[lng, lat]` (OSRM/GeoJSON стандарт) — Leaflet-ийн
+    `[lat, lng]`-тэй ЯЛГААТАЙ, admin-web-д хөрвүүлдэг. `GET /orders/:id/route`
+    (staff-only, PICKUP захиалгад 400 NOT_DELIVERY_ORDER, салбарын
+    latitude/longitude бүртгэгдээгүй бол 400 BRANCH_LOCATION_MISSING).
+    ⚠️ **(2026-08-19 нэмэлт засвар) Кэшлэлт:** анхны хувилбарт `getRoute()`
+    дуудлага БҮРД `RoutingProvider.getRoute()`-ийг ШУУД дуудаж байсан
+    нь `OsrmRoutingProvider`-ийн хувьд public demo сервер рүү давхардуулж
+    HTTP хүсэлт явуулна гэсэн үг байсан (§"Одоогийн public demo
+    server-ийн хязгаарлалт", `docs/adr/007`, fair-use) — үр дүнг
+    `Order.routeDistanceMeters`/`routeDurationSeconds`/`routeGeometry`
+    (migration `add_order_route_cache`, nullable, jsonb geometry) талбар
+    дээр бичиж кэшилдэг болгов: эхний дуудлагад л provider дуудагдаж
+    Order мөрөнд бичигдэнэ (`orders_update` RLS staff-ийн бусад бичилттэй
+    адил, шинэ SECURITY DEFINER функц шаардлагагүй — UPDATE-д SELECT
+    policy давхар шаардагддаг ч staff аль хэдийн orders_select-ийг
+    хангадаг), дараагийн дуудлага бүрд ЗӨВХӨН тэр кэшийг л буцаана
+    (provider ОГТ дуудагдахгүй). Кэш `@Audit()`-гүй ЗОРИУДАА (GET
+    endpoint дотрох UPDATE ч, энэ бол хэрэглэгчийн санаатай бизнес
+    үйлдэл БИШ, зөвхөн тооцоолсон утгын дериватив кэш — `POST
+    /catalog/search/reindex`-ийн "DB мутаци биш тул audit шаардлагагүй"
+    зарчимтай ТӨСТЭЙ ч эсрэг чиглэлээс: энд мутаци бий, гэхдээ audit
+    log-ийн зорилго "хэн юуг санаатайгаар өөрчилсөн бэ" гэдэгт нийцэхгүй
+    тул хассан). deliveryLatitude/Longitude/branchId одоогоор ЗАСВАРЛАХ
+    endpoint байхгүй тул кэш хугацаагүй хүчинтэй — ирээдүйд ийм засварлах
+    боломж нэмэгдвэл яг тэр update-ийн дотор энэ 3 талбарыг NULL болгож
+    (invalidate) дахин тооцоологдохоор хийх ёстойг `order.service.ts`/
+    `schema.prisma`-д тэмдэглэсэн. `test/delivery-routing.e2e-spec.ts`-д
+    `jest.spyOn(routingProvider, 'getRoute')`-оор ижил orderId-аар 2 удаа
+    дуудахад provider ЗӨВХӨН 1 удаа дуудагдсаныг батлав, мөн
+    `order.service.spec.ts`-д cache-hit/cache-miss хоёр замыг mock
+    prisma-аар тусад нь баталгаажуулсан.
+    Admin-web: `DeliveryRouteMap.tsx` (`react-leaflet` + OSM tile, Leaflet-ийн
+    анхдагч marker icon зам Vite bundler-тай зөв ажилладаггүй тул зургийг
+    шууд import хийж дахин тохируулсан) — Order дэлгэрэнгүй дэлгэц дээр
+    (зөвхөн DELIVERY захиалганд, `ORDER_STATUS_UPDATE_ROLES`-тэй ижил
+    role шүүлттэй) 2 marker (салбар — `route.geometry[0]`-ээс уусан,
+    тусад нь `GET /branches` дуудаагүй; хүргэлтийн цэг — `order.deliveryLatitude/
+    Longitude`) + route polyline зурна. **Checkout координат сонгогч UI
+    (харилцагчийн тал) admin-web-д ЗОРИУДАА ОРООГҮЙ** — admin-web-д
+    захиалга ҮҮСГЭХ дэлгэц угаасаа байхгүй (checkout зөвхөн
+    `@Roles('CUSTOMER')`), харилцагчийн UI үргэлж Mobile-ийн хамрах
+    хүрээ байсан (Phase 3a-с хойших тогтсон зарчим) тул энд ч мөн
+    баримталсан.
+  - **Хэсэг B (мэдэгдэл):** `NotificationProvider` абстракц
+    (`src/notification/`, `sendSms`/`sendEmail`, `PaymentProvider`-тэй ижил
+    загвар) — `MockNotificationProvider` (Logger-оор л бичдэг, dev/CI
+    анхдагч) + `SmtpNotificationProvider` (**Email БОДИТООР**, `nodemailer`
+    + `SMTP_HOST`/`PORT` env, dev/CI-д Mailpit; `sendSms()` нь ЗОРИУДАА
+    стаб — `docs/plan.md` Phase 1-ийн "SMS gateway vendor үнэлгээ" зүйл
+    (`SmsProvider` абстракц) БОДИТООР хийгдээгүй байсныг (checklist
+    `[ ]` хэвээр байсныг) ЭНЭ Phase-д нээж, "Phase 1-д аль хэдийн бэлдсэн"
+    гэсэн даалгаврын анхны таамаглал буруу байсныг тэмдэглэв — тусдаа
+    `SmsProvider` interface зохиогоогүй, `NotificationProvider.sendSms()`-ийн
+    дотоод хэрэгжилтийг сольж (bодит vendor сонгогдоход) хангах боломжтой,
+    нэмэлт давхар абстракц шаардлагагүй гэж үзсэн). `infra/docker-compose.dev.yml`/CI-д
+    `mailpit` (`axllent/mailpit`, порт 1025 SMTP/8025 web UI) service
+    нэмэгдэв. `NotificationTrigger` (`src/notification/notification-trigger.service.ts`)
+    — `SearchIndexer`-тэй ЯГ ИЖИЛ `RequestContextService.onCommit()`-гэйт
+    загвар, захиалгын CONFIRMED/READY/COMPLETED + буцаалтын APPROVED/
+    REJECTED статуст л илгээнэ (`order-notification.util.ts`-ийн pure
+    message builder функцууд). ⚠️ **Чухал загварын шийдвэр:** `onCommit()`
+    callback нь RLS transaction COMMIT хийгдсэний ДАРАА ажилладаг тул тэр
+    үед `tx` ХҮЧИНГҮЙ болдог (docs/adr/001) — иймд харилцагчийн
+    `phone`/`email`-г onCommit бүртгэхээс ӨМНӨ, tx хараахан нээлттэй байхад
+    л уншсан (зөвхөн бодит sms/email сүлжээний дуудлагыг onCommit-оор
+    хойшлуулсан), энэ шалтгаанаас `notifyOrderStatusChanged()`/
+    `notifyReturnStatusChanged()` нь `OrderEventsPublisher`-ийн sync
+    аргуудаас ЯЛГААТАЙ ASYNC (дуудагч `OrderService.updateStatus()`/
+    `ReturnRequestService.approve()`/`reject()` ЗААВАЛ `await` хийдэг).
+    ⚠️ **Мэдэгдэж буй, баримтжуулсан хязгаарлалт:** `User.email` нь зөвхөн
+    ажилтан/Keycloak хэрэглэгчид зориулагдсан (`auth-customer/dto/
+    register.dto.ts` зөвхөн `phone` цуглуулдаг) тул CUSTOMER-ийн email
+    бараг үргэлж NULL — энэ урсгалын email тал практикт ихэвчлэн
+    алгасагдана (санаатай, алдаа биш; `dispatch()`-ийн нөхцөлт шалгалт
+    үүнийг зөв барина).
+  - Тест: unit (`haversine.util.spec.ts`, `mock-routing.provider.spec.ts`,
+    `osrm-routing.provider.spec.ts` — HTTP mock, `order-notification.util.spec.ts`,
+    `mock-notification.provider.spec.ts`, `smtp-notification.provider.spec.ts`
+    — nodemailer transport mock, `notification-trigger.service.spec.ts` —
+    tx-ийн дараа хандахгүй эсэхийг mock prisma-аар баталгаажуулсан) + e2e
+    (`test/delivery-routing.e2e-spec.ts` — checkout DTO validation хоёр
+    чиглэл, `GET /orders/:id/route` staff-only/PICKUP-д 400/branch
+    байршилгүйд 400, `test/notification.e2e-spec.ts` — `SmtpNotificationProvider`-ийг
+    ШУУД instantiate хийж, **Mailpit-руу бодит SMTP-ээр илгээгээд, Mailpit-ийн
+    REST API-аар (`GET /api/v1/messages`) бодитоор ирснийг баталгаажуулсан**
+    — бүхэл order-урсгалаар БИШ, учир нь CUSTOMER.email ихэвчлэн NULL байдаг
+    тул trigger-ийн WIRING логикийг зөвхөн unit түвшинд mock provider-оор
+    шалгасан, бодит Mailpit round-trip-ийг provider-ийн ганц давхаргад
+    тусад нь баталгаажуулсан).
+  - **Playwright-аар (ad hoc, өмнөх Phase-үүдийн адил, repo-д devDependency
+    болгож нэмээгүй) admin-web-ийн Хүргэлтийн газрын зургийг бодит
+    browser-т баталгаажуулав:** нэвтрэх → Захиалгууд → тохирох салбар
+    сонгох (§Playwright сургамж доор) → DELIVERY захиалгын дэлгэрэнгүй →
+    "Хүргэлт" карт (хаяг, зай/ETA текст, 2 marker + route шугам) харагдав,
+    console алдаа 0. ⚠️ **Playwright дадлагаас гарсан 2 сургамж:**
+    (1) Keycloak-ийн User Profile-д (`setup-realm.sh`-ээс) `firstName`/
+    `lastName` REQUIRED тул `POST /admin/realms/.../users`-ээр шинэ staff
+    хэрэглэгч үүсгэхдээ эдгээрийг ОРХИВОЛ ROPC grant "Account is not fully
+    set up" (400 `invalid_grant`) алдаа өгдөг (`requiredActions`-той ямар
+    ч хамаагүй) — заавал бөглөх ёстой. (2) ADR 004-ийн "access token
+    зөвхөн in-memory" зарчмаас шалтгаалан `page.goto()`-оор ШУУД
+    `/orders/:id` рүү орох нь F5-тэй адил session-ийг арилгадаг тул
+    Playwright script-д SPA-ийн дотоод навигаци (товч дарах) ашиглах
+    ёстой — мөн Захиалгын жагсаалт анхдагчаар эхний (алфавит бус,
+    буцаах эрэмбийн эхний) салбарыг сонгодог тул шинэ салбарт үүссэн
+    захиалгыг харахын тулд салбар dropdown-оос тодорхой сонгох
+    шаардлагатай.
+- Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
+  4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
+  тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
+  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн каталог/агуулах/
+  захиалгын/сагс/бодит цагийн/хүргэлтийн UI** (admin-web хийгдсэн, Flutter
+  тал хараахан эхлээгүй), push notification (Mobile апп эхлээгүй тул
+  хүлээн авах төхөөрөмж алга, backlog), бодит SMS vendor сонгож
+  `SmtpNotificationProvider.sendSms()`-ийн стабыг солих (§11.3, Phase 1-ээс
+  хойш хойшлогдсоор ирсэн), Худалдагчийн тусгай ажлын урсгал дэлгэц
+  (Mobile UI-тай хамт), OSRM public demo-оос өөрийн container руу шилжих
+  (`docs/adr/007`), `DebugController`-ыг устгах/SUPER_ADMIN-д хязгаарлах,
+  refresh token revocation store (хэрэгцээ гарвал), admin-web-ийн салбар
+  удирдах хуудас (CUD, одоо зөвхөн уншихад зориулсан `GET /branches`
+  байгаа), admin-web session persist (ADR 004-ийн "Ирээдүйн сайжруулалт"
+  хэсэг — одоогоор F5 хийвэл дахин нэвтрэх шаардлагатай хэвээр), QPay
+  бодит sandbox credential ирмэгц ADR 006-ийн checklist гүйцээх, webhook
+  endpoint-д rate-limit нэмэх (backlog).
 - **(backlog, жижиг PR)** `OrderService.updateStatus()`-ийн `orders_update`
   RLS policy-д (`PATCH /orders/:id/status`) дээрх "Тестийн стандарт — RLS
   mutation policy"-той ЯГ ижил шууд SQL шалгалт (`PrismaService.

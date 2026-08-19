@@ -186,6 +186,8 @@ export interface OrderItem {
   createdAt: string;
 }
 
+export type OrderDeliveryMethod = "PICKUP" | "DELIVERY";
+
 // totalAmount — Prisma Decimal нь HTTP JSON-д string болж сериалайзлагддаг
 // (ProductVariant.basePrice-тэй адил).
 export interface Order {
@@ -200,7 +202,22 @@ export interface Order {
   cancelledAt: string | null;
   providerInvoiceId: string | null;
   paidAt: string | null;
+  // apps/api/src/orders/dto/checkout-order.dto.ts-тэй тохирно —
+  // deliveryMethod=DELIVERY үед л Address/Latitude/Longitude утгатай.
+  deliveryMethod: OrderDeliveryMethod;
+  deliveryAddress: string | null;
+  deliveryLatitude: number | null;
+  deliveryLongitude: number | null;
   items: OrderItem[];
+}
+
+// apps/api/src/routing/routing-provider.interface.ts-ийн RouteResult-той
+// тохирно — geometry нь [lng, lat] дараалалтай (GeoJSON/OSRM стандарт),
+// Leaflet-ийн [lat, lng]-той ЯЛГААТАЙ (DeliveryRouteMap.tsx-ийн тайлбарыг үз).
+export interface OrderRoute {
+  distanceMeters: number;
+  durationSeconds: number;
+  geometry: [number, number][];
 }
 
 export type ReturnStatus =
@@ -542,6 +559,16 @@ export function getOrders(
 
 export function getOrder(accessToken: string, id: string): Promise<Order> {
   return apiFetch<Order>(`/orders/${id}`, accessToken);
+}
+
+// apps/api/src/orders/order.controller.ts-ийн GET /orders/:id/route
+// (staff-only) — зөвхөн deliveryMethod=DELIVERY захиалганд амжилттай
+// хариу буцаана, PICKUP-д 400 NOT_DELIVERY_ORDER.
+export function getOrderRoute(
+  accessToken: string,
+  id: string,
+): Promise<OrderRoute> {
+  return apiFetch<OrderRoute>(`/orders/${id}/route`, accessToken);
 }
 
 // apps/api/src/orders/order.controller.ts-ийн PATCH /orders/:id/status-той

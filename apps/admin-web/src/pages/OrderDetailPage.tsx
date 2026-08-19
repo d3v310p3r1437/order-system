@@ -1,11 +1,17 @@
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getOrder, updateOrderStatus, type OrderStatus } from "@/lib/api";
+import {
+  getOrder,
+  getOrderRoute,
+  updateOrderStatus,
+  type OrderStatus,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { ORDER_STATUS_UPDATE_ROLES } from "@/lib/roles";
 import { allowedNextStatuses, ORDER_STATUS_LABELS } from "@/lib/order-status";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeliveryRouteMap } from "@/components/DeliveryRouteMap";
 import { OrderStatusBadge } from "@/components/OrderStatusBadge";
 
 // docs/plan.md §8 Phase 3a 7-р зүйл: "статус шинэчлэх товч (state
@@ -14,12 +20,24 @@ export function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { accessToken, hasRole } = useAuth();
   const canUpdateStatus = hasRole(ORDER_STATUS_UPDATE_ROLES);
+  // apps/api/src/orders/order.controller.ts-ийн ROUTE_VIEW_ROLES-тэй ЯГ
+  // тохирно (SUPER_ADMIN/ALL_BRANCH_MANAGER/BRANCH_ADMIN/BRANCH_MANAGER/
+  // SALESPERSON) — ORDER_STATUS_UPDATE_ROLES-той давхцдаг тул шинэ
+  // тогтмол зохиогоогүй, дахин ашиглав.
+  const canViewRoute = hasRole(ORDER_STATUS_UPDATE_ROLES);
   const queryClient = useQueryClient();
 
   const orderQuery = useQuery({
     queryKey: ["order", id],
     queryFn: () => getOrder(accessToken, id as string),
     enabled: !!id,
+  });
+
+  const isDelivery = orderQuery.data?.deliveryMethod === "DELIVERY";
+  const routeQuery = useQuery({
+    queryKey: ["order-route", id],
+    queryFn: () => getOrderRoute(accessToken, id as string),
+    enabled: !!id && isDelivery && canViewRoute,
   });
 
   const statusMutation = useMutation({
@@ -103,6 +121,47 @@ export function OrderDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {isDelivery && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Хүргэлт</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm">{order.deliveryAddress}</p>
+            {!canViewRoute && (
+              <p className="text-sm text-muted-foreground">
+                Чиглэлийг харах эрхгүй байна.
+              </p>
+            )}
+            {canViewRoute && routeQuery.isLoading && (
+              <p className="text-sm text-muted-foreground">
+                Чиглэл ачааллаж байна…
+              </p>
+            )}
+            {canViewRoute && routeQuery.isError && (
+              <p className="text-sm text-destructive">
+                Чиглэл тооцоолоход алдаа гарлаа.
+              </p>
+            )}
+            {canViewRoute && routeQuery.data && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Зай: {(routeQuery.data.distanceMeters / 1000).toFixed(1)} км ·
+                  ~{Math.round(routeQuery.data.durationSeconds / 60)} мин
+                </p>
+                <DeliveryRouteMap
+                  branchLat={routeQuery.data.geometry[0][1]}
+                  branchLng={routeQuery.data.geometry[0][0]}
+                  deliveryLat={order.deliveryLatitude as number}
+                  deliveryLng={order.deliveryLongitude as number}
+                  route={routeQuery.data}
+                />
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {canUpdateStatus && nextStatuses.length > 0 && (
         <Card>
