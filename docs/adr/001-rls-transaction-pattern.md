@@ -82,3 +82,65 @@ PostgreSQL Row-Level Security (RLS) policy-ууд `current_setting('app.user_id'
   гарц болон CommonJS project (package.json-д `"type": "module"` байхгүй)
   хоорондын зөрчлийг зайлсхийхийн тулд). Хэрэв ирээдүйд төслийг бүхэлд нь ESM
   болговол энэ тохиргоог дахин харах хэрэгтэй.
+
+## 2026-08-19 нэмэлт: ноцтой засвар — HTTP хариу DB COMMIT-ээс ӨМНӨ клиент рүү явдаг байсан race
+
+**Асуудал (өмнөх §"Middleware доторх алдааны зам" мөрөнд "цаашид тестээр
+баталгаажуулах шаардлагатай" гэж зөвхөн тэмдэглэгдээд, бодитоор шалгагдаагүй
+үлдсэн эрсдэл бодит алдаа болж илэрсэн жишээ):** `orders.e2e-spec.ts`,
+`returns.e2e-spec.ts`, `reports.e2e-spec.ts`, `catalog-inventory.e2e-spec.ts`,
+`realtime.e2e-spec.ts`-д давтан (PR #8, #10, #12 — 2026-08-18/19) 404
+(`ORDER_NOT_FOUND`)/400 (`INVALID_ORDER_STATUS_TRANSITION`) алдаа "flaky" мэт
+санамсаргүй харагдаж байсан. Гүнзгий шинжилгээгээр (3 incident-ийн CI лог
+харьцуулалт + `rls.middleware.ts`-ийн кодын дэлгэрэнгүй унших + локал
+1000 удаагийн reproduce script) **бүтцийн жинхэнэ race олдсон**:
+
+`RlsMiddleware.use()`-ийн анхны хувилбар:
+```ts
+this.prisma.runRequestTransaction(userId, (tx) =>
+  this.requestContext.run({ tx, userId, afterCommitCallbacks }, async () => {
+    next();               // controller ажиллаж, res.json()/res.send() дуудна
+    await responseFinished; // res.on('finish')-ийг хүлээнэ (хариу АЛЬ ХЭДИЙН явсан!)
+  }),
+).then(() => { /* afterCommitCallbacks */ });
+```
+`res.on('finish')` бол хариу **аль хэдийн клиент рүү бодитоор явсны ДАРАА**
+гардаг event. Гэтэл Prisma-ийн `$transaction(fn)` нь `fn`-ийн буцаасан Promise
+resolve хийсний ДАРАА л бодит `COMMIT` явуулдаг. Өөрөөр хэлбэл: **энэ кодын
+бүтцээр бол HTTP хариу ЗААВАЛ, ямар ч тохиолдолд, DB `COMMIT`-ээс ӨМНӨ клиент
+рүү явдаг байсан** — санамсаргүй "заримдаа" биш, детерминистик дараалал.
+Ердийн үед клиент (тест эсвэл mobile апп) дараагийн хүсэлтээ илгээх хүртэлх
+хугацаа сервэрийн дотоод "commit хүртэлх microtask" хугацаанаас урт байдаг тул
+анзаарагдахгүй байсан ч, CI-ийн (Docker дотор Postgres, contention ихтэй
+shared runner) орчинд энэ зай нарийсаж/сөрөгждөг тул `checkoutAndComplete()`
+шиг "checkout → шууд PATCH .../status" (эсвэл дараалсан статус шилжилтийн
+`it()` блокууд хоорондоо) хийдэг тестүүд тогтмол бус унадаг байв.
+
+**Баталгаажуулалт:** `C:\...\scratchpad\repro_order_status_race.cjs`
+(jest биш, шууд Node script) — checkout → шууд (0 хүлээлттэй) PATCH
+.../status-г 1000 удаа дараалан локал dev backend (docker-compose.dev.yml-ийн
+Postgres) эсрэг дуудаж, засварын ӨМНӨ **1/1000 удаа** яг ижил
+`ORDER_NOT_FOUND` (404) алдаа гаргаж чадсан (детерминист бус, гэхдээ бодитоор
+reproduce хийгдсэн — CI-ийн 20/119 гэсэн илүү өндөр давтамж нь зөвхөн CI-ийн
+илүү нарийссан timing margin-аас шалтгаалсан гэж дүгнэсэн).
+
+**Засвар (`src/common/rls.middleware.ts`):** `res.on('finish')`-ийг хүлээхийн
+оронд **`res.end()`-ийг өөрийг нь monkey-patch** хийж, controller
+`res.end()`-ийг дуудсан МӨЧИД (биш "явуулсан" мөчид) л транзакцын callback-ыг
+чөлөөлж (→ Prisma `COMMIT` эхэлнэ), харин **жинхэнэ, бодит `res.end()`
+(клиент рүү бодитоор явуулах)-ыг зөвхөн Prisma-ийн `$transaction()` Promise
+(COMMIT/ROLLBACK) бүрэн дуусаж СҮҮЛД л** дуудна. Ингэснээр клиент хариу
+хүлээн авах мөчид DB транзакц ЗААВАЛ commit (эсвэл rollback) хийгдсэн байх нь
+кодын бүтцээр баталгаатай болно (race timing-аас үл хамаарна).
+
+**Тест:** `src/common/rls.middleware.spec.ts` — controller `res.end()`-ийг
+дуудсан ч, "commit" (mock-ийн gate) нээгдэх хүртэл жинхэнэ хариу
+(`originalEnd`) дуудагдахгүй гэдгийг unit түвшинд тодорхой батална
+(регресс болгож дахин оруулахаас сэргийлнэ). Засварын дараа локал e2e бүрэн
+suite (13/13, 119/119) болон дээрх reproduce script 1000/1000 амжилттай
+гарсныг баталгаажуулсан.
+
+**Ач холбогдол:** энэ засвар `RlsMiddleware`-ийг ашигладаг **бүх** endpoint
+(апп даяар, зөвхөн orders/returns биш) дээр нөлөөлдөг — "мутаци хийсний дараа
+шууд түүнийг харах/өөрчлөх дараагийн хүсэлт" загвартай ямар ч урсгал (мобайл
+апп, admin-web) ижил эрсдэлтэй байсан.
