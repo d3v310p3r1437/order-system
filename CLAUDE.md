@@ -911,12 +911,71 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
   дараа шууд түүнийг харах/өөрчлөх дараагийн хүсэлт" загвартай ямар ч
   урсгал (admin-web, Mobile апп цаашид) адил эрсдэлтэй байсан тул энэ
   засвар тэдгээрт ч хамгаалалт өгнө.
+- **Mobile: каталог үзэх/хайх/дэлгэрэнгүй UI дууссан** (docs/plan.md §7
+  модуль #3, admin-web-ийн cobalt-indigo brand identity-г Flutter талд
+  давхарлав): `pubspec.yaml`-д `cached_network_image`/`shimmer` нэмэгдэв.
+  `lib/features/catalog/domain/{category,product,product_variant,
+  product_image,availability}.dart` — `freezed` ЗОРИУДАА ашиглаагүй энгийн
+  immutable класс + гар `fromJson` (backend-ийн `ProductDetail`/`Category`
+  бүтэцтэй ШУУД тохирно, `Product.aggregateAvailability`/`cheapestVariant`
+  getter-үүд зөвхөн UI-ийн товч танилцуулга зорилготой — backend-ийн
+  `computeAvailabilityStatus()` шийдвэрийг дахин бичээгүй, ADR 005-ийн
+  "ганц газар л шийднэ" зарчим). `lib/features/catalog/data/
+  catalog_repository.dart` (`GET /categories`, `GET /catalog/search?q=&
+  categoryId=`, `GET /products/:id`). `lib/features/catalog/presentation/
+  catalog_providers.dart` — `riverpod_annotation` codegen ЗОРИУДАА
+  ашиглаагүй (`AsyncNotifierProvider`-ийг гараар, `apiClientProvider`-тай
+  ижил "codegen-гүй plain provider" загвар) — `CatalogSearchNotifier`:
+  query бичихэд 300мс debounce (`Timer`, дараагийн `setQuery`-ээр өмнөх нь
+  цуцлагдана), ангилал сонгоход debounce-ГҮЙ шууд дахин ачаална.
+  `CatalogScreen` (grid 2 багана, ангиллын chip мөр хэвтээ гүйлгэдэг,
+  хайлтын талбар debounce+бяцхан indicator+цэвэрлэх товч, RefreshIndicator)
+  БОЛОН `ProductDetailScreen` (route: `/products/:id`, `SliverAppBar`+
+  `Hero`-той зурган gallery — олон зурагтай бол `PageView`+dot indicator,
+  variant сонголт `ChoiceChip`, тооцоолсон availability badge+leadDays
+  тайлбар, "Сагслах" ЗОРИУДАА placeholder — `SnackBar`-аар "дараагийн
+  шатанд нэмэгдэнэ" тайлбарладаг, cart Phase хараахан ирээгүй). 3 UI
+  төлөв (ачаалж байгаа — `ProductCardSkeleton`/shimmer grid; өгөгдөлтэй;
+  хоосон/алдаатай — дүрстэй `CatalogEmptyState` + "Дахин оролдох") бүгд
+  8pt grid (spacing 8/16/24/32), 12-16px булангийн муруйлт, нарийн
+  сүүдэр, tap үед `AnimatedScale` feedback-тэй.
+  ⚠️ **Чухал заль (Android emulator networking, 2 дахь жишээ):**
+  `resolveApiBaseUrl()`-ийн "Android emulator localhost-оо өөрийгөө
+  зааж байгаа тул 10.0.2.2 ашиглана" зарчим ЗӨВХӨН backend API URL-д
+  биш, `MinioService.getPublicUrl()`-ээс ирдэг зурган URL-д (dev орчинд
+  мөн `localhost:9000`-ээр ирдэг) ч мөн адил хамаарна гэдгийг шинээр
+  олов — `lib/core/network/api_base_url.dart`-д `resolveMediaUrl()`
+  нэмж (`Platform.isAndroid` үед `localhost`/`127.0.0.1` host-ыг
+  `10.0.2.2`-оор сольдог), `ProductImage.fromJson`-д шууд хэрэглэв.
+  ⚠️ **Playwright-ийн оронд (mobile-д тохиромжгүй тул) бодит Android
+  emulator дээр `adb`-аар screenshot цуврал авч баталгаажуулав:** нүүр →
+  Каталог үзэх → хайлт (debounce ажиллаж, "Coca-Cola" гэж бичихэд зөв
+  MinIO зурагтай карт олдов) → дэлгэрэнгүй (Hero шилжилт, "2,500₮" үнэ,
+  ногоон "Бэлэн" badge) → олон variant-той бүтээгдэхүүн дээр variant
+  chip сольж PRE_ORDER-руу шилжихэд үнэ/badge/"7 хоногийн дотор бэлэн
+  болно" тайлбар зөв шинэчлэгдэв → хоосон хайлтын үр дүнгийн зурагтай
+  empty state → dark mode (`cmd uimode night yes`) — бүх дэлгэц (карт,
+  chip, badge, skeleton) зөв харагдав. Демо өгөгдөл (2 ангилал, 7
+  бүтээгдэхүүн, IN_STOCK/PRE_ORDER/OUT_OF_STOCK гурвыг тус тусад нь
+  илэрхийлсэн) шинэ Keycloak+DB staff хэрэглэгч (`mobile-catalog-
+  demo@order-system.mn`, SUPER_ADMIN) болон шинэ "Mobile демо салбар"-аар
+  дамжуулж API-аар үүсгэсэн (dev DB/Keycloak/MinIO-д өмнөх Phase-үүдийн
+  адил debris байдлаар үлдсэн, устгах шаардлагагүй). Тест: unit
+  (`catalog_search_notifier_test.dart` — debounce/filter логик, 5 тест)
+  + widget (`catalog_screen_test.dart` — ачаалж байгаа/өгөгдөлтэй/
+  хоосон 3 төлөв + карт→дэлгэрэнгүй navigation + debounce, 5 тест),
+  fake нь `Dio`/HTTP давхаргыг бүрэн тойрсон `FakeCatalogRepository`
+  (`auth_provider_test.dart`-ийн `_FakeAuthRepository`-тэй ижил загвар).
+  `flutter analyze` 0 алдаа, `flutter test` 29/29 ногоон (CI-ийн `mobile`
+  job-той яг ижил алхмаар локал баталгаажуулсан — CI аль хэдийн Phase
+  0-ээс энэ job-той байсан тул шинээр нэмэх шаардлагагүй байв).
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
-  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн каталог/агуулах/
-  захиалгын/сагс/бодит цагийн/хүргэлтийн UI** (admin-web хийгдсэн, Flutter
-  тал хараахан эхлээгүй), push notification (Mobile апп эхлээгүй тул
+  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн сагс/захиалгын/бодит
+  цагийн/хүргэлтийн UI** (каталог үзэх/хайх дууссан — дээрхийг үз, cart
+  Phase-аас хойш үлдсэн хэсэг), push notification (Mobile апп push
+  бүртгэл хараахан эхлээгүй тул
   хүлээн авах төхөөрөмж алга, backlog), бодит SMS vendor сонгож
   `SmtpNotificationProvider.sendSms()`-ийн стабыг солих (§11.3, Phase 1-ээс
   хойш хойшлогдсоор ирсэн), Худалдагчийн тусгай ажлын урсгал дэлгэц

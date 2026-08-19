@@ -45,6 +45,10 @@ dependencies:
   # Network
   dio: ^5.7.0
 
+  # Каталогийн зурган карт: кэшлэсэн зураг ачаалалт + skeleton loading
+  cached_network_image: ^3.4.1
+  shimmer: ^3.0.0
+
   # Realtime (backend-ийн src/realtime/order-events.gateway.ts, namespace /ws/orders)
   socket_io_client: ^3.1.2
 
