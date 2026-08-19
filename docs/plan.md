@@ -571,7 +571,11 @@ SET LOCAL app.accessible_branches = $3;
       загвар) — `MockRoutingProvider` (Haversine, анхдагч) +
       `OsrmRoutingProvider` (router.project-osrm.org public demo,
       `docs/adr/007-osm-osrm-routing.md`). `GET /orders/:id/route`
-      (staff-only) чиглэл/зай/ETA буцаана. Admin-web: Order дэлгэрэнгүй
+      (staff-only) чиглэл/зай/ETA буцаана — үр дүнг `Order.routeDistanceMeters`/
+      `routeDurationSeconds`/`routeGeometry` (migration `add_order_route_cache`)
+      талбар дээр **кэшилдэг** (эхний дуудлагад л RoutingProvider дуудна,
+      дараагийн дуудлага бүрд кэшийг л буцаана — `OsrmRoutingProvider`-ийн
+      public demo рүү давхардуулж хандахаас сэргийлнэ). Admin-web: Order дэлгэрэнгүй
       дэлгэц дээр (DELIVERY захиалганд) Leaflet + OSM tile газрын зураг
       (`DeliveryRouteMap.tsx`) — 2 marker + route polyline, Playwright-аар
       бодит browser-т баталгаажуулсан. Checkout координат сонгогч UI

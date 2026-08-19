@@ -701,6 +701,33 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
     `[lat, lng]`-тэй ЯЛГААТАЙ, admin-web-д хөрвүүлдэг. `GET /orders/:id/route`
     (staff-only, PICKUP захиалгад 400 NOT_DELIVERY_ORDER, салбарын
     latitude/longitude бүртгэгдээгүй бол 400 BRANCH_LOCATION_MISSING).
+    ⚠️ **(2026-08-19 нэмэлт засвар) Кэшлэлт:** анхны хувилбарт `getRoute()`
+    дуудлага БҮРД `RoutingProvider.getRoute()`-ийг ШУУД дуудаж байсан
+    нь `OsrmRoutingProvider`-ийн хувьд public demo сервер рүү давхардуулж
+    HTTP хүсэлт явуулна гэсэн үг байсан (§"Одоогийн public demo
+    server-ийн хязгаарлалт", `docs/adr/007`, fair-use) — үр дүнг
+    `Order.routeDistanceMeters`/`routeDurationSeconds`/`routeGeometry`
+    (migration `add_order_route_cache`, nullable, jsonb geometry) талбар
+    дээр бичиж кэшилдэг болгов: эхний дуудлагад л provider дуудагдаж
+    Order мөрөнд бичигдэнэ (`orders_update` RLS staff-ийн бусад бичилттэй
+    адил, шинэ SECURITY DEFINER функц шаардлагагүй — UPDATE-д SELECT
+    policy давхар шаардагддаг ч staff аль хэдийн orders_select-ийг
+    хангадаг), дараагийн дуудлага бүрд ЗӨВХӨН тэр кэшийг л буцаана
+    (provider ОГТ дуудагдахгүй). Кэш `@Audit()`-гүй ЗОРИУДАА (GET
+    endpoint дотрох UPDATE ч, энэ бол хэрэглэгчийн санаатай бизнес
+    үйлдэл БИШ, зөвхөн тооцоолсон утгын дериватив кэш — `POST
+    /catalog/search/reindex`-ийн "DB мутаци биш тул audit шаардлагагүй"
+    зарчимтай ТӨСТЭЙ ч эсрэг чиглэлээс: энд мутаци бий, гэхдээ audit
+    log-ийн зорилго "хэн юуг санаатайгаар өөрчилсөн бэ" гэдэгт нийцэхгүй
+    тул хассан). deliveryLatitude/Longitude/branchId одоогоор ЗАСВАРЛАХ
+    endpoint байхгүй тул кэш хугацаагүй хүчинтэй — ирээдүйд ийм засварлах
+    боломж нэмэгдвэл яг тэр update-ийн дотор энэ 3 талбарыг NULL болгож
+    (invalidate) дахин тооцоологдохоор хийх ёстойг `order.service.ts`/
+    `schema.prisma`-д тэмдэглэсэн. `test/delivery-routing.e2e-spec.ts`-д
+    `jest.spyOn(routingProvider, 'getRoute')`-оор ижил orderId-аар 2 удаа
+    дуудахад provider ЗӨВХӨН 1 удаа дуудагдсаныг батлав, мөн
+    `order.service.spec.ts`-д cache-hit/cache-miss хоёр замыг mock
+    prisma-аар тусад нь баталгаажуулсан.
     Admin-web: `DeliveryRouteMap.tsx` (`react-leaflet` + OSM tile, Leaflet-ийн
     анхдагч marker icon зам Vite bundler-тай зөв ажилладаггүй тул зургийг
     шууд import хийж дахин тохируулсан) — Order дэлгэрэнгүй дэлгэц дээр

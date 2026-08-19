@@ -122,8 +122,23 @@ export class OrderService {
   }
 
   // docs/plan.md §8 Phase 4, Хэсэг A #5: DELIVERY захиалгын салбараас
-  // хүргэх цэг хүртэлх чиглэлийг RoutingProvider-аар тооцож буцаана —
-  // зөвхөн унших үйлдэл тул withSavepoint/@Audit шаардлагагүй.
+  // хүргэх цэг хүртэлх чиглэлийг RoutingProvider-аар тооцож буцаана.
+  // ⚠️ Кэш (нэмэлт засвар): schema.prisma-ийн Order.routeDistanceMeters/
+  // DurationSeconds/Geometry талбаруудыг үз — эхний дуудлагад л
+  // RoutingProvider (OsrmRoutingProvider бол public demo server) дуудаж,
+  // үр дүнг Order мөр дээр бичнэ; дараагийн дуудлага бүрд ЗӨВХӨН тэр
+  // кэшийг л буцаана (RoutingProvider ОГТ дуудагдахгүй). deliveryLatitude/
+  // Longitude/branchId одоогоор ЗАСВАРЛАГДАХГҮЙ (checkout-ийн дараа эдгээрийг
+  // өөрчлөх endpoint байхгүй) тул кэш хугацаагүй хүчинтэй — цаашид ийм
+  // засварлах боломж нэмэгдвэл яг тэр update-ийн дотор энэ 3 талбарыг NULL
+  // болгож (invalidate) дахин тооцоолуулах ёстой.
+  //
+  // Энэ GET endpoint-ийн дотор Order мөрийг UPDATE хийдэг ч ЗОРИУДАА
+  // @Audit()-гүй — audit_logs нь хэрэглэгчийн санаатай бизнес үйлдлийг
+  // (checkout, статус шинэчлэх г.м.) тэмдэглэдэг, харин энэ бол зөвхөн
+  // тооцоолсон утгын дотоод кэш (`POST /catalog/search/reindex`-ийн "DB
+  // мутаци биш" зарчимтай төстэй логик, гэхдээ эсрэг чиглэлээс — энд
+  // мутаци бий ч хэрэглэгчийн санаатай "үйлдэл" биш, дериватив утга).
   async getRoute(id: string): Promise<RouteResult> {
     const order = await this.findOne(id);
     if (order.deliveryMethod !== 'DELIVERY') {
@@ -136,6 +151,18 @@ export class OrderService {
       throw new BadRequestException(NOT_DELIVERY_ORDER);
     }
 
+    if (
+      order.routeDistanceMeters != null &&
+      order.routeDurationSeconds != null &&
+      order.routeGeometry != null
+    ) {
+      return {
+        distanceMeters: order.routeDistanceMeters,
+        durationSeconds: order.routeDurationSeconds,
+        geometry: order.routeGeometry as [number, number][],
+      };
+    }
+
     // branches_select RLS-ийг л дахин ашиглана (§6.1 "Салбар" мөр) —
     // staff энэ endpoint-ыг дуудахад аль хэдийн харах эрхтэй.
     const branch = await this.prisma.tx.branch.findUnique({
@@ -145,10 +172,21 @@ export class OrderService {
       throw new BadRequestException(BRANCH_LOCATION_MISSING);
     }
 
-    return this.routingProvider.getRoute(
+    const route = await this.routingProvider.getRoute(
       { lat: branch.latitude, lng: branch.longitude },
       { lat: order.deliveryLatitude, lng: order.deliveryLongitude },
     );
+
+    await this.prisma.tx.order.update({
+      where: { id },
+      data: {
+        routeDistanceMeters: route.distanceMeters,
+        routeDurationSeconds: route.durationSeconds,
+        routeGeometry: route.geometry,
+      },
+    });
+
+    return route;
   }
 
   // Checkout: Order + OrderItem-үүдийг үүсгээд InventoryItem.quantity-г

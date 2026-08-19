@@ -271,6 +271,21 @@ model Order {
   deliveryAddress   String?
   deliveryLatitude  Float?
   deliveryLongitude Float?
+  // Кэш (§8 Phase 4 засвар): GET /orders/:id/route эхний удаа дуудагдахад
+  // RoutingProvider.getRoute()-ийн үр дүнг ЭНД бичиж, дараагийн дуудлагад
+  // (ялангуяа OsrmRoutingProvider-ийн public demo server рүү) ДАХИН
+  // хандахгүйгээр шууд буцаана — `order.service.ts`-ийн `getRoute()`-ийг
+  // үз. deliveryLatitude/Longitude/branchId одоогоор ЗАСВАРЛАГДАХГҮЙ
+  // (checkout-ийн дараа Order.branchId/delivery талбар өөрчлөх endpoint
+  // байхгүй) тул кэш "хэзээ ч хуучрахгүй" — ирээдүйд ийм endpoint
+  // нэмэгдвэл (жиш: staff хаяг засварлах) яг ТЭР update дотор эдгээр 3
+  // талбарыг NULL болгож "хүчингүй болгох" (invalidate) ёстой.
+  routeDistanceMeters  Float?
+  routeDurationSeconds Float?
+  // [number, number][] (routing-provider.interface.ts-ийн geometry-тэй
+  // адил [lng, lat] дараалалтай) — Prisma-д массив тохирсон scalar төрөл
+  // байхгүй тул jsonb-аар хадгална.
+  routeGeometry        Json?
   // Phase 3c-ийн 7-хоногийн буцаалтын цонжинд хэрэгтэй тул одоо л оруулав.
   completedAt DateTime?
   cancelledAt DateTime?

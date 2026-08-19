@@ -8,6 +8,7 @@ function buildPrismaMock() {
   const orderUpdate = jest.fn();
   const orderItemCreateMany = jest.fn();
   const productVariantFindUnique = jest.fn();
+  const branchFindUnique = jest.fn();
   const userBranchRoleFindMany = jest.fn();
   const userFindUnique = jest.fn();
   const queryRaw = jest.fn();
@@ -22,6 +23,7 @@ function buildPrismaMock() {
     },
     orderItem: { createMany: orderItemCreateMany },
     productVariant: { findUnique: productVariantFindUnique },
+    branch: { findUnique: branchFindUnique },
     userBranchRole: { findMany: userBranchRoleFindMany },
     user: { findUnique: userFindUnique },
     $queryRaw: queryRaw,
@@ -43,6 +45,7 @@ function buildPrismaMock() {
       orderUpdate,
       orderItemCreateMany,
       productVariantFindUnique,
+      branchFindUnique,
       userBranchRoleFindMany,
       userFindUnique,
       queryRaw,
@@ -274,5 +277,115 @@ describe('OrderService.checkout', () => {
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringMatching(/^ROLLBACK TO SAVEPOINT sp_\d+$/),
     );
+  });
+});
+
+describe('OrderService.getRoute', () => {
+  function deliveryOrder(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'o-1',
+      branchId: 'b-1',
+      deliveryMethod: 'DELIVERY',
+      deliveryLatitude: 47.925,
+      deliveryLongitude: 106.93,
+      routeDistanceMeters: null,
+      routeDurationSeconds: null,
+      routeGeometry: null,
+      items: [],
+      ...overrides,
+    };
+  }
+
+  it('кэш хоосон бол RoutingProvider дуудаж, үр дүнг Order мөр дээр бичээд буцаана', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(deliveryOrder());
+    mocks.branchFindUnique.mockResolvedValue({
+      id: 'b-1',
+      latitude: 47.918,
+      longitude: 106.917,
+    });
+    mocks.orderUpdate.mockResolvedValue({});
+
+    const routingProvider = buildRoutingProviderMock();
+    routingProvider.getRoute.mockResolvedValue({
+      distanceMeters: 1500,
+      durationSeconds: 180,
+      geometry: [
+        [106.917, 47.918],
+        [106.93, 47.925],
+      ],
+    });
+
+    const service = newService(prisma, undefined, undefined, routingProvider);
+    const result = await service.getRoute('o-1');
+
+    expect(routingProvider.getRoute).toHaveBeenCalledTimes(1);
+    expect(routingProvider.getRoute).toHaveBeenCalledWith(
+      { lat: 47.918, lng: 106.917 },
+      { lat: 47.925, lng: 106.93 },
+    );
+    expect(mocks.orderUpdate).toHaveBeenCalledWith({
+      where: { id: 'o-1' },
+      data: {
+        routeDistanceMeters: 1500,
+        routeDurationSeconds: 180,
+        routeGeometry: [
+          [106.917, 47.918],
+          [106.93, 47.925],
+        ],
+      },
+    });
+    expect(result).toEqual({
+      distanceMeters: 1500,
+      durationSeconds: 180,
+      geometry: [
+        [106.917, 47.918],
+        [106.93, 47.925],
+      ],
+    });
+  });
+
+  it('кэш аль хэдийн бөглөгдсөн бол RoutingProvider огт дуудахгүй, Order мөр дээр ч бичихгүй', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(
+      deliveryOrder({
+        routeDistanceMeters: 1500,
+        routeDurationSeconds: 180,
+        routeGeometry: [
+          [106.917, 47.918],
+          [106.93, 47.925],
+        ],
+      }),
+    );
+
+    const routingProvider = buildRoutingProviderMock();
+
+    const service = newService(prisma, undefined, undefined, routingProvider);
+    const result = await service.getRoute('o-1');
+
+    expect(routingProvider.getRoute).not.toHaveBeenCalled();
+    expect(mocks.branchFindUnique).not.toHaveBeenCalled();
+    expect(mocks.orderUpdate).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      distanceMeters: 1500,
+      durationSeconds: 180,
+      geometry: [
+        [106.917, 47.918],
+        [106.93, 47.925],
+      ],
+    });
+  });
+
+  it('PICKUP захиалгад 400 NOT_DELIVERY_ORDER, RoutingProvider огт дуудахгүй', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(
+      deliveryOrder({ deliveryMethod: 'PICKUP' }),
+    );
+    const routingProvider = buildRoutingProviderMock();
+
+    const service = newService(prisma, undefined, undefined, routingProvider);
+
+    await expect(service.getRoute('o-1')).rejects.toThrow(BadRequestException);
+    expect(routingProvider.getRoute).not.toHaveBeenCalled();
   });
 });

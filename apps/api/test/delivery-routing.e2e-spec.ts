@@ -9,6 +9,10 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { CUSTOMER_JWT_ISSUER } from '../src/auth/constants.js';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
+import {
+  ROUTING_PROVIDER,
+  type RoutingProvider,
+} from '../src/routing/routing-provider.interface.js';
 
 interface ErrorBody {
   error: { code: string; message: string; details: unknown };
@@ -48,6 +52,7 @@ async function mintAccessToken(userId: string): Promise<string> {
 describe('Delivery/Routing (e2e)', () => {
   let app: INestApplication<App>;
   let superuserPrisma: PrismaClient;
+  let routingProvider: RoutingProvider;
 
   let branch: { id: string; latitude: number; longitude: number };
   let branchWithoutGeo: { id: string };
@@ -62,6 +67,7 @@ describe('Delivery/Routing (e2e)', () => {
       imports: [AppModule],
     }).compile();
 
+    routingProvider = moduleFixture.get<RoutingProvider>(ROUTING_PROVIDER);
     app = moduleFixture.createNestApplication();
     app.useWebSocketAdapter(new IoAdapter(app));
     app.useGlobalPipes(
@@ -294,6 +300,46 @@ describe('Delivery/Routing (e2e)', () => {
         [branch.longitude, branch.latitude],
         [106.93, 47.925],
       ]);
+    });
+
+    it('давхардсан дуудлагад RoutingProvider ЗӨВХӨН 1 удаа дуудагдана (Order мөр дээрх кэш)', async () => {
+      const freshRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          branchId: branch.id,
+          deliveryMethod: 'DELIVERY',
+          deliveryAddress: 'СБД, 4-р хороо (кэш тест)',
+          deliveryLatitude: 47.93,
+          deliveryLongitude: 106.94,
+          items: [{ variantId, quantity: 1 }],
+        })
+        .expect(201);
+      const freshOrderId = (freshRes.body as OrderBody).id;
+
+      const spy = jest.spyOn(routingProvider, 'getRoute');
+      try {
+        const first = await request(app.getHttpServer())
+          .get(`/orders/${freshOrderId}/route`)
+          .set('Authorization', `Bearer ${superAdminToken}`)
+          .expect(200);
+        const second = await request(app.getHttpServer())
+          .get(`/orders/${freshOrderId}/route`)
+          .set('Authorization', `Bearer ${superAdminToken}`)
+          .expect(200);
+
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(second.body).toEqual(first.body);
+
+        const cachedRow = await superuserPrisma.order.findUniqueOrThrow({
+          where: { id: freshOrderId },
+        });
+        expect(cachedRow.routeDistanceMeters).not.toBeNull();
+        expect(cachedRow.routeDurationSeconds).not.toBeNull();
+        expect(cachedRow.routeGeometry).not.toBeNull();
+      } finally {
+        spy.mockRestore();
+      }
     });
   });
 });
