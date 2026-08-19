@@ -182,6 +182,71 @@ void main() {
     expect(unauthorizedCallCount, 1);
     expect(await tokenStorage.readAccessToken(), isNull);
     expect(await tokenStorage.readRefreshToken(), isNull);
+    // Refresh endpoint өөрөө татгалзсаны дараа ЯМАР Ч НӨХЦӨЛД дахин
+    // оролдохгүй (retry loop-д орохгүй) гэдгийг тодорхой батлана —
+    // `_authDio`-д interceptor огт байхгүй тул архитектурын хувьд давталт
+    // үүсэх боломжгүй ч, энэ тестгүйгээр тэр баталгаа далд хэвээр байх байсан.
+    expect(adapter.countRequestsTo('/auth/customer/refresh'), 1);
+  });
+
+  test('POST хүсэлт 401 авбал ч method, body, header бүгд бүрэн хадгалагдсаар шинэ token-оор дахин илгээгдэнэ', () async {
+    final requestedBody = {'orderId': 'order-1', 'quantity': 3};
+    final adapter = FakeHttpClientAdapter((options) {
+      if (options.path == '/auth/customer/refresh') {
+        return (
+          statusCode: 200,
+          body: {
+            'accessToken': 'new-token',
+            'refreshToken': 'new-refresh-token',
+          },
+        );
+      }
+      final auth = options.headers['Authorization'];
+      if (auth == 'Bearer new-token') {
+        return (statusCode: 200, body: {'ok': true});
+      }
+      return (
+        statusCode: 401,
+        body: {
+          'error': {'code': 'TOKEN_EXPIRED', 'message': 'Хугацаа дууссан'},
+        },
+      );
+    });
+
+    final client = ApiClient(
+      tokenStorage: tokenStorage,
+      onUnauthorized: () => unauthorizedCallCount++,
+      dioOverride: Dio()..httpClientAdapter = adapter,
+      authDioOverride: Dio()..httpClientAdapter = adapter,
+    );
+
+    final response = await client.dio.post<Map<String, dynamic>>(
+      '/orders',
+      data: requestedBody,
+      options: Options(headers: {'X-Custom-Header': 'custom-value'}),
+    );
+
+    expect(response.statusCode, 200);
+    expect(unauthorizedCallCount, 0);
+
+    final protectedCalls = adapter.requests
+        .where((r) => r.path == '/orders')
+        .toList();
+    expect(protectedCalls, hasLength(2)); // анхны 401 + retry 200
+
+    final initialCall = protectedCalls[0];
+    final retryCall = protectedCalls[1];
+
+    // HTTP method хадгалагдсан эсэх.
+    expect(initialCall.method, 'POST');
+    expect(retryCall.method, 'POST');
+    // Body (request data) АЛДАГДААГҮЙ, яг ижил хэвээр дахин илгээгдсэн эсэх.
+    expect(retryCall.data, requestedBody);
+    // Анхны хүсэлтийн бусад header (Authorization-ээс өөр) ч хадгалагдсан эсэх.
+    expect(retryCall.headers['X-Custom-Header'], 'custom-value');
+    // Зөвхөн Authorization header нь шинэ token-оор солигдсон эсэх.
+    expect(initialCall.headers['Authorization'], 'Bearer old-token');
+    expect(retryCall.headers['Authorization'], 'Bearer new-token');
   });
 
   test('refresh амжилттай ч дахин 401 ирвэл (deadlock-гүйгээр) эцэст нь logout болно', () async {
