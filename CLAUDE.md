@@ -117,10 +117,11 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
 + Meilisearch хайлт, Phase 3c-ийн дараа буцаж гүйцээв). Phase 3c — Буцаалт
 ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон) дууссан. Phase 4 —
 Хүргэлт/чиглүүлэлт + мэдэгдэл (§7 модуль #8, #12) дууссан (Худалдагчийн
-ажлын урсгал + Mobile UI хараахан үлдсэн). Geolocation auto-routing
-(автоматаар хамгийн ойрхон салбар сонгох — Phase 4-ийн хүргэлтийн
-чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog хэвээр. Дэлгэрэнгүй:
-`docs/plan.md` §8.
+ажлын урсгал + Mobile UI хараахан үлдсэн). **Phase 5 — Тайлан ба
+олон-салбарын удирдлага (§7 модуль #14) дууссан** (доор дэлгэрэнгүй).
+Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
+Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
+хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -804,6 +805,69 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
     буцаах эрэмбийн эхний) салбарыг сонгодог тул шинэ салбарт үүссэн
     захиалгыг харахын тулд салбар dropdown-оос тодорхой сонгох
     шаардлагатай.
+- **Тайлан ба олон-салбарын удирдлага (Phase 5) дууссан** (`docs/plan.md`
+  §7 модуль #14, §8 Phase 5): `src/reports` (`ReportController`/
+  `ReportService`) — `GET /reports/{sales-summary,top-products,
+  revenue-trend,branch-comparison,sales-summary/export}`. Шинэ RLS
+  policy/SECURITY DEFINER функц НЭМЭЭГҮЙ (ADR 005 "эхлээд байгаа RLS
+  зарчмаа дахин ашигла" — Order/OrderItem/ReturnRequest/Branch-ийн одоо
+  байгаа RLS `tx.order.aggregate()`/`tx.orderItem.findMany()`/
+  `tx.$queryRaw()` шинэ query дээр ч автоматаар "өөрийн салбар"/"бүх"
+  гэсэн хамрах хүрээгээр шүүнэ — `RlsMiddleware`-ийн нэг transaction
+  session-д `$queryRaw` ч мөн хамрагддагийг ADR 001-ээс баталгаажуулж
+  ашигласан). §6.1 матрицын "Тайлан/аналитик" мөрийг `REPORT_VIEW_ROLES`
+  (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER/BRANCH_ADMIN/BRANCH_MANAGER,
+  SALESPERSON/CUSTOMER "—" тул ороогүй) болон `branch-comparison`-ийн
+  зөвхөн "R (бүх)" гурван дүрд (`BRANCH_COMPARISON_ROLES`) хязгаарласан
+  `@Roles()`-оор код болгов. Export нь гуравдагч сангаас (exceljs гэх
+  мэт) ХАМААРАЛГҮЙ гараар бичсэн CSV serializer (`report-csv.util.ts`,
+  UTF-8 BOM — Windows Excel-д Cyrillic зөв харагдана).
+  ⚠️ **Чухал сургамж (shared dev DB давхардал, e2e тест бичихэд
+  анхаарах):** энэ dev Postgres бусад e2e spec файлуудтай ХУВААЛЦСАН тул
+  branchId-гүй (global) aggregate query бусад spec-ийн COMPLETED
+  захиалгыг ч санамсаргүй хамруулж болзошгүй — анх "SUPER_ADMIN бүх
+  салбарын нийлбэрийг харна" гэсэн тест яг тэгш дүнтэй (жиш: "40000.00")
+  таарахгүй байснаар илэрсэн. Засвар: тухайн тестийг эсвэл (a) тодорхой
+  branchId-аар шүүх (revenue-trend), эсвэл (b) `toBeGreaterThanOrEqual`-ээр
+  "багадаа мэдэгдэж буй хувь нэмэр орсон" гэдгийг шалгах хэлбэрт
+  шилжүүлсэн (sales-summary). Ирээдүйд global (branchId-гүй) aggregate
+  report тест бичихдээ энэ зарчмыг баримтал.
+  Admin-web: `/reports` дэлгэц (`ReportsPage.tsx` — огнооны хүрээ, (1-ээс
+  олон салбартай бол) салбар filter, KPI карт 4ш, `recharts`-аар
+  (шинээр нэмсэн dependency) орлогын хандлагын chart (`index.css`-ийн
+  аль хэдийн бэлэн `--color-chart-1..5` палет ашигласан, шинэ өнгөний
+  систем зохиогоогүй), "Их зарагдсан бүтээгдэхүүн" хүснэгт, (зөвхөн
+  global scope дүрд) "Салбаруудын харьцуулалт" хүснэгт, CSV татах товч
+  (Blob + programmatic `<a download>` click — ADR 004-ийн "access token
+  зөвхөн in-memory" зарчимтай нийцүүлж `fetch()`-ээр Authorization header
+  дамжуулсан, статик `<a href>` биш). `Layout.tsx`-ийн нэвтрэлтийн цэс
+  "Тайлан"-г зөвхөн `REPORT_VIEW_ROLES`-той дүрд харуулна (бусад мөрөнд
+  байдаг "RLS-ээр хэсэгчилсэн харагдана" загвараас ЯЛГААТАЙ — эндхийн
+  SALESPERSON/CUSTOMER endpoint бүрт БҮРЭН 403 авдаг тул 403-той хоосон
+  хуудас руу шилжихийн оронд цэснээс нуусан, `NAV_ITEMS`-д нэмэлт
+  сонголтот `roles` талбар нэмэв). Dashboard-д (`DashboardKpiCards.tsx`)
+  өнөөдрийн орлого/захиалгын тоо + сүүлийн 7 хоногийн захиалгын тоо —
+  шинэ backend endpoint шаардалгүй, `getSalesSummary()`-г л 2 өөр
+  огнооны хүрээгээр (`from=to=өнөөдөр`, `from=6 хоногийн өмнө`) дахин
+  ашигласан.
+  Тест: unit (`report.service.spec.ts`, `report-csv.util.spec.ts` —
+  RFC 4180 escape) + e2e (`test/reports.e2e-spec.ts`, 14 тест) +
+  admin-web smoke тест (`ReportsPage.test.tsx`, `DashboardKpiCards.test.tsx`).
+  **Playwright-аар (ad hoc, өмнөх Phase-үүдийн адил, repo-д
+  devDependency болгож нэмээгүй) бодит browser-т баталгаажуулав:**
+  нэвтрэх → Тайлан → KPI карт/chart/хүснэгтүүд зөв харагдав (console
+  алдаа 0, шинэ Keycloak+DB staff хэрэглэгч `reports-verify@order-system.mn`
+  (SUPER_ADMIN) үүсгэж ашигласан — dev DB/Keycloak-д өмнөх Phase-үүдийн
+  адил үлдсэн, устгах шаардлагагүй) → CSV татах товч дарж жинхэнэ файл
+  татаж, BOM+толгой мөр зөв байгааг баталгаажуулсан.
+  ⚠️ **Keycloak admin API-ийн PUT /users/:id бол ФУЛЛ REPLACE, PATCH
+  БИШ:** зөвхөн `attributes` талбартай PUT хүсэлт илгээхэд `email`/
+  `firstName`/`lastName` мэдэгдэлгүйгээр ХООСРООД "Account is not fully
+  set up" алдаа гаргасан (дээрх Phase 4-ийн "firstName/lastName заавал"
+  сургамжтай төстэй ч ӨӨР шалтгаантай — тэнд бүр анхнаасаа дутуу байсан
+  бол энд ХЭДИЙНЭЭ байсан утга PUT-аар устгагдсан) — ижил төстэй admin
+  API дуудлага хийхдээ ЗААВАЛ бүрэн representation-оо (эсвэл дор хаяж
+  бүх заавал талбарыг) дахин дамжуулах ёстойг тэмдэглэв.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

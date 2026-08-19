@@ -15,6 +15,7 @@ import { InventoryModule } from './inventory/inventory.module.js';
 import { OrderModule } from './orders/order.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
+import { ReportModule } from './reports/report.module.js';
 import { ReturnModule } from './returns/return.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 
@@ -31,6 +32,7 @@ import { SettingsModule } from './settings/settings.module.js';
     OrderModule,
     SettingsModule,
     ReturnModule,
+    ReportModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [

@@ -271,6 +271,47 @@ export interface ReturnFeeSetting {
   updatedAt: string | null;
 }
 
+// apps/api/src/reports/report.service.ts-ийн буцаах хэлбэртэй тохирно —
+// мөнгөн дүн бүхий талбарууд Prisma Decimal-тай адил зарчмаар (жиш:
+// Order.totalAmount) string болж сериалайзлагддаг.
+export interface SalesSummary {
+  from: string;
+  to: string;
+  branchId: string | null;
+  totalRevenue: string;
+  orderCount: number;
+  averageOrderAmount: string;
+  returnAmount: string;
+  returnCount: number;
+}
+
+export interface TopProduct {
+  variantId: string;
+  productName: string;
+  variantName: string;
+  quantitySold: number;
+  revenue: string;
+}
+
+export interface RevenueTrendPoint {
+  date: string;
+  revenue: string;
+  orderCount: number;
+}
+
+export interface BranchComparisonRow {
+  branchId: string;
+  branchName: string;
+  revenue: string;
+  orderCount: number;
+}
+
+export interface ReportDateRangeFilter {
+  from: string;
+  to: string;
+  branchId?: string;
+}
+
 interface ApiErrorBody {
   error: { code: string; message: string; details: unknown };
 }
@@ -653,4 +694,79 @@ export function searchProducts(
   if (filter.branchId) params.set("branchId", filter.branchId);
   const qs = params.toString() ? `?${params.toString()}` : "";
   return apiFetch<ProductDetail[]>(`/catalog/search${qs}`, accessToken);
+}
+
+// apps/api/src/reports/report.controller.ts-ийн REPORT_VIEW_ROLES/
+// BRANCH_COMPARISON_ROLES-тэй тохирно (roles.ts-ийн тайлбарыг үз) — RLS
+// (orders_select гэх мэт) хэн ямар салбарын мэдээллийг харахыг шийднэ,
+// branchId filter зөвхөн тодруулга.
+function buildReportQuery(filter: ReportDateRangeFilter): URLSearchParams {
+  const params = new URLSearchParams({ from: filter.from, to: filter.to });
+  if (filter.branchId) params.set("branchId", filter.branchId);
+  return params;
+}
+
+export function getSalesSummary(
+  accessToken: string,
+  filter: ReportDateRangeFilter,
+): Promise<SalesSummary> {
+  return apiFetch<SalesSummary>(
+    `/reports/sales-summary?${buildReportQuery(filter).toString()}`,
+    accessToken,
+  );
+}
+
+export function getTopProducts(
+  accessToken: string,
+  filter: ReportDateRangeFilter & { limit?: number },
+): Promise<TopProduct[]> {
+  const params = buildReportQuery(filter);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  return apiFetch<TopProduct[]>(
+    `/reports/top-products?${params.toString()}`,
+    accessToken,
+  );
+}
+
+export function getRevenueTrend(
+  accessToken: string,
+  filter: ReportDateRangeFilter,
+): Promise<RevenueTrendPoint[]> {
+  return apiFetch<RevenueTrendPoint[]>(
+    `/reports/revenue-trend?${buildReportQuery(filter).toString()}`,
+    accessToken,
+  );
+}
+
+// branchId параметргүй (§Даалгавар: БҮХ салбарыг харьцуулна) —
+// BRANCH_COMPARISON_ROLES-гүй дүрд backend 403 буцаана.
+export function getBranchComparison(
+  accessToken: string,
+  filter: { from: string; to: string },
+): Promise<BranchComparisonRow[]> {
+  const params = new URLSearchParams({ from: filter.from, to: filter.to });
+  return apiFetch<BranchComparisonRow[]>(
+    `/reports/branch-comparison?${params.toString()}`,
+    accessToken,
+  );
+}
+
+// apps/api/src/reports/report.controller.ts-ийн GET
+// /reports/sales-summary/export — apiFetch()-ийн адил "Content-Type:
+// application/json" таамаглал БУРУУ (хариу CSV Blob) тул тусдаа хувилбар
+// (apiUpload()-той ижил "нийтлэг apiFetch()-д тохирохгүй тусгай зам" зарчим).
+export async function exportSalesSummaryCsv(
+  accessToken: string,
+  filter: ReportDateRangeFilter,
+): Promise<Blob> {
+  const params = buildReportQuery(filter);
+  params.set("format", "csv");
+  const res = await fetch(
+    `${API_URL}/reports/sales-summary/export?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    await parseErrorOrThrow(res);
+  }
+  return res.blob();
 }

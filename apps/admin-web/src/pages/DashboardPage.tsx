@@ -1,5 +1,5 @@
 import { useAuth } from "@/lib/auth-context";
-import { RETURN_FEE_WRITE_ROLES, ROLE_LABELS } from "@/lib/roles";
+import { REPORT_VIEW_ROLES, RETURN_FEE_WRITE_ROLES, ROLE_LABELS } from "@/lib/roles";
 import {
   Card,
   CardContent,
@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ReturnFeeSettingCard } from "@/components/ReturnFeeSettingCard";
+import { DashboardKpiCards } from "@/components/DashboardKpiCards";
 
 export function DashboardPage() {
   const { email, roleNames, isLoadingRoles, hasRole } = useAuth();
@@ -49,6 +50,8 @@ export function DashboardPage() {
           цэснээс каталог, агуулахын мэдээлэл рүү шилжинэ үү.
         </CardContent>
       </Card>
+
+      {!isLoadingRoles && hasRole(REPORT_VIEW_ROLES) && <DashboardKpiCards />}
 
       {!isLoadingRoles && hasRole(RETURN_FEE_WRITE_ROLES) && (
         <ReturnFeeSettingCard />

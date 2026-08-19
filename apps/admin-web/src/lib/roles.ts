@@ -60,6 +60,25 @@ export const RETURN_REVIEW_ROLES = [
 // — system_settings_update RLS (app_has_global_scope())-тэй тохирно.
 export const RETURN_FEE_WRITE_ROLES = ["SUPER_ADMIN", "OWNER", "ALL_BRANCH_MANAGER"];
 
+// ↔ apps/api/src/reports/report.controller.ts (REPORT_VIEW_ROLES) — §6.1
+// матрицын "Тайлан/аналитик" мөр: SALESPERSON/CUSTOMER-д "—" тул ороогүй.
+export const REPORT_VIEW_ROLES = [
+  "SUPER_ADMIN",
+  "OWNER",
+  "ALL_BRANCH_MANAGER",
+  "BRANCH_ADMIN",
+  "BRANCH_MANAGER",
+];
+
+// ↔ apps/api/src/reports/report.controller.ts (BRANCH_COMPARISON_ROLES) —
+// зөвхөн "R (бүх)" гурван дүрд (RETURN_FEE_WRITE_ROLES-той ижил жагсаалт
+// ч өөр зорилготой тул тусад нь зарлав).
+export const BRANCH_COMPARISON_ROLES = [
+  "SUPER_ADMIN",
+  "OWNER",
+  "ALL_BRANCH_MANAGER",
+];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",
