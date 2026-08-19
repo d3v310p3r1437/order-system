@@ -141,6 +141,122 @@ describe('RlsMiddleware', () => {
   });
 
   it(
+    'ALGAA-ны хариу (4xx, Nest-ийн exception filter-ээр боловсруулагдсан, ' +
+      'ROLLBACK хийгддэг зам) ч мөн адил транзакц (ROLLBACK) бодитоор ' +
+      'дуусах хүртэл res.end()-ийг хойшлуулна',
+    async () => {
+      // Nest-ийн HttpExceptionFilter нь controller-оос шидэгдсэн 4xx-ийг
+      // ЭНЭ middleware-ийн `next()`-ийн ДОТОР (Nest-ийн request pipeline
+      // дотор) барьж, `res.end()`-ийг ШУУД дуудна — алдаа middleware-ийн
+      // `next()`-ийн гадуур "тасарч" (throw) гардаггүй тул
+      // `runRequestTransaction`-ийн callback АМЖИЛТТАЙ (resolve) дуусна.
+      // Гэвч ЖИНХЭНЭ Prisma-д ROLLBACK-ийг ч мөн `$transaction()`-ийн
+      // callback дуусахаас ӨМНӨ автоматаар хийдэггүй (callback дуусаад
+      // Prisma commit/rollback шийднэ) тул commit-ийн адилаар "гадны
+      // gate" (энд ROLLBACK-ийг дуурайлгасан) нээгдэх хүртэл
+      // runRequestTransaction-ийн Promise ӨӨРӨӨ resolve хийхгүй байхаар
+      // mock хийв.
+      let resolveRollbackGate: () => void;
+      const rollbackGate = new Promise<void>((resolve) => {
+        resolveRollbackGate = resolve;
+      });
+      const order: string[] = [];
+
+      const prisma = {
+        runRequestTransaction: jest
+          .fn()
+          .mockImplementation(
+            async (
+              _userId: string | null,
+              handler: (tx: unknown) => Promise<void>,
+            ) => {
+              await handler({});
+              order.push('handler-done');
+              await rollbackGate;
+              order.push('rollback-done');
+            },
+          ),
+      } as unknown as PrismaService;
+
+      const middleware = new RlsMiddleware(
+        prisma,
+        requestContext,
+        tokenVerifier,
+      );
+      const { res, originalEndSpy } = buildResponse();
+      res.headersSent = false;
+
+      // HttpExceptionFilter: controller 404 шидэж, res.status(404).json(...)
+      // дуудна гэж загварчилав — эцэст нь res.end() дуудагддагтай адил.
+      const next: NextFunction = jest.fn(() => {
+        void Promise.resolve().then(() => {
+          res.end('{"error":{"code":"ORDER_NOT_FOUND"}}');
+        });
+      });
+
+      void middleware.use(req, res, next);
+      await flushMicrotasks();
+
+      expect(order).toEqual(['handler-done']);
+      expect(originalEndSpy).not.toHaveBeenCalled();
+
+      resolveRollbackGate!();
+      await flushMicrotasks();
+
+      expect(originalEndSpy).toHaveBeenCalledTimes(1);
+      expect(originalEndSpy).toHaveBeenCalledWith(
+        '{"error":{"code":"ORDER_NOT_FOUND"}}',
+      );
+      expect(order).toEqual(['handler-done', 'rollback-done']);
+    },
+  );
+
+  it(
+    'runRequestTransaction ӨӨРӨӨ REJECT хийвэл (next() ХЭЗЭЭ Ч дуудагдаагүй, ' +
+      'жиш: app.user_id тохируулах SQL шидвэл) rollback дуусахыг хүлээгээд, ' +
+      'алдааны хариуг ГАНЦ л удаа явуулна (hang/давхар дуудлагагүй)',
+    async () => {
+      // `PrismaService.runRequestTransaction`-ийн бодит хэрэгжилтэд
+      // `tx.$executeRaw` (app.user_id тохируулах) `handler(tx)` (→ next())
+      // дуудагдахаас ӨМНӨ ажилладаг тул тэр мөрөнд алдаа гарвал `next()`
+      // ХЭЗЭЭ Ч дуудагдахгүйгээр шууд REJECT хийнэ.
+      const boom = new Error('SET app.user_id алдаа');
+      const prisma = {
+        runRequestTransaction: jest.fn().mockRejectedValue(boom),
+      } as unknown as PrismaService;
+
+      const middleware = new RlsMiddleware(
+        prisma,
+        requestContext,
+        tokenVerifier,
+      );
+      const { res, originalEndSpy } = buildResponse();
+      res.headersSent = false;
+
+      // `next(err)`-ийг дуудахад (Express-ийн стандарт алдааны зам) Nest-ийн
+      // global exception filter эцэст нь res.end()-ийг дуудна гэж
+      // загварчилав.
+      const receivedErrors: unknown[] = [];
+      const next = jest.fn((err?: unknown) => {
+        if (err) {
+          receivedErrors.push(err);
+          res.end('{"error":{"code":"INTERNAL_ERROR"}}');
+        }
+      }) as unknown as NextFunction;
+
+      void middleware.use(req, res, next);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(receivedErrors).toEqual([boom]);
+      expect(originalEndSpy).toHaveBeenCalledTimes(1);
+      expect(originalEndSpy).toHaveBeenCalledWith(
+        '{"error":{"code":"INTERNAL_ERROR"}}',
+      );
+    },
+  );
+
+  it(
     'client холболтоо цуцалж res.end() ХЭЗЭЭ Ч дуудагдаагүй ч ' +
       "('close' event) транзакц мөнхөд зогсохгүй",
     async () => {
