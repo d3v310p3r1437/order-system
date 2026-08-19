@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
 import { useOrderEvents } from "@/lib/realtime";
-import { ROLE_LABELS } from "@/lib/roles";
+import { REPORT_VIEW_ROLES, ROLE_LABELS } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -12,10 +12,15 @@ const NAV_ITEMS = [
   { to: "/inventory", label: "Агуулах" },
   { to: "/orders", label: "Захиалгууд" },
   { to: "/returns", label: "Буцаалтууд" },
+  // SALESPERSON/CUSTOMER §6.1 матрицад "Тайлан/аналитик"-д огт эрхгүй
+  // (бусад мөрөнд байдаг "зөвхөн харна"-той адил хэсэгчилсэн ХАРАГДАХГҮЙ,
+  // 403-той хоосон хуудас руу шилжихийн оронд нэвтрэлтийн цэснээс нуусан).
+  { to: "/reports", label: "Тайлан", roles: REPORT_VIEW_ROLES },
 ];
 
 export function Layout() {
-  const { accessToken, email, roleNames, isLoadingRoles, logout } = useAuth();
+  const { accessToken, email, roleNames, isLoadingRoles, hasRole, logout } =
+    useAuth();
   useOrderEvents(accessToken);
 
   const roleLabel = isLoadingRoles
@@ -23,6 +28,10 @@ export function Layout() {
     : roleNames.length
       ? roleNames.map((r) => ROLE_LABELS[r] ?? r).join(", ")
       : "Эрх оноогдоогүй";
+
+  const visibleNavItems = NAV_ITEMS.filter(
+    (item) => !item.roles || hasRole(item.roles),
+  );
 
   return (
     <div className="flex min-h-svh bg-background">
@@ -34,7 +43,7 @@ export function Layout() {
           Админ самбар
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

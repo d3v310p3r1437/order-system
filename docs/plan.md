@@ -593,7 +593,55 @@ SET LOCAL app.accessible_branches = $3;
 - [ ] **(шинэ)** Бэлэн болсон feature-үүдийг Phase 0-д бэлдсэн **жинхэнэ Android төхөөрөмж дээр** турших — асуудал #7 (Mobile UI эхлээгүй тул хойшилсон)
 
 ### Phase 5 — Тайлан ба олон-салбарын удирдлага (1-2 долоо хоног)
-(v1.0-той адил)
+
+- [x] `GET /reports/sales-summary`, `/top-products`, `/revenue-trend`,
+      `/branch-comparison`, `/sales-summary/export` — §7 модуль #14. Шинэ
+      RLS policy/SECURITY DEFINER функц НЭМЭЭГҮЙ (ADR 005 "эхлээд байгаа
+      RLS зарчмаа дахин ашигла" — Order/OrderItem/ReturnRequest/Branch-ийн
+      одоо байгаа RLS шинэ aggregate/`$queryRaw` query дээр ч автоматаар
+      "өөрийн салбар"/"бүх" гэсэн хамрах хүрээгээр шүүнэ). §6.1 матрицын
+      "Тайлан/аналитик" мөрийг `REPORT_VIEW_ROLES`
+      (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER/BRANCH_ADMIN/BRANCH_MANAGER)
+      болон `branch-comparison`-ийн зөвхөн "R (бүх)" гурван дүрд
+      (`BRANCH_COMPARISON_ROLES`) хязгаарласан `@Roles()`-оор код болгов.
+      Export нь гуравдагч сангаас (exceljs гэх мэт) ХАМААРАЛГҮЙ гараар
+      бичсэн CSV serializer (`report-csv.util.ts`, UTF-8 BOM — Windows
+      Excel-д Cyrillic зөв харагдана).
+- [x] admin-web: `/reports` дэлгэц (огнооны хүрээ, (1-ээс олон салбартай
+      бол) салбар filter, KPI карт 4ш, `recharts`-аар орлогын хандлагын
+      chart, "Их зарагдсан бүтээгдэхүүн" хүснэгт, (зөвхөн global scope
+      дүрд) "Салбаруудын харьцуулалт" хүснэгт, CSV татах товч — Blob+
+      `<a download>` programmatic click, ADR 004-ийн "access token
+      зөвхөн in-memory" зарчимтай нийцүүлж `fetch()`-ээр Authorization
+      header дамжуулсан, статик `<a href>` биш). `Layout.tsx`-ийн нэвтрэлтийн
+      цэс "Тайлан"-г зөвхөн `REPORT_VIEW_ROLES`-той дүрд харуулна
+      (SALESPERSON/CUSTOMER 403-той хоосон хуудас руу шилжихийн оронд
+      цэснээс нуусан). Dashboard-д (`DashboardKpiCards.tsx`) өнөөдрийн
+      орлого/захиалгын тоо + сүүлийн 7 хоногийн захиалгын тоо — шинэ
+      backend endpoint шаардалгүй, `getSalesSummary()`-г л 2 өөр
+      огнооны хүрээгээр дахин ашигласан.
+- [x] Тест: unit (`report.service.spec.ts` — дундаж/0 захиалгын edge
+      case, `$queryRaw` мөр хөрвүүлэлт, `report-csv.util.spec.ts` — RFC
+      4180 escape) + e2e (`test/reports.e2e-spec.ts`, 14 тест: 2 салбарын
+      өгөгдлөөр BRANCH_MANAGER зөвхөн өөрийн салбарынхаа мэдээллийг
+      харж байгаа, SALESPERSON/CUSTOMER sales-summary-д 403,
+      SALESPERSON/BRANCH_MANAGER branch-comparison-д 403, огнооны хүрээ
+      буруу бол 400, CSV экспортын толгой/BOM) + admin-web smoke тест
+      (`ReportsPage.test.tsx`, `DashboardKpiCards.test.tsx`).
+      ⚠️ **Чухал сургамж (shared dev DB давхардал):** энэ dev Postgres
+      бусад e2e spec файлуудтай ХУВААЛЦСАН тул branchId-гүй (global)
+      aggregate query бусад spec-ийн COMPLETED захиалгыг ч санамсаргүй
+      хамруулж болзошгүйг (анх e2e тест "SUPER_ADMIN бүх салбарын
+      нийлбэрийг харна" гэсэн тест fixture-ийн тооцоолсон яг тэгш дүнтэй
+      таарахгүй байснаар) олж, тухайн тестүүдийг эсвэл (a) тодорхой
+      branchId-аар шүүх, эсвэл (b) `toBeGreaterThanOrEqual`-ээр "багадаа
+      мэдэгдэж буй хувь нэмэр орсон" гэдгийг шалгах хэлбэрт шилжүүлсэн —
+      ирээдүйд global (branchId-гүй) aggregate report тест бичихдээ энэ
+      зарчмыг баримтал.
+      Playwright-аар (ad hoc, өмнөх Phase-үүдийн адил) бодит browser-т
+      баталгаажуулав: нэвтрэх → Тайлан → KPI карт/chart/хүснэгтүүд зөв
+      харагдав (console алдаа 0), CSV татах товч жинхэнэ файл татаж,
+      BOM+толгой мөр зөв байгааг баталгаажуулсан.
 
 ### Phase 6 — Урамшуулал, дэмжлэг, эрх зүйн бэлтгэл (2-3 долоо хоног) — **өргөтгөсөн, буцаалт Phase 3c-д шилжсэн**
 
