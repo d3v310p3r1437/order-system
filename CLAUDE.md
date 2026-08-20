@@ -127,11 +127,13 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
 + Meilisearch хайлт, Phase 3c-ийн дараа буцаж гүйцээв). Phase 3c — Буцаалт
 ба нөхөн төлбөр (§7 модуль #9, Phase 6-с эрт орсон) дууссан. Phase 4 —
 Хүргэлт/чиглүүлэлт + мэдэгдэл (§7 модуль #8, #12) дууссан (Худалдагчийн
-ажлын урсгал + Mobile UI хараахан үлдсэн). **Phase 5 — Тайлан ба
-олон-салбарын удирдлага (§7 модуль #14) дууссан** (доор дэлгэрэнгүй).
-Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
-Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
-хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
+ажлын урсгал + Mobile UI хараахан үлдсэн). Phase 5 — Тайлан ба
+олон-салбарын удирдлага (§7 модуль #14) дууссан. **Сагс (Redis persist) +
+Mobile cart/branch-select UI (§7 модуль #5-ийн үлдсэн хэсэг) дууссан**
+(доор дэлгэрэнгүй) — checkout (захиалга үүсгэх дуудлага) өөрөө хараахан
+дараагийн ажил. Geolocation auto-routing (автоматаар хамгийн ойрхон салбар
+сонгох — Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан
+backlog хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -969,12 +971,120 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
   `flutter analyze` 0 алдаа, `flutter test` 29/29 ногоон (CI-ийн `mobile`
   job-той яг ижил алхмаар локал баталгаажуулсан — CI аль хэдийн Phase
   0-ээс энэ job-той байсан тул шинээр нэмэх шаардлагагүй байв).
+- **(2026-08-20) Сагс (Redis persist) + checkout-ийн салбар сонголт/бэлэн
+  байдал шалгах урьдчилсан харагдац дууссан** (`docs/plan.md` §7 модуль
+  #5-ийн Redis-cart хэсэг, Phase 3a-д checkout л хийгдэж жинхэнэ "сагс"
+  хараахан байгаагүйг гүйцээв):
+  - **Хэсэг A (backend):** `src/cart` (`CartController`/`Service`) —
+    `GET/DELETE /cart`, `POST /cart/items` (upsert-**set**, delta биш —
+    Flutter +/- adjuster шинэ бодит тоог өөрөө тооцоод дамжуулна),
+    `DELETE /cart/items/:variantId`, `POST /cart/validate-branch`. Redis
+    key `cart:{userId}` (JWT-ээс баталгаажсан userId-аар, dto/param-аар
+    ирсэн утгаар ХЭЗЭЭ Ч биш), value variantId+quantity JSON, TTL 30 хоног
+    (бичилт бүрд сэргээнэ). `@Audit()` ШААРДАГГҮЙ (Redis, Postgres mutation
+    биш). `validate-branch` нь `order.service.ts`-ийн `resolveCheckoutItem()`-тэй
+    ЯГ ижил `app_inventory_snapshot_for_variant()` SECURITY DEFINER функц +
+    `computeAvailabilityStatus()`/`resolveEffectivePrice()`
+    (inventory-effective.util.ts) дахин ашигласан — шинэ функц ШААРДААГҮЙ
+    (ADR 005). Тест: unit (`cart.service.spec.ts`, Redis-ийг mock Map-аар),
+    e2e (`test/cart.e2e-spec.ts` — userId тусгаарлалт, upsert-set семантик,
+    validate-branch-ийн 3 тохиолдол: бүгд бэлэн/зарим дууссан/зарим
+    PRE_ORDER).
+  - **Хэсэг B (Mobile):** `features/cart` (`CartScreen` — жагсаалт, +/-,
+    устгах, "Нийт (ойролцоогоор)" placeholder, "Захиалах" товч),
+    `features/branch` (`BranchSelectionScreen` — салбар сонгоход
+    `/cart/validate-branch` дуудаж "N-ээс M бэлэн" + дутуу зүйлсийн
+    жагсаалт харуулна, "Үргэлжлүүлэх" ЗОРИУДАА placeholder — checkout
+    өөрөө дараагийн ажил). `ProductDetailScreen`-ийн өмнөх Phase-ийн
+    "Сагслах" placeholder-ыг ЭНЭ Phase-д бодитоор `cartProvider.addOne()`-тэй
+    холбов (`CartNotifier.addOne()` — variantId сагсанд байвал тоог 1-ээр
+    нэмнэ, байхгүй бол 1-ээр шинээр нэмнэ, `POST /cart/items`-ийн upsert-set
+    семантиктай нийцүүлсэн). HomeScreen-д сагсны icon + `Badge` (item тоо)
+    нэмэгдэв.
+  - ⚠️🔴 **Ноцтой олдвор — Android emulator дээр бодитоор турших үед
+    (screenshot дараалалаар) илрүүлсэн, зөвхөн widget тестээр олдоогүй
+    real layout алдаа:** `CartScreen` анхны хувилбарт footer-ийг
+    `Scaffold.bottomNavigationBar` слотод байрлуулсан байсан нь (`SafeArea`
+    > `Container` (decoration+padding) > `Row` [`Expanded(Column(2×Text))`,
+    `FilledButton`]) — item-тэй сагсанд орохоор **`Scaffold.body`-ийн
+    өндөр 0 болж, AppBar/жагсаалт огт харагдахгүй, харин footer(-ийн
+    агуулга) дэлгэцийн ДЭЭД хэсэгт (status bar-тай давхцаж) render хийгдэх**
+    зөрчилтэй байсныг олов (яг зөв утгатай өгөгдөл ирж байгаа ч layout
+    эвдэрсэн — `find.byKey('cart_list')`-ийн size нь `Size(800, 0)` гэдгийг
+    isolated widget тестээр баталгаажуулсан). Язгуур шалтгааныг тодорхой
+    тогтоож чадаагүй (Scaffold+bottomNavigationBar+Theme-based Text
+    хослолын ямар нэг edge case гэж таамагласан, цаашид судлах шаардлагагүй)
+    ч **засвар:** `bottomNavigationBar:` слотыг бүхэлд нь орхиж,
+    `CatalogScreen`-ийн (модуль #3, аль хэдийн батлагдсан) ЯГ ижил загвар —
+    `body: Column([Expanded(жагсаалт), footer widget])` руу шилжүүлснээр
+    бүрэн шийдэгдсэн (Android emulator дээр screenshot-оор давтан
+    баталгаажуулсан). **Сургамж:** widget тест "ногоон" гарахаас өмнө энэ
+    алдаа мөн widget тестээр (`tester.getSize()`) БОДИТООР олдсон байсан ч
+    (энэ Phase-ийн ажлын явцад), зөвхөн Android emulator дээрх бодит
+    screenshot турших нь эцсийн баталгаажуулалтад зайлшгүй байсныг
+    харуулав — `Scaffold`-ийн native слотуудыг (`bottomNavigationBar`,
+    `drawer` гэх мэт) шинэ дэлгэцэд ашиглахаас өмнө, тухайн codebase-д
+    аль хэдийн батлагдсан `Column`+`Expanded` загвар байгаа бол ТҮҮНИЙГ
+    илүүд үзэх.
+  - ⚠️🔴 **Хоёр дахь ноцтой олдвор (мөн Android emulator дээр илэрсэн) —
+    `GET /branches` CUSTOMER-д ХЭЗЭЭ Ч мөр буцаадаггүй байсан бодит RLS
+    цоорхой:** `BranchSelectionScreen`-ийг эхлээд туршихад "Салбар
+    олдсонгүй" гарсныг судлахад, `branches_select` RLS policy
+    (`app_accessible_branch_ids()`, 20260815082257 migration) нь ЗӨВХӨН
+    `user_branch_roles` мөртэй хэрэглэгчид (staff)-д зориулагдсан болохыг
+    олов — CUSTOMER-д ХЭЗЭЭ Ч `user_branch_roles` мөр байдаггүй
+    (`resolveUserRoleNames()`-ийн "мөргүй бол authProvider=CUSTOMER_AUTH-аар
+    CUSTOMER" fallback зарчим) тул `GET /branches` (admin-web-ийн салбар
+    dropdown-д зориулж Phase 2-д нэмэгдсэн, staff-only хэрэглээ таамагласан)
+    CUSTOMER-д ОГТ ашиглагдаж байгаагүй, шинэ хэрэгцээ (BranchSelectionScreen)
+    анх удаа энэ цоорхойг илрүүлэв. **Засвар (ADR 005-ийн "READ-redact"
+    зарчим, migration `20260820120000_add_public_branches_function`):**
+    `app_public_branches()` шинэ SECURITY DEFINER функц (зөвхөн `id`/`name`/
+    `address`/`district`, зөвхөн `isActive=true` мөр) нэмж,
+    `BranchService.findAll()`-д CUSTOMER эсэхийг (`resolveUserRoleNames()`)
+    шалгаад тохирвол raw SQL-ээр энэ функцийг дуудна; staff хэвээр
+    `tx.branch.findMany()` (RLS-ээр өөрийн харах эрхтэй) ашиглана — admin-web-д
+    нөлөөгүй. `test/catalog-inventory.e2e-spec.ts`-ийн "CUSTOMER аль ч
+    салбарыг харахгүй (хоосон жагсаалт)" гэсэн хуучин тест (ХУУЧИН БУруу зан
+    төлөвийг "зөв" гэж кодолсон байсан) "CUSTOMER идэвхтэй бүх салбарыг
+    харна" болж шинэчлэгдэв, шинэ `test/branch.e2e-spec.ts` нэмэгдэв.
+  - ⚠️ **Тохиолдсон, гэхдээ ЭНЭ ажилтай шууд холбоогүй 2 асуудал олж
+    засав (доор дэлгэрэнгүй):** (1) PR #14 merge хийхийн өмнө locally
+    commit хийгдээгүй үлдсэн WIP (categories isActive filter fix +
+    Light/Dark тохиргооны дэлгэц + dark mode зурган placeholder засвар)
+    тусдаа PR (#15, `wip/mobile-catalog-followups`) болгож CI-тэй хамт
+    main-руу нэгтгэв — доорх тусдаа бичлэгийг үз. (2)
+    `test/reports.e2e-spec.ts`-ийн `rangeTo`-г `'2026-08-19'` гэж ХАТУУ
+    бичсэн байсан нь тухайн огноог давсны ДАРАА (өнөөдрөөс хойш) CI-г
+    ТОГТМОЛ унагаах болсныг PR #15-ийн CI дээр илрүүлж, `new Date()`-ээс
+    (энэ сарын эхнээс өнөөдөр хүртэл) динамикаар тооцох болгож засав —
+    ЭНЭ засвар ОГТ өөр PR (#15)-д хийгдсэн ч, cart branch дээр ч мөн
+    адил алдаа давхар гарах байсныг харсан тул хоёуланд нь тусад нь
+    нэвтрүүлсэн.
+  - **(тусдаа PR, #15) `wip/mobile-catalog-followups` → main:** cart
+    branch дээр ажиллаж эхлэхээс өмнө олдсон, PR #14 merge хийхийн өмнө
+    орон нутагт commit хийгдээгүй үлдсэн ажлыг тусад нь PR болгож нэгтгэв
+    — `GET /categories`-д CUSTOMER-ийн `isActive=true` filter,
+    Light/Dark тохиргооны дэлгэц (`theme_mode_provider`,
+    `theme_preference_storage`), dark mode зурган placeholder засвар
+    (`product_image_placeholder.dart`), mobile демо seed script. `gh pr
+    create`+`gh run watch`-аар CI баталгаажуулж squash-merge хийсэн
+    (дээрх reports.e2e-spec.ts огнооны засвар яг ЭНЭ PR-ийн CI дээр анх
+    илэрсэн).
+  Тест: backend 15/15 e2e suite (134/134), 39/39 unit suite (235/235,
+  `cart.service.spec.ts`, `branch.service.spec.ts` шинээр орсон); mobile
+  `flutter analyze` 0 алдаа, `flutter test` 47/47 (cart provider/screen
+  widget тест шинээр орсон). Android emulator дээр бүрэн урсгал
+  (сагслах→сагс харах→тоо+/-→салбар сонгох→"N-ээс M бэлэн"+status badge)
+  screenshot-уудаар баталгаажуулсан.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
-  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн сагс/захиалгын/бодит
-  цагийн/хүргэлтийн UI** (каталог үзэх/хайх дууссан — дээрхийг үз, cart
-  Phase-аас хойш үлдсэн хэсэг), push notification (Mobile апп push
+  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн захиалга үүсгэх (checkout)
+  + бодит цагийн/хүргэлтийн UI** (каталог үзэх/хайх БОЛОН сагс/салбар
+  сонгох дууссан — доорх "(2026-08-20)" бичлэгийг үз, "Захиалах" товч
+  BranchSelectionScreen дээр placeholder хэвээр — checkout API дуудалт
+  дараагийн ажил), push notification (Mobile апп push
   бүртгэл хараахан эхлээгүй тул
   хүлээн авах төхөөрөмж алга, backlog), бодит SMS vendor сонгож
   `SmtpNotificationProvider.sendSms()`-ийн стабыг солих (§11.3, Phase 1-ээс
