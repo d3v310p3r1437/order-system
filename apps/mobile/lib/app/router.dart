@@ -6,6 +6,8 @@ import '../features/auth/domain/auth_state.dart';
 import '../features/auth/presentation/auth_provider.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/branch/presentation/branch_selection_screen.dart';
+import '../features/cart/presentation/cart_screen.dart';
 import '../features/catalog/presentation/catalog_screen.dart';
 import '../features/catalog/presentation/product_detail_screen.dart';
 import 'home_screen.dart';
@@ -57,6 +59,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ProductDetailScreen(
           productId: state.pathParameters['id']!,
         ),
+      ),
+      GoRoute(path: '/cart', builder: (context, state) => const CartScreen()),
+      GoRoute(
+        path: '/branch-select',
+        builder: (context, state) => const BranchSelectionScreen(),
       ),
     ],
   );

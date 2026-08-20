@@ -467,6 +467,17 @@ SET LOCAL app.accessible_branches = $3;
       race-safety, SAVEPOINT-оор бүтэлгүй checkout бүхэлдээ буцах, state
       machine буруу шилжилт татгалзах, customer cancel зөвхөн CREATED үед,
       RLS-ээр өөр хэрэглэгч/салбарын захиалга 404).
+- [x] **(2026-08-20 нэмэлт) Redis-д суурилсан харилцагчийн сагс + Mobile
+      cart/branch-select UI** — дээрх checkout Phase 3a-д хийгдсэн ч ЖИНХЭНЭ
+      "сагс" (захиалахаас өмнө удаан хугацаагаар хадгалагдах, олон удаа
+      засварлагдах жагсаалт) хараахан байгаагүйг гүйцээв: `src/cart`
+      (`CartService`/`Controller`, Redis key `cart:{userId}`, TTL 30 хоног),
+      `GET/POST/DELETE /cart`, `POST /cart/validate-branch`
+      (`computeAvailabilityStatus()`/`resolveEffectivePrice()`-г
+      `app_inventory_snapshot_for_variant()`-ээр дахин ашигласан, шинэ
+      SECURITY DEFINER функц ШААРДААГҮЙ). Mobile: `features/cart`,
+      `features/branch` (CartScreen, BranchSelectionScreen). Дэлгэрэнгүй
+      (олдсон 2 бодит алдаа + засвар): CLAUDE.md-ийн "Одоогийн Phase" хэсэг.
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../../../core/format/currency.dart';
+import '../../cart/presentation/cart_providers.dart';
 import '../domain/availability.dart';
 import '../domain/product.dart';
 import '../domain/product_variant.dart';
@@ -12,9 +13,8 @@ import 'widgets/availability_badge.dart';
 import 'widgets/product_image_placeholder.dart';
 
 /// Бүтээгдэхүүний дэлгэрэнгүй (route: `/products/:id`) — Hero-тэй зурган
-/// gallery, variant сонголт, тооцоолсон availability. "Сагслах" энэ
-/// Phase-д placeholder хэвээр (docs/plan.md §7 модуль #5 — Сагс/захиалга
-/// дараагийн Phase-д хэрэгжинэ).
+/// gallery, variant сонголт, тооцоолсон availability, "Сагслах" (§7 модуль
+/// #5, `cartProvider.addOne()`).
 class ProductDetailScreen extends ConsumerStatefulWidget {
   const ProductDetailScreen({super.key, required this.productId});
 
@@ -187,7 +187,7 @@ class _ProductDetailBodyState extends State<_ProductDetailBody> {
                   ),
                 ],
                 const SizedBox(height: 32),
-                const _AddToCartButton(),
+                _AddToCartButton(variant: variant),
               ],
             ),
           ),
@@ -289,31 +289,59 @@ class _ImageGallery extends StatelessWidget {
   }
 }
 
-class _AddToCartButton extends StatelessWidget {
-  const _AddToCartButton();
+class _AddToCartButton extends ConsumerStatefulWidget {
+  const _AddToCartButton({required this.variant});
+
+  final ProductVariant? variant;
+
+  @override
+  ConsumerState<_AddToCartButton> createState() => _AddToCartButtonState();
+}
+
+class _AddToCartButtonState extends ConsumerState<_AddToCartButton> {
+  bool _isAdding = false;
 
   @override
   Widget build(BuildContext context) {
     // `AppTheme`-ийн `elevatedButtonTheme` анхдагчаар аль хэдийн
     // primary/onPrimary (Home дэлгэцийн "Каталог үзэх" карттай ижил
     // визуал жин) тул давхар style override хийгээгүй (login/register-ийн
-    // ижил зарчим). Placeholder мессежийг товчны дотор ХАРУУЛАХГҮЙ
-    // (Tooltip-гүй) — зөвхөн tap хийхэд snackbar-аар үзүүлнэ.
+    // ижил зарчим).
+    final variant = widget.variant;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
         key: const Key('add_to_cart_button'),
-        icon: const Icon(Icons.shopping_cart_outlined),
+        icon: _isAdding
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.shopping_cart_outlined),
         label: const Text('Сагслах'),
-        onPressed: () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Сагсны боломж удахгүй нэмэгдэнэ — одоогоор боломжгүй байна',
-              ),
-            ),
-          );
-        },
+        onPressed: variant == null || _isAdding
+            ? null
+            : () => _addToCart(variant.id),
+      ),
+    );
+  }
+
+  Future<void> _addToCart(String variantId) async {
+    setState(() => _isAdding = true);
+    await ref.read(cartProvider.notifier).addOne(variantId);
+    if (!mounted) return;
+    setState(() => _isAdding = false);
+
+    final error = ref.read(cartProvider).error;
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          error == null
+              ? 'Сагсанд нэмэгдлээ'
+              : 'Сагсанд нэмэхэд алдаа гарлаа',
+        ),
       ),
     );
   }

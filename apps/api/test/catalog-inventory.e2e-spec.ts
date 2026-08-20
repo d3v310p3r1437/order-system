@@ -345,10 +345,14 @@ describe('Catalog & Inventory (e2e)', () => {
     );
   });
 
-  // admin-web-ийн салбар сонгох dropdown-д зориулсан минимал GET /branches
-  // (branch.controller.ts) — @Roles()-гүй ч RLS (branches_select) хэн ямар
-  // салбарыг харахыг бодитоор шийддэгийг батал.
-  describe('GET /branches — RLS-ээр хандах эрхтэй салбарууд л харагдана', () => {
+  // admin-web-ийн салбар сонгох dropdown БОЛОН mobile-ийн
+  // BranchSelectionScreen-д зориулсан минимал GET /branches
+  // (branch.controller.ts) — @Roles()-гүй. Staff-ийн хувьд RLS
+  // (branches_select) хэн ямар салбарыг харахыг шийднэ; CUSTOMER-ийн
+  // хувьд branches_select RLS-д "хандах эрх" гэдэг ойлголт байдаггүй
+  // тул (staff-only user_branch_roles-д тулгуурладаг) ADR 005-ийн
+  // "READ-redact" `app_public_branches()`-аар идэвхтэй бүх салбарыг харна.
+  describe('GET /branches — staff RLS-ээр, CUSTOMER app_public_branches()-ээр', () => {
     it('SUPER_ADMIN бүх салбарыг харна', async () => {
       const res = await request(app.getHttpServer())
         .get('/branches')
@@ -368,12 +372,22 @@ describe('Catalog & Inventory (e2e)', () => {
       expect(ids).not.toContain(branchB.id);
     });
 
-    it('CUSTOMER аль ч салбарыг харахгүй (хоосон жагсаалт, 403 биш)', async () => {
+    // ⚠️ (2026-08-20 засвар) Урьд нь CUSTOMER ЭНД үргэлж хоосон массив
+    // авдаг байсан (`branches_select` RLS-ийн `app_accessible_branch_ids()`
+    // ЗӨВХӨН staff-ийн `user_branch_roles` мөрд тулгуурладаг тул) — энэ нь
+    // §7 модуль #5 (Сагс/захиалга)-ийн BranchSelectionScreen (CUSTOMER
+    // захиалгын салбараа сонгох ёстой) хөгжүүлэлтийн үед Android emulator
+    // дээр бодитоор эвдэрсэн feature болж илэрсэн. Одоо CUSTOMER-д зориулж
+    // ADR 005-ийн "READ-redact" зарчмаар `app_public_branches()` SECURITY
+    // DEFINER функцээр (зөвхөн нийтэд аюулгүй багана, зөвхөн идэвхтэй
+    // салбар) шийддэг тул CUSTOMER Ч мөн идэвхтэй бүх салбарыг харна.
+    it('CUSTOMER идэвхтэй бүх салбарыг харна (app_public_branches()-ээр, RLS branches_select-ийг тойрсон)', async () => {
       const res = await request(app.getHttpServer())
         .get('/branches')
         .set('Authorization', `Bearer ${customerToken}`)
         .expect(200);
-      expect(res.body).toEqual([]);
+      const ids = (res.body as { id: string }[]).map((b) => b.id);
+      expect(ids).toEqual(expect.arrayContaining([branchA.id, branchB.id]));
     });
 
     it('token-гүй хүсэлт 401', async () => {

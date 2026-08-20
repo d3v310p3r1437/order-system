@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { AuthCustomerModule } from './auth-customer/auth-customer.module.js';
 import { AuthStaffModule } from './auth-staff/auth-staff.module.js';
 import { BranchModule } from './branch/branch.module.js';
+import { CartModule } from './cart/cart.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { AuditInterceptor } from './common/audit.interceptor.js';
 import { RlsMiddleware } from './common/rls.middleware.js';
@@ -27,6 +28,7 @@ import { SettingsModule } from './settings/settings.module.js';
     AuthCustomerModule,
     AuthStaffModule,
     BranchModule,
+    CartModule,
     CatalogModule,
     InventoryModule,
     OrderModule,
