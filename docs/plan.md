@@ -478,6 +478,28 @@ SET LOCAL app.accessible_branches = $3;
       SECURITY DEFINER функц ШААРДААГҮЙ). Mobile: `features/cart`,
       `features/branch` (CartScreen, BranchSelectionScreen). Дэлгэрэнгүй
       (олдсон 2 бодит алдаа + засвар): CLAUDE.md-ийн "Одоогийн Phase" хэсэг.
+- [x] **(2026-08-20 нэмэлт) Cart→Checkout→QPay бүрэн урсгал**:
+      `OrderService.checkout()`-ийг Redis сагснаас (`CartService.
+      listForCheckout()`) item уншдаг болгож, HTTP body-ийн `items`
+      талбарыг бүрмөсөн устгав (амжилттай checkout-ийн дараа сагс
+      onCommit-гэйт цэвэрлэгдэнэ). `PaymentProvider.createInvoice()`
+      `qrText`/`bankDeeplinks` буцаадаг болов (Mock: dummy утга, QPay:
+      боломжтой бол уншиж, эс бол хамгаалалттай fallback). Mobile:
+      `features/checkout/` — DeliveryMethodScreen→AddressScreen (flutter_map
+      + Nominatim geocoding, `docs/adr/009`)→OrderReviewScreen→checkout API→
+      PaymentScreen (QR/bank deeplink + WebSocket `order.payment_confirmed`
+      хүлээлт + debug-only mock simulate товч)→OrderSuccessScreen (автомат
+      шилжилт)→OrderTrackingScreen (`order.status_changed`-ээр бодит цагийн
+      timeline, DELIVERY-д flutter_map дээр admin-web-ийн DeliveryRouteMap-тэй
+      ижил зам). ⚠️ **Чухал нээлт:** `GET /orders/:id/route`-ийг CUSTOMER-д
+      (зөвхөн ӨӨРИЙН DELIVERY захиалгад) нээхэд 2 шинэ RLS цоорхой е2е
+      тестээр илэрсэн (branches_select CUSTOMER-д 0 мөр — 20260820120000-ийн
+      адилхан язгуур шалтгаан, orders_update-ийн WITH CHECK CUSTOMER-д зөвхөн
+      status=CANCELLED зөвшөөрдөг тул route-ийн кэш бичилт татгалзагдана) —
+      `app_public_branches()`-ийг latitude/longitude+сонголтот branchId
+      параметрээр өргөтгөж, шинэ `app_cache_order_route()` WRITE SECURITY
+      DEFINER функцээр (ADR 005) шийдвэрлэв. Дэлгэрэнгүй: CLAUDE.md-ийн
+      "Одоогийн Phase" хэсэг, `docs/adr/009-flutter-map-nominatim.md`.
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 

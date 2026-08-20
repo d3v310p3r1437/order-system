@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/format/currency.dart';
 import '../../catalog/domain/availability.dart';
 import '../../catalog/presentation/widgets/availability_badge.dart';
+import '../../checkout/presentation/checkout_draft.dart';
 import '../domain/branch.dart';
 import 'branch_providers.dart';
 
 /// Салбар сонгох дэлгэц (docs/plan.md §7 модуль #5) — салбар сонгоход
 /// `/cart/validate-branch` дуудаж тухайн салбарт сагсны хэдэн зүйл бэлэн
-/// байгааг тодорхой (нэр + status badge-ээр) харуулна. Checkout өөрөө
-/// дараагийн Phase-д хэрэгжинэ тул "Үргэлжлүүлэх" товч placeholder.
+/// байгааг тодорхой (нэр + status badge-ээр) харуулна. "Үргэлжлүүлэх" товч
+/// `CheckoutDraft`-ыг эхлүүлж (§8 Cart→Checkout→QPay) checkout урсгал руу
+/// шилжинэ.
 class BranchSelectionScreen extends ConsumerStatefulWidget {
   const BranchSelectionScreen({super.key});
 
@@ -229,13 +232,10 @@ class _ValidationPanel extends ConsumerWidget {
                     onPressed: availableCount == 0
                         ? null
                         : () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Захиалгын дараагийн алхам удахгүй нэмэгдэнэ',
-                                ),
-                              ),
-                            );
+                            ref
+                                .read(checkoutDraftProvider.notifier)
+                                .start(branchId);
+                            context.push('/checkout/delivery-method');
                           },
                     child: const Text('Үргэлжлүүлэх'),
                   ),

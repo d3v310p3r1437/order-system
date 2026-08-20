@@ -130,10 +130,13 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
 ажлын урсгал + Mobile UI хараахан үлдсэн). Phase 5 — Тайлан ба
 олон-салбарын удирдлага (§7 модуль #14) дууссан. **Сагс (Redis persist) +
 Mobile cart/branch-select UI (§7 модуль #5-ийн үлдсэн хэсэг) дууссан**
-(доор дэлгэрэнгүй) — checkout (захиалга үүсгэх дуудлага) өөрөө хараахан
-дараагийн ажил. Geolocation auto-routing (автоматаар хамгийн ойрхон салбар
-сонгох — Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан
-backlog хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
+(доор дэлгэрэнгүй). **Cart→Checkout→QPay бүрэн урсгал (backend checkout
+Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Review→Payment
+(QR/deeplink)→Success→Tracking дэлгэцүүд) дууссан** (доор
+"(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз). Geolocation auto-routing
+(автоматаар хамгийн ойрхон салбар сонгох — Phase 4-ийн хүргэлтийн
+чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog хэвээр. Дэлгэрэнгүй:
+`docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -1182,14 +1185,150 @@ backlog хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
   порт дээр сонсож байгааг, `.env`-ийн `PORT`-той (болон mobile-ийн
   `resolveApiBaseUrl()`-ийн анхдагч утгатай) таарч байгаа эсэхийг
   шалга — код/өгөгдлийн алдаа гэж яараад бүү шийд.
+- **(2026-08-20, Cart→Checkout→QPay) Сагс→Захиалга→QPay төлбөр→бодит
+  цагийн урсгал бүрэн дууссан** (`docs/plan.md` §8, өмнөх "Сагс + Mobile
+  cart/branch-select"-ийн шууд үргэлжлэл — "Захиалах" товч placeholder-ийг
+  жинхэнэ checkout болгов):
+  - **Хэсэг A (backend):** ⚠️ **Чухал засвар:** `OrderService.checkout()`
+    урьд нь захиалгын item-үүдийг ШУУД HTTP body-оос авдаг байсныг (§7
+    модуль #5-ийн Redis сагс аль хэдийн бэлэн байсан ч checkout ЭНЭ
+    сагсыг огт ашигладаггүй, зэрэгцээ 2 эх сурвалж байсан зөрчил) засаж,
+    `CartService.listForCheckout()`-аар зөвхөн Redis-ийн `cart:{userId}`-аас
+    л уншдаг болгов (`CheckoutOrderDto`-оос `items` талбарыг бүрмөсөн
+    устгасан) — checkout амжилттай commit хийгдсэний ДАРАА (SearchIndexer/
+    NotificationTrigger-тэй ЯГ ижил `onCommit()`-гэйт зарчим, cart цэвэрлэх
+    Redis DEL rollback-ийн эрсдэлтэй тул) сагс автоматаар цэвэрлэгдэнэ.
+    Үнэ (`resolveEffectivePrice()`) өмнө нь ч клиентийн оролтод итгэдэггүй
+    байсан тул аюулгүй байдлын цоорхой БИШ байсан ч, "cart бол цорын ганц
+    checkout эх сурвалж" гэсэн архитектурын нийцтэй байдлын зорилготой.
+    `PaymentProvider.createInvoice()`-ийн `CreateInvoiceResult`-д
+    `qrText`/`bankDeeplinks` (`{bankName, link}[]`) нэмэгдэв —
+    `MockPaymentProvider` dummy утга (`mock-qr:...`, хоосон массив)
+    буцаадаг, `QPayProvider` боломжтой бол (`qr_text`/`urls`, ЭХ СУРВАЛЖ
+    БАТАЛГААЖААГҮЙ тул хамгаалалттай fallback-тайгаар) уншина.
+    6 e2e-spec файл (`orders`/`payment`/`delivery-routing`/`realtime`/
+    `reports`/`returns`) checkout дуудлага бүрийн өмнө эхлээд
+    `POST /cart/items`-ээр сагсаа бичдэг болгож шинэчлэгдэв.
+    ⚠️ **Шинэ RLS цоорхой (е2е тестээр Mobile-ийн шаардлагаар илэрсэн):**
+    `GET /orders/:id/route`-ийг CUSTOMER-д (зөвхөн ӨӨРИЙН DELIVERY
+    захиалгад — OrderTrackingScreen-д зам харуулах ёстой тул) нээхэд
+    2 өөр RLS блок дараалан илэрсэн: (1) `branches_select` RLS CUSTOMER-д
+    ХЭЗЭЭ Ч мөр буцаадаггүй (Branch debris цэвэрлэлтийн Phase-д аль хэдийн
+    нээгдсэн ЯГ ижил язгуур шалтгаан, `app_public_branches()`-г шийдвэрлэсэн
+    байсан ч `OrderService.getRoute()` тэр функцийг ашигладаггүй байсан) —
+    `app_public_branches()`-г (`20260820130000` migration, DROP+CREATE,
+    буцаах TABLE бүтэц өөрчлөгдсөн тул) `latitude`/`longitude` баганa +
+    сонголтот `p_branch_id` параметрээр өргөтгөж, `OrderService.
+    findBranchForRoute()`-д CUSTOMER-ийн үед ашигласан (staff хэвээр RLS-ээр
+    шууд). (2) Салбарын байршил зөв уншсаны ДАРАА route-ийн кэшийг
+    `tx.order.update()`-ээр бичихэд `orders_update` RLS-ийн WITH CHECK
+    CUSTOMER-д ЗӨВХӨН `status='CANCELLED'`-руу шилжихийг л зөвшөөрдөг тул
+    (status-той огт хамааралгүй энэ метадата бичилт) "new row violates
+    row-level security policy" алдаа шидсэн — ADR 005-ийн WRITE ангилалд
+    (`app_adjust_inventory_for_order()`-тэй ижил загвар: зөвшөөрлийг
+    `orders_select`-тэй ижил нөхцлөөр функц дотроо шалгаад RLS-ийг тойрч
+    бичнэ) шинэ `app_cache_order_route()` функц (`20260820140000` migration)
+    нэмж шийдвэрлэв. Хоёулаа `order.service.spec.ts`/
+    `delivery-routing.e2e-spec.ts`-д (CUSTOMER ӨӨРИЙН DELIVERY захиалгаа
+    харна, өөр хэрэглэгчийнхийг харахгүй) тусад нь баталгаажуулсан.
+  - **Хэсэг B (Mobile):** шинэ `features/checkout/` — `CheckoutDraft`
+    (`Notifier<CheckoutDraft?>`, DeliveryMethod→Address→Review 3 алхмын
+    дундуур PICKUP/DELIVERY+хаяг/координат хуримтлуулна, PICKUP руу буцахад
+    хуучин хаяг ЗААВАЛ цэвэрлэгдэнэ — backend DTO validation-той нийцүүлэх).
+    `DeliveryMethodScreen` (`SegmentedButton`) → `AddressScreen`
+    (`flutter_map` OSM tile + Nominatim geocoding хайлт debounce 300мс +
+    газрын зургийн ТӨВД тогтмол pin — чирэхэд `onPositionChanged`-аар
+    координат уншина, `docs/adr/009-flutter-map-nominatim.md`) →
+    `OrderReviewScreen` (эцсийн нийт дүнг `CartItem.estimatedLineTotal`
+    (ойролцоо) БИШ, `cartBranchValidationProvider`-аас — ADR 005-ийн "ганц
+    газар л шийднэ" зарчим Mobile талд ч мөн хамаарна) → `POST /orders`
+    (`items` талбар ОГТ илгээхгүй) → `PaymentScreen` (`qr_flutter` QR +
+    bank deeplink товчнууд + WebSocket `order:${orderId}` room-д нэгдэж
+    `order.payment_confirmed` хүлээх, зөвхөн `kDebugMode`-д "Mock төлбөр
+    симуляц" товч) → `OrderSuccessScreen` (2.5 секундын дараа автомат
+    шилжилт) → `OrderTrackingScreen` (`order.status_changed`-ээр бодит
+    цагийн `OrderStatusTimeline`, DELIVERY-д `OrderRouteMap` —
+    admin-web-ийн `DeliveryRouteMap.tsx`-тэй ЯГ ижил `[lng,lat]→[lat,lng]`
+    хөрвүүлэлтийн зарчим). ⚠️ **Чухал заль (WebSocket client lifecycle):**
+    `OrderEventsClient`-д ЗОРИУДАА Riverpod provider бичээгүй — зөвхөн
+    `ref.read()`-ээр ашиглавал `Provider.autoDispose` ямар ч listener
+    бүртгэгдээгүй тул дараагийн microtask-д шууд dispose хийчихэж болзошгүй
+    (watch хийхгүй бол autoDispose-ийн зарчим шууд хэрэгждэг) — тул
+    PaymentScreen/OrderTrackingScreen screen бүр `State.initState()`-д
+    шууд өөрөө үүсгэж, `State.dispose()`-д өөрөө хаадаг. pubspec.yaml:
+    `flutter_map`/`latlong2`/`qr_flutter`/`url_launcher` нэмэгдэв.
+    Тест: `checkout_draft_test.dart` (PICKUP↔DELIVERY branching, cleanup),
+    `order_status_timeline_test.dart`, `delivery_method_screen_test.dart`,
+    `order_review_screen_test.dart` (checkout амжилттай/OUT_OF_STOCK алдаа)
+    — `flutter analyze` 0 алдаа, `flutter test` бүгд ногоон.
+  ⚠️🔴 **Ноцтой олдвор — Android emulator дээр бодитоор турших үед олдсон,
+  widget тестээр ОГТ илрээгүй логикийн цоорхой:** PaymentScreen-ийн debug
+  "Mock төлбөр симуляц хийх" товч анхны хувилбарт ЗӨВХӨН
+  `POST /payment/mock/simulate-paid/:id`-г дуудаж байсан — энэ нь
+  `MockPaymentProvider`-ийн ДОТООД (санах ойн) статусыг PAID болгодог ч,
+  Order.paidAt-г ЖИНХЭНЭ тавьж `order.payment_confirmed` WebSocket
+  event-ийг өдөөдөг цорын ганц газар бол `POST /payment/webhook/:orderId`
+  (docs/adr/006-ийн "verify don't trust" урсгал) байсныг мартсанаас болж,
+  товч дархад QR дэлгэц мөнхөд "Холбогдож байна..."/"Төлбөр хүлээгдэж
+  байна..." төлөвт зогсч байв (backend талд ЯМАР Ч алдаа гарахгүй, зөвхөн
+  чимээгүй "юу ч болохгүй" — HTTP 200 буцаадаг тул Flutter талд ч алдаа
+  барих боломжгүй байсан). Бодит QPay-ийн урсгалд энэ асуудал байхгүй
+  (QPay-ийн сервэр өөрөө webhook-ыг дуудна), зөвхөн ЭНЭ debug-only
+  симуляцид л хамааралтай байсан. **Засвар:**
+  `CheckoutRepository.simulatePaid()`-г 2 дараалсан HTTP дуудлага хийдэг
+  болгов (1. simulate-paid, 2. webhook) — 2 дахь алхмыг НЭМЭЭГҮЙ бол
+  1-р алхам дангаараа ямар ч бодит захиалгын төлөв өөрчлөхгүй гэдгийг
+  тодорхой тайлбарласан. **Сургамж:** widget тест (fake repository)
+  зөвхөн "API дуудагдсан эсэх"-ийг шалгадаг тул ийм 2-алхамт орхигдсон
+  дуудлагын алдааг барьж чадахгүй — end-to-end (бодит backend + бодит
+  WebSocket) турших ЗААВАЛ шаардлагатай байсныг батлав.
+  ✅ **Android emulator (dark + light mode) дээрх бүрэн урсгалын
+  баталгаажуулалт:** Cart (item +/- , "Захиалах") → BranchSelectionScreen
+  (Branch debris цэвэрлэлтийн дараа зөвхөн "Мобайл демо салбар" ганцаараа
+  харагдаж, сонголт хялбар болсныг ажиглав) → DeliveryMethodScreen
+  (PICKUP↔DELIVERY toggle зөв ажиллав) → AddressScreen (**flutter_map
+  OSM tile бодитоор ачаалж Улаанбаатарын газрын зураг харагдав, Nominatim
+  хайлт "Sukhbaatar" гэж бичихэд бодит Cyrillic үр дүн (Сүхбаатар аймаг
+  г.м.) буцаав, газрын зургийг чирэхэд төвийн pin тогтмол үлдэж зөвхөн
+  дэвсгэр зураг шилжсэнийг screenshot-аар баталгаажуулав**) →
+  OrderReviewScreen (нийт дүн `cartBranchValidationProvider`-аас зөв
+  тооцогдов) → `POST /orders` бодитоор дуудагдаж → PaymentScreen (**бодит
+  QR код `qr_flutter`-ээр зурагдав**, debug товч дээрх засвар хийсний
+  дараа) → OrderSuccessScreen (WebSocket `order.payment_confirmed`-ээр
+  автоматаар гарч ирэв) → 2.5 секундын дараа автомат шилжилт →
+  OrderTrackingScreen (`OrderStatusTimeline` зөв зурагдав) →
+  **staff эрхээр (`PATCH /orders/:id/status` → CONFIRMED) backend-ээс
+  шууд дуудаж, апп ДАХИН АЧААЛАХГҮЙгээр (зөвхөн WebSocket `order.
+  status_changed` event-ээр) дэлгэц дээрх timeline бодит цагт "Баталгаажлаа"
+  алхам руу шинэчлэгдэхийг screenshot-оор баталгаажуулав** — энэ бол
+  бүхэл Cart→Checkout→QPay→бодит цагийн архитектурын хамгийн чухал
+  батламж. Light/Dark хоёуланд нь (Тохиргоо дэлгэцээр сольж) Cart/
+  BranchSelection/DeliveryMethod/AddressScreen дэлгэцүүдийг screenshot-оор
+  харьцуулж, cobalt-indigo дизайны палет хоёр горимд адил цэвэрхэн
+  харагдахыг нотолсон. ⚠️ **Turших явцад олдсон, кодтой шууд холбоогүй
+  орчны зөвлөмжүүд:** (1) `adb shell input text` Cyrillic тэмдэгт огт
+  дэмждэггүй (KeyEvent-д суурилсан симуляци тул зөвхөн идэвхтэй keyboard
+  layout-д байгаа тэмдэгтийг л явуулж чаддаг, Android-ийн танигдсан
+  хязгаарлалт) — Cyrillic UI текст бичих турших шаардлагатай бол Redis/DB
+  руу шууд бичих эсвэл Latin түлхүүр үг ашиглах хэрэгтэй. (2) `adb shell
+  cmd uimode night <yes|no>` систем түвшний horим сольсон нь Flutter-ийн
+  Impeller GPU renderer-тэй хослохдоо screenshot foolage-г түр
+  гажуудуулсан (апп доторх Тохиргоо дэлгэцээр өнгө сольсон нь ийм
+  асуудалгүй) — систем түвшний horим биш апп доторх theme toggle-ийг
+  ашиглах нь илүү найдвартай. (3) Riverpod-ийн `AsyncNotifierProvider`
+  (autoDispose БИШ, `cartProvider` шиг) апп бүхэл ажиллах хугацаанд НЭГ
+  удаа л `build()`-ээ дуудаж кэшилдэг тул Redis/DB-д гаднаас шууд бичсэн
+  өөрчлөлт апп-ийн аль хэдийн үүссэн provider instance-д ХАРАГДАХГҮЙ
+  (зөвхөн апп доторх action, жиш `CartNotifier.setQuantity()`, шинэ
+  утгаар state-ээ ШУУД дарж бичдэг тул харагдана) — E2E турших/debug
+  хийхдээ гаднаас өгөгдөл өөрчилсний дараа апп-ыг бүрэн (`force-stop`
+  + дахин `start`) дахин ачаалах ёстойг санах.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
-  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн захиалга үүсгэх (checkout)
-  + бодит цагийн/хүргэлтийн UI** (каталог үзэх/хайх БОЛОН сагс/салбар
-  сонгох дууссан — доорх "(2026-08-20)" бичлэгийг үз, "Захиалах" товч
-  BranchSelectionScreen дээр placeholder хэвээр — checkout API дуудалт
-  дараагийн ажил), push notification (Mobile апп push
+  хараахан хэрэгжээгүй зүйл хэвээр — Cart→Checkout→QPay бүрэн урсгал
+  (доорх "(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз) ДУУССАН), push
+  notification (Mobile апп push
   бүртгэл хараахан эхлээгүй тул
   хүлээн авах төхөөрөмж алга, backlog), бодит SMS vendor сонгож
   `SmtpNotificationProvider.sendSms()`-ийн стабыг солих (§11.3, Phase 1-ээс
