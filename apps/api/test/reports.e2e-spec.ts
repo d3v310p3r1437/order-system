@@ -83,9 +83,17 @@ describe('Reports (e2e)', () => {
   const unitPrice = 10000;
 
   // Тайлангийн хугацааны хүрээ — доорх бүх захиалгыг үүнд багтаана
-  // (backdatedOrder-оос бусад, доорхыг үз).
-  const rangeFrom = '2026-08-01';
-  const rangeTo = '2026-08-19';
+  // (backdatedOrder-оос бусад, доорхыг үз). ⚠️ (2026-08-20 засвар) Урьд нь
+  // '2026-08-19' гэж ХАТУУ бичигдсэн байсан — тест ажиллуулсан огноо энэ
+  // огноог давсны дараа (маргааш нь) "өнөөдөр" үүсгэсэн захиалгууд ЭНЭ
+  // хугацааны хүрээнээс ГАДУУР унаж, revenue/orderCount 0 болж CI-г
+  // байнга унагаах болсныг илрүүлж засав. Одоо `now`-аас (тест ажиллах
+  // ямар ч өдөр) динамикаар тооцно: rangeFrom = энэ сарын эхний өдөр,
+  // rangeTo = өнөөдөр (UTC) — доорх backdated захиалга (2026-06-01)
+  // ямагт rangeFrom-оос өмнө байх тул out-of-range шалгалт хэвээр хүчинтэй.
+  const now = new Date();
+  const rangeFrom = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`;
+  const rangeTo = now.toISOString().slice(0, 10);
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
