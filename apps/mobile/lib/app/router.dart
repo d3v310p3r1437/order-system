@@ -6,6 +6,8 @@ import '../features/auth/domain/auth_state.dart';
 import '../features/auth/presentation/auth_provider.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
+import '../features/catalog/presentation/catalog_screen.dart';
+import '../features/catalog/presentation/product_detail_screen.dart';
 import 'home_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -41,6 +43,16 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const RegisterScreen(),
       ),
       GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+      GoRoute(
+        path: '/catalog',
+        builder: (context, state) => const CatalogScreen(),
+      ),
+      GoRoute(
+        path: '/products/:id',
+        builder: (context, state) => ProductDetailScreen(
+          productId: state.pathParameters['id']!,
+        ),
+      ),
     ],
   );
 });
