@@ -9,6 +9,7 @@ import '../domain/product.dart';
 import '../domain/product_variant.dart';
 import 'catalog_providers.dart';
 import 'widgets/availability_badge.dart';
+import 'widgets/product_image_placeholder.dart';
 
 /// Бүтээгдэхүүний дэлгэрэнгүй (route: `/products/:id`) — Hero-тэй зурган
 /// gallery, variant сонголт, тооцоолсон availability. "Сагслах" энэ
@@ -228,15 +229,7 @@ class _ImageGallery extends StatelessWidget {
     if (images.isEmpty) {
       return Hero(
         tag: 'product-image-$productId',
-        child: Container(
-          color: background,
-          alignment: Alignment.center,
-          child: Icon(
-            Icons.inventory_2_outlined,
-            size: 56,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
-          ),
-        ),
+        child: const ProductImagePlaceholder(iconSize: 56),
       );
     }
     return Stack(
@@ -301,29 +294,26 @@ class _AddToCartButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    // `AppTheme`-ийн `elevatedButtonTheme` анхдагчаар аль хэдийн
+    // primary/onPrimary (Home дэлгэцийн "Каталог үзэх" карттай ижил
+    // визуал жин) тул давхар style override хийгээгүй (login/register-ийн
+    // ижил зарчим). Placeholder мессежийг товчны дотор ХАРУУЛАХГҮЙ
+    // (Tooltip-гүй) — зөвхөн tap хийхэд snackbar-аар үзүүлнэ.
     return SizedBox(
       width: double.infinity,
-      child: Tooltip(
-        message: 'Сагсны боломж дараагийн шатанд нэмэгдэнэ',
-        child: ElevatedButton.icon(
-          key: const Key('add_to_cart_button'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: theme.colorScheme.secondary,
-            foregroundColor: theme.colorScheme.onSecondary,
-          ),
-          icon: const Icon(Icons.shopping_cart_outlined),
-          label: const Text('Сагслах'),
-          onPressed: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Сагсны боломж удахгүй нэмэгдэнэ — одоогоор боломжгүй байна',
-                ),
+      child: ElevatedButton.icon(
+        key: const Key('add_to_cart_button'),
+        icon: const Icon(Icons.shopping_cart_outlined),
+        label: const Text('Сагслах'),
+        onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Сагсны боломж удахгүй нэмэгдэнэ — одоогоор боломжгүй байна',
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }

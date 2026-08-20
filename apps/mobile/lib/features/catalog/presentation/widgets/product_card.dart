@@ -5,6 +5,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/format/currency.dart';
 import '../../domain/product.dart';
 import 'availability_badge.dart';
+import 'product_image_placeholder.dart';
 
 /// `CatalogScreen`-ийн grid дэх нэг карт — 8pt grid (spacing 8/16),
 /// 16px булангийн муруйлт, нарийн elevation, tap үед subtle scale
@@ -48,7 +49,9 @@ class _ProductCardState extends State<ProductCard> {
             border: Border.all(color: theme.colorScheme.outline),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
+                color: theme.colorScheme.shadow.withValues(
+                  alpha: theme.brightness == Brightness.dark ? 0.24 : 0.05,
+                ),
                 blurRadius: 8,
                 offset: const Offset(0, 2),
               ),
@@ -113,15 +116,7 @@ class _ProductImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final background = Theme.of(context).colorScheme.surfaceContainerHighest;
     if (url == null) {
-      return Container(
-        color: background,
-        alignment: Alignment.center,
-        child: Icon(
-          Icons.inventory_2_outlined,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-          size: 32,
-        ),
-      );
+      return const ProductImagePlaceholder(iconSize: 28);
     }
     return CachedNetworkImage(
       imageUrl: url!,

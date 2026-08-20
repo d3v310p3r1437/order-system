@@ -7,6 +7,8 @@ import {
   isRecordNotFoundError,
   isUniqueConstraintViolation,
 } from '../../common/prisma-errors.js';
+import { RequestContextService } from '../../common/request-context.js';
+import { resolveUserRoleNames } from '../../common/user-roles.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { CreateCategoryDto } from './dto/create-category.dto.js';
 import type { UpdateCategoryDto } from './dto/update-category.dto.js';
@@ -18,11 +20,30 @@ const SLUG_TAKEN = {
 
 @Injectable()
 export class CategoryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly requestContext: RequestContextService,
+  ) {}
 
-  findAll(parentId?: string) {
+  // `GET /categories` нь @Roles()-гүй (§6.1 "бүх нэвтэрсэн") тул
+  // admin-web-ийн категори удирдах хуудас (идэвхгүй ангиллыг ХАРУУЛЖ,
+  // дахин идэвхжүүлэх сонголт өгдөг) БОЛОН mobile-ийн харилцагчийн
+  // каталогийн chip мөр ЯГ ИЖИЛ endpoint-ыг хуваалцдаг. Тиймээс
+  // isActive filter-ийг ШУУД биш, дуудагчийн дүрээр нөхцөлтэй хэрэглэнэ —
+  // staff (аль ч дүр) бүгдийг харна (өөрчлөлтгүй, admin-web-ийг эвдэхгүй),
+  // харин CUSTOMER зөвхөн idle idevхтэй ангиллыг л харна.
+  async findAll(parentId?: string) {
+    const { userId } = this.requestContext.get();
+    const roles = userId
+      ? await resolveUserRoleNames(this.prisma.tx, userId)
+      : [];
+    const isCustomer = roles.includes('CUSTOMER');
+
     return this.prisma.tx.category.findMany({
-      where: parentId === undefined ? {} : { parentId },
+      where: {
+        ...(parentId === undefined ? {} : { parentId }),
+        ...(isCustomer ? { isActive: true } : {}),
+      },
       orderBy: { name: 'asc' },
     });
   }
