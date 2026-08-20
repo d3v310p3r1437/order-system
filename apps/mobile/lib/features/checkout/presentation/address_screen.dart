@@ -7,18 +7,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../branch/presentation/branch_providers.dart';
 import '../domain/geocode_result.dart';
 import 'checkout_draft.dart';
 import 'checkout_providers.dart';
 
 const _searchDebounce = Duration(milliseconds: 300);
-// Улаанбаатар хотын төв — эхний харагдац, `docs/adr/009`-ийн Nominatim/OSM
-// сонголттой нийцтэй анхны координат.
+const _selectAnimationDuration = Duration(milliseconds: 500);
+// Улаанбаатар хотын төв — салбарын байршил тодорхойгүй үед анхны
+// харагдац, `docs/adr/009`-ийн Nominatim/OSM сонголттой нийцтэй анхны
+// координат.
 const _defaultCenter = LatLng(47.9184, 106.9177);
 
 /// Checkout-ийн 2-р алхам (зөвхөн DELIVERY): газрын зураг дээр төвийн pin
-/// чирж координатаа тааруулах, эсвэл Nominatim хайлтаар хаяг олох
-/// (`docs/adr/009-flutter-map-nominatim.md`).
+/// чирж/товшиж координатаа тааруулах, эсвэл Nominatim хайлтаар хаяг олох
+/// (`docs/adr/009-flutter-map-nominatim.md`). ⚠️ "Баталгаажуулах" товч
+/// зөвхөн сонгосон координат (`_center`, эхнээсээ анхны байрлалтай тул
+/// ЭХНЭЭСЭЭ идэвхтэй) байгаа эсэхээс хамаарна — хайлтын текстийн
+/// хоосон/хоосон биш байдалтай ХОЛБООГҮЙ.
 class AddressScreen extends ConsumerStatefulWidget {
   const AddressScreen({super.key});
 
@@ -26,28 +32,38 @@ class AddressScreen extends ConsumerStatefulWidget {
   ConsumerState<AddressScreen> createState() => _AddressScreenState();
 }
 
-class _AddressScreenState extends ConsumerState<AddressScreen> {
+class _AddressScreenState extends ConsumerState<AddressScreen>
+    with SingleTickerProviderStateMixin {
   final _mapController = MapController();
   final _searchController = TextEditingController();
+  late final AnimationController _animController;
   Timer? _debounceTimer;
 
   LatLng _center = _defaultCenter;
   List<GeocodeResult> _results = [];
   bool _searching = false;
   bool _searchFailed = false;
+  bool _centerInitializedFromBranch = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: _selectAnimationDuration,
+    );
+  }
 
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _animController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
     _debounceTimer?.cancel();
-    // "Баталгаажуулах" товчны идэвхжилт (хоосон эсэх) шууд (debounce-гүй)
-    // шинэчлэгдэх ёстой тул тэрхэн даруй setState хийнэ — жинхэнэ хайлтын
-    // HTTP дуудлагыг л доор debounce хийнэ.
     setState(() {
       if (query.trim().isEmpty) {
         _results = [];
@@ -87,15 +103,66 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
     }
   }
 
+  /// Газрын зургийг (2-р шаардлагын дагуу товшсон, 4-р шаардлагын дагуу
+  /// хайлтын үр дүн сонгосон) `target`-ийн ЯГ төвд байрлуулахаар аяндаа
+  /// гөлгөр (400-600мс) шилжинэ — `flutter_map_animations` гэсэн шинэ
+  /// dependency нэмэлгүйгээр `AnimationController`+`Tween`-ээр гараар.
+  void _animateTo(LatLng target, {double zoom = 16}) {
+    final camera = _mapController.camera;
+    final latTween = Tween<double>(
+      begin: camera.center.latitude,
+      end: target.latitude,
+    );
+    final lngTween = Tween<double>(
+      begin: camera.center.longitude,
+      end: target.longitude,
+    );
+    final zoomTween = Tween<double>(begin: camera.zoom, end: zoom);
+
+    void listener() {
+      final t = Curves.easeInOut.transform(_animController.value);
+      _mapController.move(
+        LatLng(latTween.transform(t), lngTween.transform(t)),
+        zoomTween.transform(t),
+      );
+    }
+
+    _animController
+      ..removeListener(listener)
+      ..addListener(listener)
+      ..reset();
+    _animController.forward().whenCompleteOrCancel(() {
+      _animController.removeListener(listener);
+    });
+    setState(() => _center = target);
+  }
+
   void _selectResult(GeocodeResult result) {
     setState(() {
       _searchController.text = result.displayName;
       _results = [];
     });
-    final target = LatLng(result.latitude, result.longitude);
-    _mapController.move(target, 16);
-    setState(() => _center = target);
+    _animateTo(LatLng(result.latitude, result.longitude));
     FocusScope.of(context).unfocus();
+  }
+
+  void _onMapTap(LatLng point) {
+    _animateTo(point);
+  }
+
+  void _confirm() {
+    final address = _searchController.text.trim().isNotEmpty
+        ? _searchController.text.trim()
+        : 'Сонгосон байршил (${_center.latitude.toStringAsFixed(5)}, '
+              '${_center.longitude.toStringAsFixed(5)})';
+    ref
+        .read(checkoutDraftProvider.notifier)
+        .setAddress(
+          address: address,
+          latitude: _center.latitude,
+          longitude: _center.longitude,
+        );
+    context.push('/checkout/review');
   }
 
   @override
@@ -111,6 +178,34 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
     }
     final theme = Theme.of(context);
 
+    // Анхны нээхэд боломжтой бол сонгосон салбарын байршлаар (тодорхойгүй
+    // бол хотын төвөөр) pin эхлүүлнэ — 3-р шаардлага. Ганц удаа л ажиллана
+    // (`_centerInitializedFromBranch` flag), branchesProvider дахин
+    // ачаалагдах/rebuild болох бүрд давтагдахгүй.
+    if (!_centerInitializedFromBranch) {
+      ref.watch(branchesProvider).whenData((branches) {
+        if (_centerInitializedFromBranch) {
+          return;
+        }
+        for (final branch in branches) {
+          if (branch.id == draft.branchId &&
+              branch.latitude != null &&
+              branch.longitude != null) {
+            _centerInitializedFromBranch = true;
+            final target = LatLng(branch.latitude!, branch.longitude!);
+            SchedulerBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) {
+                return;
+              }
+              _mapController.move(target, 15);
+              setState(() => _center = target);
+            });
+            break;
+          }
+        }
+      });
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Хүргэлтийн хаяг')),
       body: Stack(
@@ -120,6 +215,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
             options: MapOptions(
               initialCenter: _center,
               initialZoom: 13,
+              onTap: (tapPosition, point) => _onMapTap(point),
               onPositionChanged: (camera, hasGesture) {
                 if (hasGesture) {
                   setState(() => _center = camera.center);
@@ -134,9 +230,9 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
             ],
           ),
           // Газрын зургийн ЯГ төвд тогтмол зогсоо pin — хэрэглэгч газрын
-          // зургийг чирэхэд pin төвдөө хэвээр үлдэж, доогуур байгаа
-          // координат (`_center`) л өөрчлөгдөнө (түгээмэл "чирж координат
-          // тааруулах" UX хэлбэрлэл).
+          // зургийг чирэхэд (эсвэл товшихад, `onTap`-аар тэр цэг рүү
+          // `_animateTo`-гоор шилжихэд) pin төвдөө хэвээр үлдэж, доогуур
+          // байгаа координат (`_center`) л өөрчлөгдөнө.
           const IgnorePointer(
             child: Center(
               child: Padding(
@@ -163,7 +259,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
                     key: const Key('address_search_field'),
                     controller: _searchController,
                     decoration: InputDecoration(
-                      hintText: 'Хаягаар хайх...',
+                      hintText: 'Хаягаар хайх (заавал биш)...',
                       prefixIcon: const Icon(Icons.search),
                       suffixIcon: _searching
                           ? const Padding(
@@ -240,18 +336,7 @@ class _AddressScreenState extends ConsumerState<AddressScreen> {
                   width: double.infinity,
                   child: FilledButton(
                     key: const Key('address_confirm_button'),
-                    onPressed: _searchController.text.trim().isEmpty
-                        ? null
-                        : () {
-                            ref
-                                .read(checkoutDraftProvider.notifier)
-                                .setAddress(
-                                  address: _searchController.text.trim(),
-                                  latitude: _center.latitude,
-                                  longitude: _center.longitude,
-                                );
-                            context.push('/checkout/review');
-                          },
+                    onPressed: _confirm,
                     child: const Text('Баталгаажуулах'),
                   ),
                 ),

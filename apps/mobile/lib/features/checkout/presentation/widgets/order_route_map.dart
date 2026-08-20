@@ -16,6 +16,8 @@ class OrderRouteMap extends StatelessWidget {
     required this.deliveryLat,
     required this.deliveryLng,
     this.route,
+    this.height = 220,
+    this.interactive = true,
   });
 
   final double branchLat;
@@ -23,6 +25,8 @@ class OrderRouteMap extends StatelessWidget {
   final double deliveryLat;
   final double deliveryLng;
   final OrderRoute? route;
+  final double height;
+  final bool interactive;
 
   @override
   Widget build(BuildContext context) {
@@ -37,13 +41,15 @@ class OrderRouteMap extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        height: 220,
+        height: height,
         child: FlutterMap(
           options: MapOptions(
             initialCenter: center,
             initialZoom: 13,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag,
+            interactionOptions: InteractionOptions(
+              flags: interactive
+                  ? InteractiveFlag.pinchZoom | InteractiveFlag.drag
+                  : InteractiveFlag.none,
             ),
           ),
           children: [

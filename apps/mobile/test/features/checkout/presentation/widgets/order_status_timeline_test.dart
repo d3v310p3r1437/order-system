@@ -17,6 +17,11 @@ void main() {
     expect(find.byKey(const Key('order_status_timeline')), findsOneWidget);
     expect(find.text('Захиалга үүслээ'), findsOneWidget);
     expect(find.text('Хүлээлгэн өглөө'), findsOneWidget);
+    // Хараахан ямар ч алхам дуусаагүй тул check icon огт харагдахгүй,
+    // алхам бүр өөрийн (`_statusIcons`) icon-той.
+    expect(find.byIcon(Icons.check), findsNothing);
+    expect(find.byIcon(Icons.shopping_cart_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.flag_outlined), findsOneWidget);
   });
 
   testWidgets('CANCELLED статус тусдаа "цуцлагдсан" харагдацтай', (
@@ -36,5 +41,20 @@ void main() {
     expect(find.text('Бэлтгэж байна'), findsOneWidget);
     expect(find.text('Бэлэн боллоо'), findsOneWidget);
     expect(find.text('Хүлээлгэн өглөө'), findsOneWidget);
+    // 4 алхам дуусаж check icon-той, сүүлийн (COMPLETED) алхам идэвхтэй
+    // тул өөрийн flag icon-тойгоороо (check-гүйгээр) харагдана.
+    expect(find.byIcon(Icons.check), findsNWidgets(4));
+    expect(find.byIcon(Icons.flag_outlined), findsOneWidget);
+  });
+
+  testWidgets('идэвхтэй алхамд pulse цагираг (_PulsingRing) зөвхөн 1 газар зурагдана', (
+    tester,
+  ) async {
+    await tester.pumpWidget(wrap('PREPARING'));
+
+    expect(find.byKey(const Key('order_status_step_PREPARING')), findsOneWidget);
+    // AnimatedBuilder бүхий pulse widget нэг л (идэвхтэй PREPARING алхамд)
+    // байх ёстой — dispose алдаагүйг баталгаажуулах зорилготой мөн.
+    expect(tester.takeException(), isNull);
   });
 }
