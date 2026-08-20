@@ -24,6 +24,12 @@ class HomeScreen extends ConsumerWidget {
         title: const Text('Нүүр'),
         actions: [
           IconButton(
+            key: const Key('settings_button'),
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Тохиргоо',
+            onPressed: () => context.push('/settings'),
+          ),
+          IconButton(
             key: const Key('logout_button'),
             icon: const Icon(Icons.logout),
             tooltip: 'Гарах',
