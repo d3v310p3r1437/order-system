@@ -243,10 +243,16 @@ describe('Reports (e2e)', () => {
     staffToken: string,
     quantity: number,
   ): Promise<OrderBody> {
+    // (2026-08-20) checkout item-үүдийг Redis сагснаас уншина.
+    await request(app.getHttpServer())
+      .post('/cart/items')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ variantId, quantity })
+      .expect(201);
     const checkoutRes = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId, items: [{ variantId, quantity }] })
+      .send({ branchId })
       .expect(201);
     const orderId = (checkoutRes.body as OrderBody).id;
 

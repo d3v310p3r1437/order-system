@@ -3,13 +3,16 @@ import { RequestContextService } from '../common/request-context.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
-// app_public_branches() SQL функцийн буцаах мөр (20260820120000
-// migration) — зөвхөн нийтэд аюулгүй баганууд.
+// app_public_branches() SQL функцийн буцаах мөр (20260820120000 migration,
+// 20260820130000-аар latitude/longitude + сонголтот p_branch_id
+// параметрээр өргөтгөсөн) — зөвхөн нийтэд аюулгүй баганууд.
 export interface PublicBranchRow {
   id: string;
   name: string;
   address: string | null;
   district: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 @Injectable()

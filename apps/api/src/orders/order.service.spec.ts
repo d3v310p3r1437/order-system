@@ -81,12 +81,37 @@ function buildNotificationTriggerMock() {
   };
 }
 
+function buildCartServiceMock(
+  items: { variantId: string; quantity: number }[] = [
+    { variantId: 'v-1', quantity: 1 },
+  ],
+) {
+  return {
+    listForCheckout: jest.fn().mockResolvedValue(items),
+    clear: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+function buildRequestContextMock(userId: string | null = null) {
+  // Бодит RequestContextService.onCommit()-той адил: тест дотор ШУУД
+  // (синхрон) дуудагдана — RlsMiddleware-ийн бодит "COMMIT-ийн дараа"
+  // хойшлолт unit тестийн хамрах хүрээнд биш (order.service.spec.ts нь
+  // OrderService-ийг ганцаараа, RlsMiddleware-гүй тестэлдэг). `get()` нь
+  // `OrderService.findBranchForRoute()`-ийн userId-г л буцаана.
+  return {
+    onCommit: jest.fn((cb: () => void) => cb()),
+    get: jest.fn(() => ({ userId })),
+  };
+}
+
 function newService(
   prisma: unknown,
   paymentProvider = buildPaymentProviderMock(),
   orderEvents = buildOrderEventsPublisherMock(),
   routingProvider = buildRoutingProviderMock(),
   notificationTrigger = buildNotificationTriggerMock(),
+  cartService = buildCartServiceMock(),
+  requestContext = buildRequestContextMock(),
 ) {
   return new OrderService(
     prisma as ConstructorParameters<typeof OrderService>[0],
@@ -94,6 +119,8 @@ function newService(
     routingProvider,
     orderEvents as ConstructorParameters<typeof OrderService>[3],
     notificationTrigger as ConstructorParameters<typeof OrderService>[4],
+    cartService as ConstructorParameters<typeof OrderService>[5],
+    requestContext as ConstructorParameters<typeof OrderService>[6],
   );
 }
 
@@ -237,16 +264,31 @@ describe('OrderService.updateStatus', () => {
 });
 
 describe('OrderService.checkout', () => {
+  it('сагс хоосон бол 400 CART_EMPTY, ямар ч бичилт хийхгүй', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    const cartService = buildCartServiceMock([]);
+
+    const service = newService(
+      prisma,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      cartService,
+    );
+    await expect(
+      service.checkout('cust-1', { branchId: 'b-1' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(mocks.orderCreate).not.toHaveBeenCalled();
+  });
+
   it('вариант олдоогүй бол 400, ямар ч бичилт хийхгүй', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.productVariantFindUnique.mockResolvedValue(null);
 
     const service = newService(prisma);
     await expect(
-      service.checkout('cust-1', {
-        branchId: 'b-1',
-        items: [{ variantId: 'v-1', quantity: 1 }],
-      }),
+      service.checkout('cust-1', { branchId: 'b-1' }),
     ).rejects.toThrow(BadRequestException);
     expect(mocks.executeRawUnsafe).not.toHaveBeenCalled();
     expect(mocks.orderCreate).not.toHaveBeenCalled();
@@ -265,10 +307,7 @@ describe('OrderService.checkout', () => {
 
     const service = newService(prisma);
     await expect(
-      service.checkout('cust-1', {
-        branchId: 'b-1',
-        items: [{ variantId: 'v-1', quantity: 1 }],
-      }),
+      service.checkout('cust-1', { branchId: 'b-1' }),
     ).rejects.toThrow(ConflictException);
 
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
@@ -277,6 +316,48 @@ describe('OrderService.checkout', () => {
     expect(mocks.executeRawUnsafe).toHaveBeenCalledWith(
       expect.stringMatching(/^ROLLBACK TO SAVEPOINT sp_\d+$/),
     );
+  });
+
+  it('амжилттай checkout нь item-үүдийг cart-аас уншиж, дараа нь сагсыг цэвэрлэнэ', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.productVariantFindUnique.mockResolvedValue({
+      id: 'v-1',
+      isActive: true,
+      basePrice: new Prisma.Decimal(100),
+    });
+    mocks.queryRaw.mockResolvedValue([{ app_adjust_inventory_for_order: 1 }]);
+    mocks.orderCreate.mockResolvedValue({ id: 'o-1' });
+    mocks.orderItemCreateMany.mockResolvedValue({ count: 1 });
+    mocks.orderFindUnique.mockResolvedValue({
+      id: 'o-1',
+      status: 'CREATED',
+      items: [],
+    });
+
+    const cartService = buildCartServiceMock([
+      { variantId: 'v-1', quantity: 2 },
+    ]);
+    const requestContext = buildRequestContextMock();
+
+    const service = newService(
+      prisma,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      cartService,
+      requestContext,
+    );
+    const result = await service.checkout('cust-1', { branchId: 'b-1' });
+
+    expect(cartService.listForCheckout).toHaveBeenCalledWith('cust-1');
+    expect(requestContext.onCommit).toHaveBeenCalledTimes(1);
+    expect(cartService.clear).toHaveBeenCalledWith('cust-1');
+    expect(result).toMatchObject({
+      payUrl: 'mock://pay/1',
+      qrText: undefined,
+      bankDeeplinks: [],
+    });
   });
 });
 
@@ -324,17 +405,27 @@ describe('OrderService.getRoute', () => {
       { lat: 47.918, lng: 106.917 },
       { lat: 47.925, lng: 106.93 },
     );
-    expect(mocks.orderUpdate).toHaveBeenCalledWith({
-      where: { id: 'o-1' },
-      data: {
-        routeDistanceMeters: 1500,
-        routeDurationSeconds: 180,
-        routeGeometry: [
-          [106.917, 47.918],
-          [106.93, 47.925],
-        ],
-      },
-    });
+    // (2026-08-20) кэш-бичилт `tx.order.update()` БИШ, `app_cache_order_route()`
+    // WRITE SECURITY DEFINER функцээр (orders_update-ийн WITH CHECK
+    // CUSTOMER-д хамааралгүй тул) хийгддэг болсон.
+    expect(mocks.orderUpdate).not.toHaveBeenCalled();
+    expect(mocks.executeRaw).toHaveBeenCalledTimes(1);
+    const call = mocks.executeRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+      number,
+      number,
+      string,
+    ];
+    const [strings, orderIdArg, distanceArg, durationArg, geometryArg] = call;
+    expect(strings.join('?')).toContain('app_cache_order_route');
+    expect(orderIdArg).toBe('o-1');
+    expect(distanceArg).toBe(1500);
+    expect(durationArg).toBe(180);
+    expect(JSON.parse(geometryArg)).toEqual([
+      [106.917, 47.918],
+      [106.93, 47.925],
+    ]);
     expect(result).toEqual({
       distanceMeters: 1500,
       durationSeconds: 180,
@@ -343,6 +434,49 @@ describe('OrderService.getRoute', () => {
         [106.93, 47.925],
       ],
     });
+  });
+
+  it('CUSTOMER дуудвал branches_select RLS-ийг (tx.branch.findUnique) БИШ, app_public_branches()-ийг ашиглана', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(deliveryOrder());
+    // 1-р queryRaw дуудлага app_public_branches(), 2-р нь байхгүй (getRoute
+    // дотор өөр queryRaw байхгүй) — branch байршлыг буцаана.
+    mocks.queryRaw.mockResolvedValue([
+      { latitude: 47.918, longitude: 106.917 },
+    ]);
+    mocks.userBranchRoleFindMany.mockResolvedValue([]);
+    mocks.userFindUnique.mockResolvedValue({ authProvider: 'CUSTOMER_AUTH' });
+
+    const routingProvider = buildRoutingProviderMock();
+    routingProvider.getRoute.mockResolvedValue({
+      distanceMeters: 1500,
+      durationSeconds: 180,
+      geometry: [
+        [106.917, 47.918],
+        [106.93, 47.925],
+      ],
+    });
+    const requestContext = buildRequestContextMock('cust-1');
+
+    const service = newService(
+      prisma,
+      undefined,
+      undefined,
+      routingProvider,
+      undefined,
+      undefined,
+      requestContext,
+    );
+    await service.getRoute('o-1');
+
+    expect(mocks.branchFindUnique).not.toHaveBeenCalled();
+    expect(mocks.queryRaw).toHaveBeenCalledTimes(1);
+    const [strings, branchIdArg] = mocks.queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      string,
+    ];
+    expect(strings.join('?')).toContain('app_public_branches');
+    expect(branchIdArg).toBe('b-1');
   });
 
   it('кэш аль хэдийн бөглөгдсөн бол RoutingProvider огт дуудахгүй, Order мөр дээр ч бичихгүй', async () => {

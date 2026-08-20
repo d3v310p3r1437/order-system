@@ -148,11 +148,20 @@ describe('Payment (e2e, mock provider)', () => {
     await superuserPrisma.$disconnect();
   });
 
+  // (2026-08-20) OrderService.checkout() item-үүдийг Redis сагснаас уншина
+  // (checkout-order.dto.ts-ийн толгой тайлбарыг үз) тул ЭНД ЗААВАЛ
+  // checkout-оос ӨМНӨ /cart/items-ээр бичнэ — addOrUpdateItem upsert-set
+  // семантиктай тул давхар дуудахад ч зүгээр.
   async function checkout(): Promise<OrderBody> {
+    await request(app.getHttpServer())
+      .post('/cart/items')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ variantId, quantity: 1 })
+      .expect(201);
     const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
+      .send({ branchId: branch.id })
       .expect(201);
     return res.body as OrderBody;
   }

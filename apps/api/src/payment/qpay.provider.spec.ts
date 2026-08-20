@@ -52,6 +52,8 @@ describe('QPayProvider', () => {
     expect(result).toEqual({
       providerInvoiceId: 'inv-1',
       payUrl: 'https://qpay.mn/s/inv-1',
+      qrText: undefined,
+      bankDeeplinks: [],
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
@@ -78,6 +80,32 @@ describe('QPayProvider', () => {
     expect(body.callback_url).toBe(
       'https://api.example.mn/payment/webhook/order-1',
     );
+  });
+
+  it('createInvoice(): qr_text/urls ирвэл qrText/bankDeeplinks-руу хөрвүүлж буцаана (name/link дутуу мөрийг алгасна)', async () => {
+    mockFetchSequence([
+      { status: 200, body: { access_token: 'tok-1', expires_in: 3600 } },
+      {
+        status: 200,
+        body: {
+          invoice_id: 'inv-1',
+          qPay_shortUrl: 'https://qpay.mn/s/inv-1',
+          qr_text: '000201010211...',
+          urls: [
+            { name: 'Хаан банк', link: 'khanbank://q?qPay_QRcode=inv-1' },
+            { name: 'дутуу link' },
+          ],
+        },
+      },
+    ]);
+    const provider = new QPayProvider();
+
+    const result = await provider.createInvoice('order-1', 1000);
+
+    expect(result.qrText).toBe('000201010211...');
+    expect(result.bankDeeplinks).toEqual([
+      { bankName: 'Хаан банк', link: 'khanbank://q?qPay_QRcode=inv-1' },
+    ]);
   });
 
   it('checkPayment(): rows дотор PAID мөр байвал PAID буцаана', async () => {

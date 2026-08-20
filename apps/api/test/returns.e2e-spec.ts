@@ -254,14 +254,24 @@ describe('Returns (e2e)', () => {
     await superuserPrisma.$disconnect();
   });
 
+  // (2026-08-20) checkout item-үүдийг Redis сагснаас уншина.
+  async function setCartItem(quantity: number): Promise<void> {
+    await request(app.getHttpServer())
+      .post('/cart/items')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ variantId, quantity })
+      .expect(201);
+  }
+
   async function checkoutAndComplete(
     branchId: string,
     staffToken: string,
   ): Promise<OrderBody> {
+    await setCartItem(1);
     const checkoutRes = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId, items: [{ variantId, quantity: 1 }] })
+      .send({ branchId })
       .expect(201);
     const orderId = (checkoutRes.body as OrderBody).id;
 
@@ -282,10 +292,11 @@ describe('Returns (e2e)', () => {
 
   describe('Харилцагчийн буцаалт хүсэх (POST /returns)', () => {
     it('COMPLETED биш захиалгын мөрд буцаалт хүсвэл 400 ORDER_NOT_COMPLETED', async () => {
+      await setCartItem(1);
       const checkoutRes = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
-        .send({ branchId: branchA.id, items: [{ variantId, quantity: 1 }] })
+        .send({ branchId: branchA.id })
         .expect(201);
       const orderItemId = (checkoutRes.body as OrderBody).items[0].id;
 

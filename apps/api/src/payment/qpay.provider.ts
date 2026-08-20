@@ -11,9 +11,17 @@ interface QPayTokenResponse {
   expires_in?: number;
 }
 
+// ⚠️ `qr_text`/`urls` талбарын нэр/бүтэц эх сурвалжаас БАТАЛГААЖААГҮЙ
+// (developer.qpay.mn-ийн нийтэд ил баримт бичигт QR/deeplink хариуны яг
+// бүтцийг тодорхой олж чадаагүй, доорх толгой хэсгийн "QPay бодит холболт
+// ирэхэд заавал баталгаажуулах зүйлс"-ийг үз) — credential ирмэгц заавал
+// баталгаажуулна, одоогоор байвал ашиглаж, байхгүй бол undefined/хоосон
+// массив болгож алдаа шидэхгүйгээр даван туулна.
 interface QPayInvoiceResponse {
   invoice_id: string;
   qPay_shortUrl?: string;
+  qr_text?: string;
+  urls?: { name?: string; link?: string }[];
 }
 
 interface QPayPaymentCheckRow {
@@ -49,9 +57,10 @@ function requireEnv(name: string): string {
 // - POST /v2/invoice — багц `invoice_code`, `sender_invoice_no`
 //   (давтагдашгүй байх ёстой — бид `orderId`-г шууд ашиглав),
 //   `invoice_receiver_code`, `invoice_description`, `amount`,
-//   `callback_url`; хариу `invoice_id`, `qPay_shortUrl` (`qr_text`/
-//   `qr_image`/`urls` mobile deeplink-үүд одоогоор хэрэглэгдэхгүй, web
-//   checkout-д зөвхөн `qPay_shortUrl`-ийг ашигласан).
+//   `callback_url`; хариу `invoice_id`, `qPay_shortUrl`, мөн (2026 оны
+//   Cart→Checkout→QPay даалгавраар) `qr_text`/`urls` (банкны deeplink)-ийг
+//   БОДИТ бүтэц баталгаажаагүй БОЛОВЧ хамгаалалттайгаар (undefined/хоосон
+//   массив fallback) уншиж эхэлсэн — Flutter-ийн QR/deeplink UI-д зориулж.
 // - POST /v2/payment/check — `object_type: 'INVOICE'`, `object_id`
 //   (= invoice_id), `offset.page_number/page_limit`; хариу `count`,
 //   `rows[].payment_status` ("PAID" гэх мэт утга — бусад боломжит
@@ -87,7 +96,16 @@ export class QPayProvider implements PaymentProvider {
       // ӨӨРӨӨ үүсгэсэн холбоос тул итгэмжтэй эх сурвалж).
       callback_url: `${requireEnv('QPAY_CALLBACK_BASE_URL')}/payment/webhook/${orderId}`,
     });
-    return { providerInvoiceId: body.invoice_id, payUrl: body.qPay_shortUrl };
+    return {
+      providerInvoiceId: body.invoice_id,
+      payUrl: body.qPay_shortUrl,
+      qrText: body.qr_text,
+      bankDeeplinks: (body.urls ?? [])
+        .filter(
+          (u): u is { name: string; link: string } => !!u.name && !!u.link,
+        )
+        .map((u) => ({ bankName: u.name, link: u.link })),
+    };
   }
 
   async checkPayment(providerPaymentId: string): Promise<CheckPaymentResult> {

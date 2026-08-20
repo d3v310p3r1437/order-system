@@ -21,6 +21,9 @@ interface OrderBody {
   branchId: string;
   customerId: string;
   items: { variantId: string; quantity: number; unitPriceSnapshot: string }[];
+  payUrl?: string;
+  qrText?: string;
+  bankDeeplinks?: { bankName: string; link: string }[];
 }
 
 function getJwtSecret(): Uint8Array {
@@ -62,6 +65,25 @@ async function mintAccessToken(userId: string): Promise<string> {
     .setIssuedAt()
     .setExpirationTime('15m')
     .sign(getJwtSecret());
+}
+
+// (2026-08-20, Cart→Checkout→QPay) OrderService.checkout() одоо
+// item-үүдийг ХЭЗЭЭ Ч HTTP body-оос биш, зөвхөн Redis-ийн cart-аас уншина
+// (`checkout-order.dto.ts`-ийн толгой тайлбарыг үз) — тул checkout-оос
+// ӨМНӨ ЗААВАЛ `POST /cart/items`-ээр сагсанд бичих ёстой.
+// `addOrUpdateItem` upsert-set семантиктай тул давхар дуудахад ч зүгээр
+// (шинэ quantity-гаар л дарж бичнэ).
+async function setCartItem(
+  app: INestApplication<App>,
+  token: string,
+  variantId: string,
+  quantity: number,
+): Promise<void> {
+  await request(app.getHttpServer())
+    .post('/cart/items')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ variantId, quantity })
+    .expect(201);
 }
 
 // docs/plan.md §8 Phase 3a: checkout, state machine, RLS/inventory-той
@@ -228,10 +250,11 @@ describe('Orders (e2e)', () => {
   });
 
   it('CUSTOMER 2 ширхэг захиалахад Order+OrderItem үүсэж, branchPrice override-оор unitPriceSnapshot тооцогдож, нөөц decrement хийгдэнэ', async () => {
+    await setCartItem(app, customerToken, variantId, 2);
     const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branchA.id, items: [{ variantId, quantity: 2 }] })
+      .send({ branchId: branchA.id })
       .expect(201);
 
     const body = res.body as OrderBody;
@@ -259,6 +282,42 @@ describe('Orders (e2e)', () => {
     expect(auditRow).not.toBeNull();
   });
 
+  it('CUSTOMER амжилттай checkout хийсний дараа payUrl/qrText/bankDeeplinks буцаана, Redis сагс цэвэрлэгдэнэ', async () => {
+    await setCartItem(app, customerToken, variantId, 1);
+    const res = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ branchId: branchA.id })
+      .expect(201);
+
+    const body = res.body as OrderBody;
+    expect(typeof body.payUrl).toBe('string');
+    expect(typeof body.qrText).toBe('string');
+    expect(Array.isArray(body.bankDeeplinks)).toBe(true);
+
+    // Checkout онCommit()-гэйт cart цэвэрлэлт — RLS transaction COMMIT
+    // хийгдсэний дараа л явагдах тул waitFor()-оор эрүүлжүүлнэ (энэ
+    // файлын толгой хэсгийн "benign race" тайлбарыг үз).
+    const cart = await waitFor(async () => {
+      const cartRes = await request(app.getHttpServer())
+        .get('/cart')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      const items = cartRes.body as unknown[];
+      return items.length === 0 ? items : null;
+    });
+    expect(cart).toEqual([]);
+  });
+
+  it('CUSTOMER сагс хоосон үед захиалахыг оролдвол 400 CART_EMPTY', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/orders')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ branchId: branchA.id })
+      .expect(400);
+    expect((res.body as ErrorBody).error.code).toBe('CART_EMPTY');
+  });
+
   it('CUSTOMER нөөцөөс их хэмжээгээр захиалахад 409 OUT_OF_STOCK, ямар ч бичилт (Order/InventoryItem) хийгдэхгүй (SAVEPOINT rollback)', async () => {
     const before = await superuserPrisma.inventoryItem.findUniqueOrThrow({
       where: { id: inventoryItemId },
@@ -267,10 +326,11 @@ describe('Orders (e2e)', () => {
       where: { customerId },
     });
 
+    await setCartItem(app, customerToken, variantId, 1000);
     const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branchA.id, items: [{ variantId, quantity: 1000 }] })
+      .send({ branchId: branchA.id })
       .expect(409);
     expect((res.body as ErrorBody).error.code).toBe('OUT_OF_STOCK');
 
@@ -286,10 +346,11 @@ describe('Orders (e2e)', () => {
   });
 
   it('InventoryItem мөр огт байхгүй branch-д захиалахад 409 OUT_OF_STOCK', async () => {
+    await setCartItem(app, customerToken, variantId, 1);
     const res = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branchB.id, items: [{ variantId, quantity: 1 }] })
+      .send({ branchId: branchB.id })
       .expect(409);
     expect((res.body as ErrorBody).error.code).toBe('OUT_OF_STOCK');
   });
@@ -298,10 +359,11 @@ describe('Orders (e2e)', () => {
     let orderId: string;
 
     beforeAll(async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const res = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
-        .send({ branchId: branchA.id, items: [{ variantId, quantity: 1 }] })
+        .send({ branchId: branchA.id })
         .expect(201);
       orderId = (res.body as OrderBody).id;
     });
@@ -407,10 +469,11 @@ describe('Orders (e2e)', () => {
       where: { id: inventoryItemId },
     });
 
+    await setCartItem(app, customerToken, variantId, 1);
     const checkoutRes = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branchA.id, items: [{ variantId, quantity: 1 }] })
+      .send({ branchId: branchA.id })
       .expect(201);
     const orderId = (checkoutRes.body as OrderBody).id;
 

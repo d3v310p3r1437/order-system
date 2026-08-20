@@ -14,5 +14,8 @@ import { CartService } from './cart.service.js';
   imports: [StorageModule],
   controllers: [CartController],
   providers: [CartService, RolesGuard],
+  // OrderModule (checkout) Redis сагснаас item уншихын тулд CartService-г
+  // шаарддаг тул export хийнэ.
+  exports: [CartService],
 })
 export class CartModule {}

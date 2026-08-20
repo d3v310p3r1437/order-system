@@ -46,6 +46,22 @@ async function mintAccessToken(userId: string): Promise<string> {
     .sign(getJwtSecret());
 }
 
+// (2026-08-20, Cart→Checkout→QPay) checkout item-үүдийг Redis сагснаас
+// уншина (checkout-order.dto.ts-ийн толгой тайлбарыг үз) — тул checkout-оос
+// ӨМНӨ ЗААВАЛ /cart/items-ээр бичих ёстой.
+async function setCartItem(
+  app: INestApplication<App>,
+  token: string,
+  variantId: string,
+  quantity: number,
+): Promise<void> {
+  await request(app.getHttpServer())
+    .post('/cart/items')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ variantId, quantity })
+    .expect(201);
+}
+
 // docs/plan.md §8 Phase 4, Хэсэг A: checkout-ийн deliveryMethod/Address/
 // Latitude/Longitude DTO validation БОЛОН GET /orders/:id/route
 // (MockRoutingProvider, ROUTING_PROVIDER=mock анхдагч) бодит Postgres/RLS-тэй.
@@ -59,6 +75,7 @@ describe('Delivery/Routing (e2e)', () => {
 
   let superAdminToken: string;
   let customerToken: string;
+  let otherCustomerToken: string;
 
   let variantId: string;
 
@@ -97,6 +114,7 @@ describe('Delivery/Routing (e2e)', () => {
 
     const superAdminId = randomUUID();
     const customerId = randomUUID();
+    const otherCustomerId = randomUUID();
 
     await superuserPrisma.user.create({
       data: {
@@ -116,9 +134,17 @@ describe('Delivery/Routing (e2e)', () => {
         authProvider: 'CUSTOMER_AUTH',
       },
     });
+    await superuserPrisma.user.create({
+      data: {
+        id: otherCustomerId,
+        phone: `+9766${Date.now().toString().slice(-8)}`,
+        authProvider: 'CUSTOMER_AUTH',
+      },
+    });
 
     superAdminToken = await mintAccessToken(superAdminId);
     customerToken = await mintAccessToken(customerId);
+    otherCustomerToken = await mintAccessToken(otherCustomerId);
 
     const unique = Date.now();
     const category = await superuserPrisma.category.create({
@@ -159,10 +185,11 @@ describe('Delivery/Routing (e2e)', () => {
 
   describe('POST /orders — deliveryMethod DTO validation', () => {
     it('deliveryMethod огт өгөөгүй бол PICKUP гэж тооцож 201 (одоо байгаа checkout дуудлагуудтай нийцтэй)', async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const res = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
-        .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
+        .send({ branchId: branch.id })
         .expect(201);
       const body = res.body as OrderBody;
       expect(body.deliveryMethod).toBe('PICKUP');
@@ -170,19 +197,20 @@ describe('Delivery/Routing (e2e)', () => {
     });
 
     it('deliveryMethod=DELIVERY ч deliveryAddress/Latitude/Longitude дутуу бол 400', async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const res = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           branchId: branch.id,
           deliveryMethod: 'DELIVERY',
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(400);
       expect((res.body as ErrorBody).error.code).toBe('VALIDATION_ERROR');
     });
 
     it('deliveryMethod=PICKUP атал deliveryAddress илгээвэл 400', async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -190,12 +218,12 @@ describe('Delivery/Routing (e2e)', () => {
           branchId: branch.id,
           deliveryMethod: 'PICKUP',
           deliveryAddress: 'Энэ талбар PICKUP-д байх ёсгүй',
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(400);
     });
 
     it('deliveryMethod=DELIVERY + хүчинтэй хаяг/координат бол 201, талбарууд хадгалагдана', async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const res = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -205,7 +233,6 @@ describe('Delivery/Routing (e2e)', () => {
           deliveryAddress: 'СБД, 1-р хороо, XX байр',
           deliveryLatitude: 47.925,
           deliveryLongitude: 106.93,
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(201);
       const body = res.body as OrderBody;
@@ -222,17 +249,18 @@ describe('Delivery/Routing (e2e)', () => {
     let deliveryOrderNoGeoBranchId: string;
 
     beforeAll(async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const pickupRes = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           branchId: branch.id,
           deliveryMethod: 'PICKUP',
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(201);
       pickupOrderId = (pickupRes.body as OrderBody).id;
 
+      await setCartItem(app, customerToken, variantId, 1);
       const deliveryRes = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -242,11 +270,11 @@ describe('Delivery/Routing (e2e)', () => {
           deliveryAddress: 'СБД, 2-р хороо',
           deliveryLatitude: 47.925,
           deliveryLongitude: 106.93,
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(201);
       deliveryOrderId = (deliveryRes.body as OrderBody).id;
 
+      await setCartItem(app, customerToken, variantId, 1);
       const noGeoRes = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -256,17 +284,25 @@ describe('Delivery/Routing (e2e)', () => {
           deliveryAddress: 'СБД, 3-р хороо',
           deliveryLatitude: 47.925,
           deliveryLongitude: 106.93,
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(201);
       deliveryOrderNoGeoBranchId = (noGeoRes.body as OrderBody).id;
     });
 
-    it('CUSTOMER дуудвал 403 (staff-only)', async () => {
-      await request(app.getHttpServer())
+    it('CUSTOMER ӨӨРИЙН DELIVERY захиалгынхаа чиглэлийг харж чадна (2026-08-20: Mobile OrderTrackingScreen-д зориулж нээв)', async () => {
+      const res = await request(app.getHttpServer())
         .get(`/orders/${deliveryOrderId}/route`)
         .set('Authorization', `Bearer ${customerToken}`)
-        .expect(403);
+        .expect(200);
+      const body = res.body as RouteBody;
+      expect(body.distanceMeters).toBeGreaterThan(0);
+    });
+
+    it('CUSTOMER өөр хэрэглэгчийн захиалгын чиглэлийг харж чадахгүй (RLS-ээр 404)', async () => {
+      await request(app.getHttpServer())
+        .get(`/orders/${deliveryOrderId}/route`)
+        .set('Authorization', `Bearer ${otherCustomerToken}`)
+        .expect(404);
     });
 
     it('staff PICKUP захиалгад дуудвал 400 NOT_DELIVERY_ORDER', async () => {
@@ -303,6 +339,7 @@ describe('Delivery/Routing (e2e)', () => {
     });
 
     it('давхардсан дуудлагад RoutingProvider ЗӨВХӨН 1 удаа дуудагдана (Order мөр дээрх кэш)', async () => {
+      await setCartItem(app, customerToken, variantId, 1);
       const freshRes = await request(app.getHttpServer())
         .post('/orders')
         .set('Authorization', `Bearer ${customerToken}`)
@@ -312,7 +349,6 @@ describe('Delivery/Routing (e2e)', () => {
           deliveryAddress: 'СБД, 4-р хороо (кэш тест)',
           deliveryLatitude: 47.93,
           deliveryLongitude: 106.94,
-          items: [{ variantId, quantity: 1 }],
         })
         .expect(201);
       const freshOrderId = (freshRes.body as OrderBody).id;

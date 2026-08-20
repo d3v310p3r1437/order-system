@@ -148,6 +148,17 @@ describe('CartService — Redis-д суурилсан сагс (§7 модуль
     expect(redis.del).toHaveBeenCalledWith('cart:user-1');
   });
 
+  it('listForCheckout() Redis-д хадгалагдсан variantId/quantity-г түүхий хэвээр (нэмэлт баганагүйгээр) буцаана — OrderService.checkout()-ийн цорын ганц эх сурвалж', async () => {
+    const { service, redis } = newService();
+    redis.__store.set(
+      'cart:user-1',
+      JSON.stringify([{ variantId: 'v-1', quantity: 3 }]),
+    );
+    await expect(service.listForCheckout(USER_ID)).resolves.toEqual([
+      { variantId: 'v-1', quantity: 3 },
+    ]);
+  });
+
   it('getCart() устсан/idle variant-ыг unavailable:true гэж тэмдэглэж, алдаа шидэхгүй', async () => {
     const { service, redis, prismaMocks } = newService();
     redis.__store.set(
