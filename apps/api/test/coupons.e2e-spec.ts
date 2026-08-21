@@ -407,6 +407,38 @@ describe('Coupons (e2e)', () => {
         .expect(404);
       expect((res.body as ErrorBody).error.code).toBe('COUPON_NOT_FOUND');
     });
+
+    // ⚠️ ЗААВАЛ: GET /coupons/validate нь МУТАЦИАГҮЙ (зөвхөн урьдчилан
+    // харах) байх ёстой — CouponController.validate() зөвхөн
+    // CouponService.validateForCheckout()-ыг л дуудна (read-only,
+    // Prisma findUnique/count), redeemAtomic()/app_redeem_coupon()-г
+    // (usageCount-ыг бодитоор нэмэгдүүлдэг цорын ганц зам) ХЭЗЭЭ Ч
+    // дуудахгүй — тэр зөвхөн OrderService.checkout()-ийн дотор л
+    // дуудагдана (order.service.ts:340). Ижил кодыг олон удаа (жиш:
+    // Flutter-ийн "Ашиглах" товч дараа дараагийн дэлгэц дээр дахин
+    // нээгдэх) дуудсан ч купон "дуусахгүй" гэдгийг баталгаажуулна.
+    it('5 удаа дараалан дуудсан ч Coupon.usageCount ОГТ өөрчлөгдөхгүй (мутациагүй)', async () => {
+      const created = await createCoupon(superAdminToken, { usageLimit: 3 });
+      const coupon = created.body as CouponBody;
+      expect(coupon.usageCount).toBe(0);
+
+      for (let i = 0; i < 5; i++) {
+        await request(app.getHttpServer())
+          .get('/coupons/validate')
+          .query({ code: coupon.code, orderAmount: '10000' })
+          .set('Authorization', `Bearer ${customerToken}`)
+          .expect(200);
+      }
+
+      const row = await superuserPrisma.coupon.findUniqueOrThrow({
+        where: { id: coupon.id },
+      });
+      expect(row.usageCount).toBe(0);
+      const redemptions = await superuserPrisma.couponRedemption.count({
+        where: { couponId: coupon.id },
+      });
+      expect(redemptions).toBe(0);
+    });
   });
 
   describe('Checkout-той нэгтгэл', () => {
