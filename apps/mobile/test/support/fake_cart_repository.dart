@@ -8,6 +8,7 @@ import 'package:mobile/features/cart/domain/cart_item.dart';
 class FakeCartRepository implements CartRepository {
   List<CartItem> items = [];
   Object? getCartError;
+  Object? addOrUpdateError;
   CartBranchValidation Function(String branchId)? validateBranchHandler;
 
   int getCartCallCount = 0;
@@ -30,6 +31,9 @@ class FakeCartRepository implements CartRepository {
     required int quantity,
   }) async {
     addOrUpdateCalls.add((variantId: variantId, quantity: quantity));
+    if (addOrUpdateError != null) {
+      throw addOrUpdateError!;
+    }
     final index = items.indexWhere((item) => item.variantId == variantId);
     if (index >= 0) {
       final existing = items[index];

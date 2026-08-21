@@ -344,6 +344,11 @@ class _AddToCartButtonState extends ConsumerState<_AddToCartButton> {
         ),
       ),
     );
+    // Алдаа гарвал хэрэглэгч энд үлдэж дахин оролдох боломжтой байх ёстой
+    // тул зөвхөн амжилттай үед л Каталог руу буцаана.
+    if (error == null) {
+      Navigator.of(context).pop();
+    }
   }
 }
 

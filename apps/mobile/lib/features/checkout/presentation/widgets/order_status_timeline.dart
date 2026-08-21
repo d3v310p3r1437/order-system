@@ -172,12 +172,12 @@ class _StepCircle extends StatelessWidget {
       foreground = theme.colorScheme.onPrimary;
       border = theme.colorScheme.primary;
     } else if (current) {
-      background = theme.colorScheme.primaryContainer;
-      foreground = theme.colorScheme.primary;
+      background = theme.colorScheme.primary;
+      foreground = theme.colorScheme.onPrimary;
       border = theme.colorScheme.primary;
     } else {
       background = theme.colorScheme.surface;
-      foreground = theme.colorScheme.outline;
+      foreground = theme.colorScheme.onSurfaceVariant;
       border = theme.colorScheme.outlineVariant;
     }
 
