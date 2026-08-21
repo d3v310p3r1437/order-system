@@ -19,8 +19,9 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
+    "posttest:e2e": "ts-node prisma/cleanup-debris.ts",
     "seed:mobile-demo": "ts-node prisma/seed-catalog-demo.ts",
-    "cleanup:branch-debris": "ts-node prisma/cleanup-branch-debris.ts"
+    "cleanup:branch-debris": "ts-node prisma/cleanup-debris.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
