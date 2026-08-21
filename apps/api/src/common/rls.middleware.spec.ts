@@ -331,6 +331,65 @@ describe('RlsMiddleware', () => {
   );
 
   it(
+    'flush (originalEnd) АЛЬ ХЭДИЙН болсны ДАРАА ирсэн res.end()-ийн ' +
+      'ДАРААГИЙН дуудлага бол — түрүүлж (өмнөх 2 тестийн адил "flush-ийн ' +
+      'ӨМНӨ" биш) ирсэн ч гэсэн — ямар ч аргументаар "ялахгүй", зүгээр л ' +
+      'чимээгүй хаягдана (originalEnd 2 дахь удаа ХЭЗЭЭ Ч дуудагдахгүй)',
+    async () => {
+      // ⚠️ ЭНЭ тест дээрх 2 тестээс ЯЛГААТАЙ: тэнд 2 дахь res.end() (алдааны)
+      // дуудлага flush-ийн ӨМНӨ (transactionSettled сеттл хийхээс өмнө)
+      // ирдэг байсан тул "сүүлчийн бичилт ялдаг" (pendingEndArgs дахин
+      // бичигдэж, ЗӨВХӨН НЭГ удаагийн originalEnd тэрхүү сүүлчийн утгаар
+      // дуудагддаг). Энд харин transactionSettled АЛЬ ХЭДИЙН сеттл хийж,
+      // originalEnd АЛЬ ХЭДИЙН нэг удаа бодитоор дуудагдсаны ДАРАА гуравдахь
+      // (хожимдсон) res.end() дуудагдвал — headers "бодитоор явсан эсэхээс"
+      // (энд originalEndSpy бол зүгээр jest.fn тул бодит stream төлөвгүй)
+      // БИШ, зөвхөн дотоод `flushed` flag-аас шалтгаалж ЭНЭ дуудлага
+      // ямар ч байдлаар "ялахгүй" — цэвэр идемпотент no-op.
+      const prisma = {
+        runRequestTransaction: jest
+          .fn()
+          .mockImplementation(
+            async (
+              _userId: string | null,
+              handler: (tx: unknown) => Promise<void>,
+            ) => handler({}),
+          ),
+      } as unknown as PrismaService;
+
+      const middleware = new RlsMiddleware(
+        prisma,
+        requestContext,
+        tokenVerifier,
+      );
+      const { res, originalEndSpy } = buildResponse();
+
+      const next: NextFunction = jest.fn(() => {
+        void Promise.resolve().then(() => {
+          res.end('{"first":true}');
+        });
+      });
+
+      void middleware.use(req, res, next);
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      // Энэ мөчид flush АЛЬ ХЭДИЙН нэг удаа бодитоор болсон.
+      expect(originalEndSpy).toHaveBeenCalledTimes(1);
+      expect(originalEndSpy).toHaveBeenCalledWith('{"first":true}');
+
+      // Хожимдсон, ямар нэг өөр код замын (жиш: давхардсан event handler)
+      // дуудсан 2 дахь res.end() — ЭНЭ нь "сүүлчийн бичилт" ч гэсэн
+      // ХЭЗЭЭ Ч бодитоор бичигдэхгүй.
+      res.end('{"late":true}');
+      await flushMicrotasks();
+
+      expect(originalEndSpy).toHaveBeenCalledTimes(1);
+      expect(originalEndSpy).not.toHaveBeenCalledWith('{"late":true}');
+    },
+  );
+
+  it(
     'client холболтоо цуцалж res.end() ХЭЗЭЭ Ч дуудагдаагүй ч ' +
       "('close' event) транзакц мөнхөд зогсохгүй",
     async () => {
