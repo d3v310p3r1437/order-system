@@ -41,6 +41,20 @@ class CheckoutRepository {
     }
   }
 
+  /// Захиалгын түүх дэлгэц (`GET /orders`) — RLS (`orders_select`) CUSTOMER-д
+  /// зөвхөн ӨӨРИЙН захиалгыг л буцаадаг тул filter параметргүй.
+  Future<List<OrderDetail>> listOrders() async {
+    try {
+      final response = await _apiClient.dio.get<List<dynamic>>('/orders');
+      return response.data!
+          .cast<Map<String, dynamic>>()
+          .map(OrderDetail.fromJson)
+          .toList();
+    } on DioException catch (error) {
+      _apiClient.throwAsApiException(error);
+    }
+  }
+
   Future<OrderDetail> getOrder(String orderId) async {
     try {
       final response = await _apiClient.dio.get<Map<String, dynamic>>(

@@ -17,7 +17,11 @@ import '../features/checkout/presentation/order_review_screen.dart';
 import '../features/checkout/presentation/order_success_screen.dart';
 import '../features/checkout/presentation/order_tracking_screen.dart';
 import '../features/checkout/presentation/payment_screen.dart';
+import '../features/orders/presentation/order_list_screen.dart';
+import '../features/profile/presentation/profile_screen.dart';
+import '../features/returns/presentation/return_request_screen.dart';
 import 'home_screen.dart';
+import 'main_shell.dart';
 import 'settings_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -52,14 +56,51 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/register',
         builder: (context, state) => const RegisterScreen(),
       ),
-      GoRoute(path: '/home', builder: (context, state) => const HomeScreen()),
+      // 4 үндсэн tab — `MainShell`-ийн доод navigation bar-аар сэлгэнэ
+      // (§8 навигацийн цэгцлэлт). Доторх "гүнзгий" route-ууд (жиш:
+      // /orders/:id, /products/:id) энэ shell-ийн ГАДНА, өмнөх шигээ
+      // бие даасан бүтэн дэлгэц (bottom nav-гүй) хэвээр байна.
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) =>
+            MainShell(navigationShell: navigationShell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/home',
+                builder: (context, state) => const HomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/catalog',
+                builder: (context, state) => const CatalogScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/orders',
+                builder: (context, state) => const OrderListScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/profile',
+                builder: (context, state) => const ProfileScreen(),
+              ),
+            ],
+          ),
+        ],
+      ),
       GoRoute(
         path: '/settings',
         builder: (context, state) => const SettingsScreen(),
-      ),
-      GoRoute(
-        path: '/catalog',
-        builder: (context, state) => const CatalogScreen(),
       ),
       GoRoute(
         path: '/products/:id',
@@ -95,6 +136,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/orders/:id/success',
         builder: (context, state) =>
             OrderSuccessScreen(orderId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/orders/:id/return',
+        builder: (context, state) =>
+            ReturnRequestScreen(orderId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/orders/:id',

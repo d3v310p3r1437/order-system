@@ -518,6 +518,31 @@ SET LOCAL app.accessible_branches = $3;
       DELIVERY хаягийн pin-ийг эхлүүлэх зорилготой. Тест:
       `test/support/fake_location_service.dart` (granted/denied/error 3
       тохиолдол), `address_screen_test.dart`-д 4 шинэ widget тест.
+- [x] **(2026-08-21 нэмэлт) Захиалгын түүх, Буцаалт хүсэх, Профайл +
+      Mobile навигацийг цэгцлэх** (§7 модуль #6, #9-ийн CUSTOMER тал):
+      `lib/app/router.dart` → `StatefulShellRoute.indexedStack` (4 tab:
+      Нүүр/Каталог/Захиалгууд/Профайл, `MainShell` + Material 3
+      `NavigationBar`), гүнзгий route (`/orders/:id`, `/orders/:id/return`
+      г.м.) shell-ийн гадна bottom nav-гүй хэвээр. `features/orders/`
+      (`OrderListScreen` — идэвхтэй/түүх бүлэг, skeleton/empty/error,
+      pull-to-refresh), `features/returns/` (`ReturnRequestScreen` —
+      item сонголт+шалтгаан→`POST /returns`, `OrderTrackingScreen`-д
+      "Буцаалт хүсэх" товч/статус badge), `features/profile/`
+      (`ProfileScreen`). Backend: `order.service.ts`-ийн `items` include-д
+      `variant.product` нэмж item-ийн нэр (`OrderListCard`/
+      `ReturnRequestScreen`-д ашиглагдана) буцаадаг болов (шинэ RLS/
+      SECURITY DEFINER функц шаардлагагүй, ADR 005). ⚠️ Энэ ажлын явцад
+      dev DB-ийн туршилтын харилцагч (`+97688112233`) 7758 захиалга
+      debris хуримтлуулж, `GET /orders`-ийн шинэ join-той хослоод
+      RlsMiddleware-ийн 5с transaction timeout давж backend процессыг
+      унагаадаг байсныг олж (`rls.middleware.ts`-ийн ӨМНӨ НЬ БАЙСАН
+      алдааны боловсруулалтын цоорхой), debris-ийг цэвэрлэж шийдвэрлэв —
+      дэлгэрэнгүй: CLAUDE.md-ийн "Одоогийн Phase" хэсэг. Тест: widget
+      (`main_shell_test.dart`, `order_list_screen_test.dart`,
+      `return_request_screen_test.dart`, `profile_screen_test.dart`) +
+      provider unit (`order_list_provider_test.dart`), Android emulator
+      дээр light+dark бүрэн урсгал (checkout→COMPLETED→буцаалт хүсэх→
+      badge) screenshot-оор баталгаажуулсан.
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 

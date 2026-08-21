@@ -2,10 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/providers.dart';
 import '../../../core/format/relative_time.dart';
 import '../../branch/presentation/branch_providers.dart';
+import '../../returns/presentation/return_providers.dart';
+import '../../returns/presentation/widgets/return_status_badge.dart';
 import '../data/order_events_client.dart';
 import '../domain/order_detail.dart';
 import 'checkout_providers.dart';
@@ -71,6 +74,20 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
         _lastUpdatedAt = DateTime.now();
       });
     });
+    // Staff энэ захиалгын буцаалтыг зөвшөөрөх/татгалзах бүрд (§7 модуль #9)
+    // badge-ийг бодит цагт шинэчлэх — `subscribeToOrder`-ийн ижил
+    // `order:${orderId}` room-д `return.status_changed` ч нийтлэгддэг
+    // (order-events.types.ts-ийн ORDER_ITEM_INCLUDE-ийн тайлбарыг үз).
+    socket.on('return.status_changed', (data) {
+      if (!mounted) {
+        return;
+      }
+      final payload = (data as Map).cast<String, dynamic>();
+      if (payload['orderId'] != widget.orderId) {
+        return;
+      }
+      ref.invalidate(orderReturnsProvider(widget.orderId));
+    });
   }
 
   @override
@@ -128,10 +145,63 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                 const SizedBox(height: 8),
                 _DeliveryRouteSection(order: order),
               ],
+              if (order.status == 'COMPLETED') ...[
+                const SizedBox(height: 16),
+                _ReturnSection(order: order),
+              ],
             ],
           );
         },
       ),
+    );
+  }
+}
+
+/// COMPLETED захиалганд харагдана (§7 модуль #9): аль хэдийн буцаалт
+/// хүссэн бол (хамгийн сүүлд хүссэн item-ийн) статус badge, эс бөгөөс
+/// completedAt-аас хойш 7 хоногийн дотор бол "Буцаалт хүсэх" товч.
+class _ReturnSection extends ConsumerWidget {
+  const _ReturnSection({required this.order});
+
+  final OrderDetail order;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final returnsAsync = ref.watch(orderReturnsProvider(order.id));
+
+    return returnsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, _) => const SizedBox.shrink(),
+      data: (returns) {
+        if (returns.isNotEmpty) {
+          final latest = returns.reduce(
+            (a, b) => a.requestedAt.compareTo(b.requestedAt) >= 0 ? a : b,
+          );
+          return Row(
+            key: const Key('return_status_row'),
+            children: [
+              Text(
+                'Буцаалтын хүсэлт:',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(width: 8),
+              ReturnStatusBadge(status: latest.status),
+            ],
+          );
+        }
+        if (!order.canRequestReturn) {
+          return const SizedBox.shrink();
+        }
+        return SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            key: const Key('request_return_button'),
+            onPressed: () => context.push('/orders/${order.id}/return'),
+            icon: const Icon(Icons.assignment_return_outlined),
+            label: const Text('Буцаалт хүсэх'),
+          ),
+        );
+      },
     );
   }
 }

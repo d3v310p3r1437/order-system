@@ -10,10 +10,21 @@ void main() {
     totalAmount: '15000.00',
     branchId: 'branch-1',
     items: const [
-      OrderItemLine(variantId: 'v1', quantity: 2, unitPriceSnapshot: '5000.00'),
-      OrderItemLine(variantId: 'v2', quantity: 1, unitPriceSnapshot: '5000.00'),
+      OrderItemLine(
+        id: 'item-1',
+        variantId: 'v1',
+        quantity: 2,
+        unitPriceSnapshot: '5000.00',
+      ),
+      OrderItemLine(
+        id: 'item-2',
+        variantId: 'v2',
+        quantity: 1,
+        unitPriceSnapshot: '5000.00',
+      ),
     ],
     deliveryMethod: 'PICKUP',
+    createdAt: DateTime(2026, 8, 20).toIso8601String(),
   );
 
   Widget wrap() {
