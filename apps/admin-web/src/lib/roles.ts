@@ -79,6 +79,17 @@ export const BRANCH_COMPARISON_ROLES = [
   "ALL_BRANCH_MANAGER",
 ];
 
+// ↔ apps/api/src/coupons/coupon.controller.ts (COUPON_CREATE_ROLES/
+// COUPON_UPDATE_ROLES) — §6.1 матриц "Урамшуулал/купон" мөр: OWNER-д
+// зөвхөн R/U байдаг тул CREATE-д ороогүй, BRANCH_ADMIN/BRANCH_MANAGER/
+// SALESPERSON аль алинд нь "—"/"R"-ээс цааш эрхгүй.
+export const COUPON_CREATE_ROLES = ["SUPER_ADMIN", "ALL_BRANCH_MANAGER"];
+export const COUPON_UPDATE_ROLES = [
+  "SUPER_ADMIN",
+  "OWNER",
+  "ALL_BRANCH_MANAGER",
+];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

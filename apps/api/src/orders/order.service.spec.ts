@@ -92,6 +92,13 @@ function buildCartServiceMock(
   };
 }
 
+function buildCouponServiceMock() {
+  return {
+    validateForCheckout: jest.fn(),
+    redeemAtomic: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function buildRequestContextMock(userId: string | null = null) {
   // Бодит RequestContextService.onCommit()-той адил: тест дотор ШУУД
   // (синхрон) дуудагдана — RlsMiddleware-ийн бодит "COMMIT-ийн дараа"
@@ -112,6 +119,7 @@ function newService(
   notificationTrigger = buildNotificationTriggerMock(),
   cartService = buildCartServiceMock(),
   requestContext = buildRequestContextMock(),
+  couponService = buildCouponServiceMock(),
 ) {
   return new OrderService(
     prisma as ConstructorParameters<typeof OrderService>[0],
@@ -121,6 +129,7 @@ function newService(
     notificationTrigger as ConstructorParameters<typeof OrderService>[4],
     cartService as ConstructorParameters<typeof OrderService>[5],
     requestContext as ConstructorParameters<typeof OrderService>[6],
+    couponService as ConstructorParameters<typeof OrderService>[7],
   );
 }
 

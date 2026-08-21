@@ -25,6 +25,8 @@ class CheckoutResult {
     this.payUrl,
     this.qrText,
     required this.bankDeeplinks,
+    this.couponCode,
+    this.discountAmount,
   });
 
   factory CheckoutResult.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,8 @@ class CheckoutResult {
           .cast<Map<String, dynamic>>()
           .map(BankDeeplink.fromJson)
           .toList(),
+      couponCode: json['couponCode'] as String?,
+      discountAmount: json['discountAmount'] as String?,
     );
   }
 
@@ -50,4 +54,9 @@ class CheckoutResult {
   final String? payUrl;
   final String? qrText;
   final List<BankDeeplink> bankDeeplinks;
+  // §7 модуль #10: хэрэглэсэн купон/хямдралын дүнгийн snapshot (Order
+  // мөрийн `couponCode`/`discountAmount`-той тохирно) — checkout-ийн
+  // хариунаас гадна `GET /orders/:id`-ээр дараа нь дахин уншиж болно.
+  final String? couponCode;
+  final String? discountAmount;
 }

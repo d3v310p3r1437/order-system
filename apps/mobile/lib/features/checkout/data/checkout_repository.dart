@@ -15,12 +15,18 @@ class CheckoutRepository {
   /// (харилцагч аль хэдийн `POST /cart/items`-ээр бичсэн) уншина
   /// (`checkout-order.dto.ts`-ийн толгой тайлбарыг үз). Амжилттай бол
   /// backend талд Redis сагс автоматаар цэвэрлэгдэнэ.
+  /// [couponCode] — сонголтоор, `CouponRepository.validate()`-ээр аль
+  /// хэдийн урьдчилан баталгаажсан код (§7 модуль #10). Хямдралын ДҮНГ ЭНД
+  /// ХЭЗЭЭ Ч дамжуулдаггүй — backend `OrderService.checkout()` өөрөө ганц
+  /// газар (`CouponService.validateForCheckout()`) дахин тооцоолж,
+  /// invoice/totalAmount-аа шийднэ (клиентийн дүнд итгэдэггүй).
   Future<CheckoutResult> checkout({
     required String branchId,
     required String deliveryMethod,
     String? deliveryAddress,
     double? deliveryLatitude,
     double? deliveryLongitude,
+    String? couponCode,
   }) async {
     try {
       final response = await _apiClient.dio.post<Map<String, dynamic>>(
@@ -33,6 +39,8 @@ class CheckoutRepository {
             'deliveryLatitude': deliveryLatitude,
             'deliveryLongitude': deliveryLongitude,
           },
+          if (couponCode != null && couponCode.isNotEmpty)
+            'couponCode': couponCode,
         },
       );
       return CheckoutResult.fromJson(response.data!);

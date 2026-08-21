@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CartModule } from '../cart/cart.module.js';
 import { RolesGuard } from '../common/roles.guard.js';
+import { CouponModule } from '../coupons/coupon.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PaymentModule } from '../payment/payment.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
@@ -23,6 +24,7 @@ import { OrderService } from './order.service.js';
     PaymentModule,
     RoutingModule,
     NotificationModule,
+    CouponModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, RolesGuard],

@@ -739,7 +739,23 @@ SET LOCAL app.accessible_branches = $3;
 ### Phase 6 — Урамшуулал, дэмжлэг, эрх зүйн бэлтгэл (2-3 долоо хоног) — **өргөтгөсөн, буцаалт Phase 3c-д шилжсэн**
 
 - [x] ~~Буцаалт/нөхөн төлбөр~~ — Phase 3c-д хийгдсэн (дээрх Phase 3c-г үз)
-- [ ] Купон/урамшуулал
+- [x] **(2026-08-21) Купон/урамшуулал** (§7 модуль #10, §6.1 матриц):
+      `Coupon`/`CouponRedemption` Prisma загвар + migration (`add_coupons`,
+      `enable_coupons_rls` — SUPER_ADMIN/ALL_BRANCH_MANAGER CRUD, OWNER
+      RU, BRANCH_ADMIN R, CUSTOMER R зөвхөн идэвхтэй+хугацаанд байгаа
+      мөр). `src/coupons` модуль: `GET/POST/PATCH/DELETE /coupons`,
+      `GET /coupons/validate?code=&orderAmount=` (мутациГҮЙ урьдчилан
+      шалгах). `POST /orders`-д `couponCode` нэмэгдэв — `OrderService.
+      checkout()` invoice үүсгэхээс өмнө `CouponService.
+      validateForCheckout()`-оор хямдрал тооцоод totalAmount-аас хасаж,
+      Order мөр үүссэний ДАРАА (withSavepoint дотор) шинэ
+      `app_redeem_coupon()` SECURITY DEFINER функцээр (ADR 005 WRITE
+      ангилал) atomic redeem хийнэ. Admin-web: `/coupons` дэлгэц
+      (Category/Product-той ижил "Устгах товчгүй, isActive toggle"
+      зарчим). Mobile: `features/coupons/` + OrderReviewScreen-д "Купон
+      код" оруулах талбар/Ашиглах товч, хямдралыг шугамдсан дэд
+      дүн+шинэ нийт дүнгээр харуулна. Дэлгэрэнгүй: CLAUDE.md-ийн
+      "Одоогийн Phase" хэсэг.
 - [ ] Сэтгэгдэл/үнэлгээ
 - [ ] Харилцагчийн үйлчилгээний тасалбар
 - [ ] Аудит лог **UI** (админ самбарт хэн юу хийснийг харах хуудас) — §7 модуль #15-ыг эндээс дуусгана
