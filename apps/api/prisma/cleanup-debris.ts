@@ -138,6 +138,19 @@ async function cleanupOrders(prisma: PrismaClient, debrisBranchIds: string[]) {
     `[Order] ${deletedReturns.count} холбогдох ReturnRequest мөрийг эхлээд устгав.`,
   );
 
+  // coupon_redemptions → orders мөн onDelete: Restrict (§7 модуль #10,
+  // enable_coupons_rls migration) тул ЯГ ижил шалтгаанаар эхэлж устгана —
+  // Coupon.usageCount-ыг ЗОРИУДАА буцааж бууруулахгүй (debris Order-ийн
+  // купон хэрэглэлт бодит "хэрэглэгдсэн" явдал байсан хэвээр, зөвхөн
+  // захиалгын мөр устсан — Category/Product-ийн debris-ийг isActive=false
+  // болгож "түүх"-ийг нь хадгалдагтай ижил зарчим).
+  const deletedRedemptions = await prisma.couponRedemption.deleteMany({
+    where: { order: { branchId: { in: debrisBranchIds } } },
+  });
+  console.log(
+    `[Order] ${deletedRedemptions.count} холбогдох CouponRedemption мөрийг эхлээд устгав.`,
+  );
+
   // OrderItem нь Order-оос onDelete: Cascade тул тусад нь устгах шаардлагагүй.
   const deletedOrders = await prisma.order.deleteMany({
     where: { branchId: { in: debrisBranchIds } },

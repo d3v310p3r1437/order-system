@@ -14,6 +14,7 @@ import {
   isCheckConstraintViolation,
   isForeignKeyViolation,
 } from '../common/prisma-errors.js';
+import { CouponService } from '../coupons/coupon.service.js';
 import { RequestContextService } from '../common/request-context.js';
 import { withSavepoint } from '../common/savepoint.util.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
@@ -112,6 +113,7 @@ export class OrderService {
     private readonly notificationTrigger: NotificationTrigger,
     private readonly cartService: CartService,
     private readonly requestContext: RequestContextService,
+    private readonly couponService: CouponService,
   ) {}
 
   findAll(filter: { status?: OrderStatus; branchId?: string }) {
@@ -254,10 +256,29 @@ export class OrderService {
     const resolvedItems = await Promise.all(
       cartItems.map((item) => this.resolveCheckoutItem(item, dto.branchId)),
     );
-    const totalAmount = resolvedItems.reduce(
+    const subtotal = resolvedItems.reduce(
       (sum, item) => sum.add(item.unitPrice.mul(item.quantity)),
       new Prisma.Decimal(0),
     );
+
+    // §7 модуль #10: купон эсэхийг invoice үүсгэхээс ӨМНӨ (READ-ONLY)
+    // шалгаж, эцсийн (хямдрал хассан) дүнгээр л PaymentProvider.createInvoice()-ыг
+    // дуудна — харилцагч ХЭЗЭЭ Ч хямдралгүй дүнгээр төлбөр төлдөггүй.
+    // Атомик "claim" (usageCount race-safe increment) нь доор withSavepoint
+    // дотор, Order мөр үүссэний ДАРАА л явагдана (app_redeem_coupon()-ий
+    // "p_order_id нь ЖИНХЭНЭ order байх ёстой" зөвшөөрлийн шалгалт).
+    let discountAmount = new Prisma.Decimal(0);
+    let couponId: string | null = null;
+    if (dto.couponCode) {
+      const validated = await this.couponService.validateForCheckout(
+        dto.couponCode,
+        subtotal,
+        customerId,
+      );
+      discountAmount = validated.discountAmount;
+      couponId = validated.coupon.id;
+    }
+    const totalAmount = subtotal.sub(discountAmount);
 
     // ⚠️ Чухал заль: `orders_update` RLS policy (20260816094000) нь
     // CUSTOMER-ийн UPDATE-г ЗӨВХӨН status='CREATED'→'CANCELLED' шилжилтэд
@@ -289,6 +310,7 @@ export class OrderService {
         totalAmount,
         invoice.providerInvoiceId,
         dto,
+        discountAmount,
       );
 
       await this.prisma.tx.orderItem.createMany({
@@ -306,6 +328,20 @@ export class OrderService {
           dto.branchId,
           item.variantId,
           -item.quantity,
+        );
+      }
+
+      // Order мөр аль хэдийн үүссэний ДАРАА л дуудна (app_redeem_coupon()-ий
+      // "p_order_id нь p_customer_id-ийн ЖИНХЭНЭ захиалга байх ёстой"
+      // зөвшөөрлийн шалгалтыг хангахын тулд) — 0 буцвал (race-д ялагдсан)
+      // ConflictException шидэж withSavepoint бүхэлдээ ROLLBACK хийнэ
+      // (Order/OrderItem/inventory decrement бүгд буцна).
+      if (couponId) {
+        await this.couponService.redeemAtomic(
+          couponId,
+          order.id,
+          customerId,
+          discountAmount,
         );
       }
 
@@ -453,7 +489,9 @@ export class OrderService {
       | 'deliveryAddress'
       | 'deliveryLatitude'
       | 'deliveryLongitude'
+      | 'couponCode'
     >,
+    discountAmount: Prisma.Decimal,
   ) {
     try {
       return await this.prisma.tx.order.create({
@@ -468,6 +506,8 @@ export class OrderService {
           deliveryAddress: delivery.deliveryAddress,
           deliveryLatitude: delivery.deliveryLatitude,
           deliveryLongitude: delivery.deliveryLongitude,
+          couponCode: delivery.couponCode,
+          discountAmount: discountAmount.gt(0) ? discountAmount : null,
         },
       });
     } catch (error) {

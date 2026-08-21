@@ -22,18 +22,18 @@ datasource db {
 // ─────────────────────────────────────────────────────────
 
 enum RoleName {
-  SUPER_ADMIN       // Супер админ — бүх салбар
-  OWNER             // Дэлгүүрийн эзэн — бүх салбар (харах голчлон)
+  SUPER_ADMIN // Супер админ — бүх салбар
+  OWNER // Дэлгүүрийн эзэн — бүх салбар (харах голчлон)
   ALL_BRANCH_MANAGER // Бүх-салбарын менежер — бүх салбарын үйл ажиллагаа
-  BRANCH_ADMIN      // Салбарын админ — 1 салбар
-  BRANCH_MANAGER    // Салбарын менежер — 1 салбар
-  SALESPERSON       // Худалдагч — 1 салбар
-  CUSTOMER          // Харилцагч
+  BRANCH_ADMIN // Салбарын админ — 1 салбар
+  BRANCH_MANAGER // Салбарын менежер — 1 салбар
+  SALESPERSON // Худалдагч — 1 салбар
+  CUSTOMER // Харилцагч
 }
 
 enum AuthProvider {
   CUSTOMER_AUTH // утасны дугаар, custom auth модуль (§6.2)
-  KEYCLOAK      // и-мэйл, ажилтан/эрх бүхий хэрэглэгч (§6.2)
+  KEYCLOAK // и-мэйл, ажилтан/эрх бүхий хэрэглэгч (§6.2)
 }
 
 model Branch {
@@ -56,26 +56,28 @@ model Branch {
 }
 
 model User {
-  id            String       @id @default(uuid())
+  id           String       @id @default(uuid())
   // Харилцагчид: утасны дугаар (E.164). Ажилтанд: null байж болно.
-  phone         String?      @unique
+  phone        String?      @unique
   // Ажилтан/эрх бүхий хэрэглэгчид: и-мэйл. Харилцагчид: null байж болно.
-  email         String?      @unique
-  passwordHash  String?      // зөвхөн CUSTOMER_AUTH-д ашиглана (Keycloak өөрөө удирддаг)
-  authProvider  AuthProvider
+  email        String?      @unique
+  passwordHash String? // зөвхөн CUSTOMER_AUTH-д ашиглана (Keycloak өөрөө удирддаг)
+  authProvider AuthProvider
   // Keycloak талын хэрэглэгчийн ID (KEYCLOAK үед)
-  keycloakSub   String?      @unique
-  fullName      String?
-  isActive      Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  keycloakSub  String?      @unique
+  fullName     String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  userBranchRoles UserBranchRole[]
-  auditLogs       AuditLog[]
-  orders          Order[]
-  systemSettingUpdates  SystemSetting[]
-  returnRequestsMade     ReturnRequest[] @relation("ReturnRequestedBy")
-  returnRequestsReviewed ReturnRequest[] @relation("ReturnReviewedBy")
+  userBranchRoles        UserBranchRole[]
+  auditLogs              AuditLog[]
+  orders                 Order[]
+  systemSettingUpdates   SystemSetting[]
+  returnRequestsMade     ReturnRequest[]    @relation("ReturnRequestedBy")
+  returnRequestsReviewed ReturnRequest[]    @relation("ReturnReviewedBy")
+  couponsCreated         Coupon[]           @relation("CouponCreatedBy")
+  couponRedemptions      CouponRedemption[] @relation("CouponRedeemedBy")
 
   @@map("users")
 }
@@ -84,14 +86,14 @@ model User {
 // (жиш: нэг худалдагч зөвхөн 1 мөртэй, супер админ мөрөөр нь бүх салбарт биш,
 //  харин "хамрах хүрээ" (scope) нь role-оороо тодорхойлогдоно — доорх тайлбар)
 model UserBranchRole {
-  id       String   @id @default(uuid())
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   // SUPER_ADMIN, OWNER, ALL_BRANCH_MANAGER мөрүүдэд branchId NULL байж болно
   // (§6.1: "бүх салбар" гэсэн scope-ыг илэрхийлнэ)
-  branchId String?
-  branch   Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  role     RoleName
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  role      RoleName
   createdAt DateTime @default(now())
 
   @@unique([userId, branchId, role])
@@ -103,12 +105,12 @@ model AuditLog {
   id         String   @id @default(uuid())
   userId     String?
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  action     String   // жиш: "order.status_changed", "product.updated"
+  action     String // жиш: "order.status_changed", "product.updated"
   tableName  String
   recordId   String
   beforeData Json?
   afterData  Json?
-  branchId   String?  // тухайн үйлдэл ямар салбартай холбоотойг хадгална
+  branchId   String? // тухайн үйлдэл ямар салбартай холбоотойг хадгална
   createdAt  DateTime @default(now())
 
   @@index([tableName, recordId])
@@ -124,17 +126,17 @@ model AuditLog {
 // Каталог бүхэлдээ нэвтэрсэн бүх хэрэглэгчид (харилцагч ч) харагдана
 // (§6.1 матриц "Бүтээгдэхүүн/каталог" мөр) — RLS: enable_catalog_inventory_rls.
 model Category {
-  id           String   @id @default(uuid())
+  id           String     @id @default(uuid())
   name         String
-  slug         String   @unique
+  slug         String     @unique
   description  String?
-  displayOrder Int      @default(0)
-  isActive     Boolean  @default(true)
+  displayOrder Int        @default(0)
+  isActive     Boolean    @default(true)
   parentId     String?
   parent       Category?  @relation("CategoryParent", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[] @relation("CategoryParent")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   products Product[]
 
@@ -209,20 +211,20 @@ model ProductVariant {
 // SELECT/CRUD зөвшөөрнө. Тоо хэмжээ өөрчлөх нь InventoryService-ийн
 // adjustQuantity (delta, atomic increment) аргаар л хийгдэнэ.
 model InventoryItem {
-  id                        String         @id @default(uuid())
-  variantId                 String
-  variant                   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  branchId                  String
-  branch                    Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  quantity                  Int            @default(0)
-  lowStockThreshold         Int            @default(5)
+  id                       String         @id @default(uuid())
+  variantId                String
+  variant                  ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  branchId                 String
+  branch                   Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  quantity                 Int            @default(0)
+  lowStockThreshold        Int            @default(5)
   // ProductVariant-ийн анхны утгыг дарж бичих (override) — NULL бол
   // variant-ийн утгыг ашиглана (inventory-effective.util.ts).
-  branchPrice               Decimal?       @db.Decimal(12, 2)
-  preOrderEnabledOverride   Boolean?
-  preOrderLeadDaysOverride  Int?
-  createdAt                 DateTime       @default(now())
-  updatedAt                 DateTime       @updatedAt
+  branchPrice              Decimal?       @db.Decimal(12, 2)
+  preOrderEnabledOverride  Boolean?
+  preOrderLeadDaysOverride Int?
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 
   @@unique([variantId, branchId])
   @@index([branchId])
@@ -254,23 +256,23 @@ enum OrderDeliveryMethod {
 }
 
 model Order {
-  id         String      @id @default(uuid())
-  customerId String
-  customer   User        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  branchId   String
-  branch     Branch      @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  status     OrderStatus @default(CREATED)
-  totalAmount Decimal    @db.Decimal(12, 2)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  id                   String              @id @default(uuid())
+  customerId           String
+  customer             User                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  branchId             String
+  branch               Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  status               OrderStatus         @default(CREATED)
+  totalAmount          Decimal             @db.Decimal(12, 2)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
   // Phase 4 §8 Хэсэг A: хүргэлтийн арга + (DELIVERY-д л заавал) хаяг/
   // координат. RLS policy өөрчлөлт шаардлагагүй (мөр-түвшний, багана
   // нэмэхэд нөлөөлдөггүй — Phase 2-ийн add_branch_geo_and_catalog_fields-тэй
   // адил урьдал жишээ).
-  deliveryMethod    OrderDeliveryMethod @default(PICKUP)
-  deliveryAddress   String?
-  deliveryLatitude  Float?
-  deliveryLongitude Float?
+  deliveryMethod       OrderDeliveryMethod @default(PICKUP)
+  deliveryAddress      String?
+  deliveryLatitude     Float?
+  deliveryLongitude    Float?
   // Кэш (§8 Phase 4 засвар): GET /orders/:id/route эхний удаа дуудагдахад
   // RoutingProvider.getRoute()-ийн үр дүнг ЭНД бичиж, дараагийн дуудлагад
   // (ялангуяа OsrmRoutingProvider-ийн public demo server рүү) ДАХИН
@@ -287,21 +289,29 @@ model Order {
   // байхгүй тул jsonb-аар хадгална.
   routeGeometry        Json?
   // Phase 3c-ийн 7-хоногийн буцаалтын цонжинд хэрэгтэй тул одоо л оруулав.
-  completedAt DateTime?
-  cancelledAt DateTime?
+  completedAt          DateTime?
+  cancelledAt          DateTime?
   // Phase 3b: PaymentProvider.createInvoice()-ийн буцаасан ID (mock эсвэл
   // QPay) — src/payment/payment-provider.interface.ts. Webhook-ийн
   // "verify don't trust" баталгаажуулалтад (app_mark_order_paid SECURITY
   // DEFINER функц, docs/adr/006) ЯГ ЭНЭ утгыг тулгаж шалгадаг тул нэрийг
   // provider-нейтраль болгож сольсон (өмнө нь qpayPaymentId байсан).
-  providerInvoiceId String? @unique
+  providerInvoiceId    String?             @unique
   // Webhook (POST /payment/webhook/:orderId) идэвхтэй provider-ийн
   // checkPayment()-ээр PAID гэдгийг сервер талд дахин баталгаажуулсны
   // дараа л тавигдана (docs/adr/006) — webhook payload-д ирсэн статусыг
   // шууд итгэж бичихгүй.
-  paidAt DateTime?
+  paidAt               DateTime?
+  // §7 модуль #10 (Урамшуулал/купон): checkout-ийн үед хэрэглэсэн купоны
+  // код + тооцоолсон хямдралын дүнгийн snapshot (ирээдүйд купон устсан/
+  // өөрчлөгдсөн ч захиалгын түүхэн дүн хэвээр үлдэх ёстой —
+  // ReturnRequest.refundFeePercent/refundAmount-тэй ижил "snapshot"
+  // зарчим). totalAmount нь ЭНЭ хямдралыг АЛЬ ХЭДИЙН хассан эцсийн дүн.
+  couponCode           String?
+  discountAmount       Decimal?            @db.Decimal(12, 2)
 
-  items OrderItem[]
+  items            OrderItem[]
+  couponRedemption CouponRedemption?
 
   @@index([customerId])
   @@index([branchId])
@@ -310,18 +320,18 @@ model Order {
 }
 
 model OrderItem {
-  id        String         @id @default(uuid())
-  orderId   String
-  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variantId String
+  id                String         @id @default(uuid())
+  orderId           String
+  order             Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId         String
   // Захиалагдсан вариант устсан ч түүхэн захиалгын мөр (unitPriceSnapshot
   // хамт) хадгалагдаж үлдэх ёстой тул Cascade биш Restrict.
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  quantity  Int
+  variant           ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Int
   // resolveEffectivePrice()-ийн захиалга үүсэх мөчийн утга — түүхэн үнэ,
   // ProductVariant/InventoryItem-ийн дараагийн үнийн өөрчлөлтөөс хамаарахгүй.
-  unitPriceSnapshot Decimal @db.Decimal(12, 2)
-  createdAt DateTime       @default(now())
+  unitPriceSnapshot Decimal        @db.Decimal(12, 2)
+  createdAt         DateTime       @default(now())
 
   returnRequests ReturnRequest[]
 
@@ -362,7 +372,7 @@ enum ReturnStatus {
 // "идэвхтэй" гэдэг нь REQUESTED/APPROVED status-той гэсэн үг — DB CHECK-ээр
 // илэрхийлэхэд төвөгтэй динамик дүрэм тул).
 model ReturnRequest {
-  id          String @id @default(uuid())
+  id          String    @id @default(uuid())
   orderItemId String
   // Захиалгын мөр (unitPriceSnapshot хэрэгтэй) устсан ч буцаалтын түүх
   // хадгалагдах ёстой тул order_items-тэй адил Restrict (Cascade биш).
@@ -399,3 +409,80 @@ model ReturnRequest {
   @@map("return_requests")
 }
 
+// ─────────────────────────────────────────────────────────
+// Урамшуулал/купон (docs/plan.md §7 модуль #10, §6.1 матриц)
+// ─────────────────────────────────────────────────────────
+
+enum CouponDiscountType {
+  PERCENTAGE // discountValue = 0-100 хооронд, хувиар хямдруулна
+  FIXED_AMOUNT // discountValue = тогтмол мөнгөн дүн
+}
+
+// §6.1 матриц: SUPER_ADMIN/ALL_BRANCH_MANAGER CRUD, OWNER RU (Create/Delete
+// эрхгүй), BRANCH_ADMIN R (бүх), BRANCH_MANAGER/SALESPERSON — (эрхгүй),
+// CUSTOMER R (зөвхөн идэвхтэй+хугацаанд байгаа мөр, coupons_select RLS
+// policy-оор шүүгдэнэ — enable_coupons_rls migration-ийг үз).
+model Coupon {
+  id          String  @id @default(uuid())
+  code        String  @unique
+  description String?
+
+  discountType      CouponDiscountType
+  // PERCENTAGE: 0-100. FIXED_AMOUNT: мөнгөн дүн (₮).
+  discountValue     Decimal            @db.Decimal(12, 2)
+  // PERCENTAGE-ийн хямдралыг дээд тал нь хязгаарлах (optional) — жиш:
+  // "20% хямдрал, гэхдээ 10,000₮-өөс ихгүй".
+  maxDiscountAmount Decimal?           @db.Decimal(12, 2)
+  minOrderAmount    Decimal?           @db.Decimal(12, 2)
+
+  // null = хязгааргүй нийт ашиглалт.
+  usageLimit            Int?
+  usageCount            Int  @default(0)
+  // ⚠️ MVP-д зөвхөн утга=1-ийг DB unique constraint-аар (@@unique([couponId,
+  // customerId]) CouponRedemption дээр) хатуу хамгаалдаг тул >1 утга
+  // тохируулбал app_redeem_coupon() SQL функц дотор тоолж шалгах ЗӨВХӨН
+  // логик хамгаалалт л ажиллана (DB constraint биш) — хэрэв ирээдүйд
+  // "1 хэрэглэгч N удаа" бодит хэрэгцээ гарвал unique constraint-ыг
+  // хасаж, зөвхөн функц доторх COUNT() шалгалтад бүрэн шилжих хэрэгтэй.
+  usageLimitPerCustomer Int  @default(1)
+
+  validFrom DateTime
+  validTo   DateTime
+  isActive  Boolean  @default(true)
+
+  createdByUserId String?
+  createdByUser   User?    @relation("CouponCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  redemptions CouponRedemption[]
+
+  @@map("coupons")
+}
+
+// Купон ашигласан түүх — app_redeem_coupon() SECURITY DEFINER функцээр
+// л бичигдэнэ (ADR 005 WRITE ангилал, order.service.ts-ийн checkout()-ийн
+// доторх нэг atomic алхам). @@unique([couponId, customerId]) нь DB
+// түвшинд "1 хэрэглэгч 1 удаа" (usageLimitPerCustomer=1 үеийн) хамгаалалт.
+model CouponRedemption {
+  id       String @id @default(uuid())
+  couponId String
+  coupon   Coupon @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  // Нэг захиалгад зөвхөн 1 купон (checkout couponCode нэг л талбар).
+  orderId  String @unique
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  customerId String
+  customer   User   @relation("CouponRedeemedBy", fields: [customerId], references: [id], onDelete: Restrict)
+
+  // Redeem хийх мөчийн хямдралын дүнгийн snapshot (Order.discountAmount-тай
+  // адилхан утга, хоёр талдаа шалтгаан ялгаатай — энэ бол "яг ямар
+  // ашиглалтад ямар дүн ногдсон бэ" гэсэн аудит бичлэг).
+  discountAmount Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now())
+
+  @@unique([couponId, customerId])
+  @@index([customerId])
+  @@map("coupon_redemptions")
+}

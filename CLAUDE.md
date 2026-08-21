@@ -181,7 +181,9 @@ Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Revi
 "(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз). **Захиалгын түүх,
 Буцаалт хүсэх, Профайл + Mobile 4-tab навигаци (§7 модуль #6, #9-ийн
 CUSTOMER тал) дууссан** (доор "(2026-08-21) Захиалгын түүх..." бичлэгийг
-үз). Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
+үз). **Урамшуулал/купон (§7 модуль #10, Phase 6) дууссан** (backend +
+admin-web + Mobile — доор "(2026-08-21) Урамшуулал/купон" бичлэгийг үз).
+Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
 Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
 хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
 
@@ -1526,6 +1528,115 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     зөвхөн `delivery-routing.e2e-spec.ts`-д, амьд OSRM public demo
     сервертэй харьцуулалт, ЭНЭ ажилтай ХОЛБООГҮЙ, `docs/adr/007`-ийн
     мэдэгдэж буй хязгаарлалт).
+- **(2026-08-21) Урамшуулал/купон (§7 модуль #10) дууссан** (backend +
+  admin-web + Mobile, §6.1 матрицын "Урамшуулал/купон" мөрийг код болгов:
+  SUPER_ADMIN CRUD, OWNER RU, ALL_BRANCH_MANAGER CRUD (бүх), BRANCH_ADMIN
+  R, BRANCH_MANAGER/SALESPERSON "—", CUSTOMER R зөвхөн идэвхтэй+хугацаанд
+  байгаа мөр):
+  - **Backend:** `Coupon`/`CouponRedemption` Prisma загвар + 2 migration
+    (`add_coupons` — схем, `enable_coupons_rls` — RLS policy + шинэ
+    `app_redeem_coupon()` SECURITY DEFINER функц). `src/coupons`
+    (`CouponService`/`Controller`) — `GET/POST/PATCH/DELETE /coupons`,
+    `GET /coupons/validate?code=&orderAmount=` (мутациГҮЙ, checkout-ийн
+    ӨМНӨ харилцагч урьдчилан шалгах зорилготой, `CouponService.
+    validateForCheckout()`-г checkout-той хамт дахин ашигладаг — ADR
+    005-ийн "ганц газар л шийднэ" зарчим). `Order.couponCode`/
+    `discountAmount` талбар (RETURN_FEE_PERCENT/refundAmount-тай ижил
+    "snapshot" зарчим — купон дараа нь өөрчлөгдсөн ч захиалгын түүхэн
+    дүн хэвээр үлдэнэ).
+    ⚠️ **Чухал загварын шийдвэр — coupons_select RLS-д CUSTOMER-ийг
+    BRANCH_MANAGER/SALESPERSON-ээс ("—") ялгах арга:** CUSTOMER
+    хэрэглэгчид ХЭЗЭЭ Ч `user_branch_roles` мөр байдаггүй (branch/
+    order.service.ts-ийн `app_public_branches()`-ийн адилхан нээлт) тул
+    "user_branch_roles-д ЯМАР Ч мөргүй = CUSTOMER" гэдгийг шошго болгон
+    ашиглав: `NOT EXISTS (SELECT 1 FROM user_branch_roles WHERE
+    "userId" = app_current_user_id())` нөхцөлтэй мөрд л (`isActive=true
+    AND now() BETWEEN validFrom AND validTo`) SELECT зөвшөөрнө. Мөн
+    OWNER-д Create/Delete байхгүй (SUPER_ADMIN/ALL_BRANCH_MANAGER-аас
+    ЯЛГААТАЙ) тул `app_has_global_scope()`-г (SUPER_ADMIN/OWNER/
+    ALL_BRANCH_MANAGER-ыг адилхан хамардаг) coupons_insert/delete-д
+    ашиглаж болохгүй — эдгээрт inline `role IN ('SUPER_ADMIN',
+    'ALL_BRANCH_MANAGER')` (`branchId IS NULL`) шалгалт ашигласан,
+    харин coupons_update-д (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER гурав
+    аль аль нь U эрхтэй тул) `app_has_global_scope()` ЯГ таарсан.
+    ⚠️ **Race-ийн хамгаалалт (usageCount хэзээ ч usageLimit-ээс
+    хэтрэхгүй байх, даалгаврын шууд заавар) — returns PR #7-ийн "claim"
+    (`updateMany` + status шалгалт) загвараас ЗОРИУДАА ӨӨР арга сонгосон:**
+    `app_redeem_coupon()` дотор `SELECT ... FOR UPDATE`-ээр coupons мөрийг
+    шууд түгжинэ (зэрэг ирсэн 2 дахь дуудлага энэ мөр чөлөөлөгдтөл —
+    RlsMiddleware-ийн бүхэл хүсэлтийн транзакц COMMIT/ROLLBACK хийгдэх
+    хүртэл, ADR 001 — блоклогдоно), дараа нь committed `usageCount`/
+    `usageLimitPerCustomer`-ийг харж шийднэ. Учир нь энд (буцаалтаас
+    ЯЛГААТАЙ) хоёр тусдаа нөхцөл (нийт usageLimit БОЛОН тухайн
+    хэрэглэгчийн `usageLimitPerCustomer`) НЭГ л түгжигдсэн цонхон дотор
+    удаа дараалан шалгагдах ёстой байсан тул "УPDATE...WHERE" нэг
+    илэрхийлэл хангалтгүй байв. `CouponRedemption`-ий
+    `@@unique([couponId, customerId])` нь `usageLimitPerCustomer=1`
+    (MVP-ийн цорын ганц дэмжигдсэн утга) үед DB түвшний нэмэлт
+    хамгаалалт өгдөг ч, `usageLimitPerCustomer > 1` тохиолдолд зөвхөн
+    функц доторх `COUNT()` шалгалт л хамгаална (schema.prisma-д
+    тэмдэглэсэн мэдэгдэж буй хязгаарлалт, backlog).
+    ⚠️ **Checkout-ийн дараалал (`OrderService.checkout()`):** invoice
+    (`PaymentProvider.createInvoice()`) үүсгэхээс ӨМНӨ (READ-ONLY)
+    `CouponService.validateForCheckout()`-оор subtotal-аас хямдрал
+    тооцож эцсийн (хямдарсан) дүнгээр л төлбөрийн invoice үүсгэдэг —
+    харилцагч ХЭЗЭЭ Ч хямдралгүй дүнгээр төлдөггүй. Бодит "redeem"
+    (`app_redeem_coupon()` дуудах) нь withSavepoint дотор, Order мөр
+    аль хэдийн үүссэний ДАРАА л явагдана (функцийн "p_order_id нь
+    p_customer_id-ийн ЖИНХЭНЭ захиалга байх ёстой" зөвшөөрлийн шалгалт
+    үүнийг шаарддаг) — race-д ялагдвал (0 буцвал) ConflictException
+    шидэж withSavepoint-ийг бүхэлд нь ROLLBACK хийлгэнэ (Order/
+    OrderItem/inventory decrement бүгд буцна), гэхдээ (checkout-ийн
+    orphaned-invoice эрсдэлтэй ЯГ адил, ADR 006-д аль хэдийн тэмдэглэсэн)
+    invoice талд "эзэнгүй" үлдэж болзошгүй — MVP-д зөвшөөрөгдөх эрсдэл.
+    ⚠️ **`prisma/cleanup-debris.ts`-д олдож, ЗАСАГДСАН шинэ FK асуудал:**
+    `CouponRedemption.orderId`-ийн `onDelete: Restrict` тул debris Order
+    устгах script (`cleanupOrders()`) coupon redemption-той debris Order
+    дээр `Foreign key constraint violated: coupon_redemptions_orderId_fkey`
+    алдаагаар унасныг e2e тестийн дараа script-ийг бодитоор ажиллуулж
+    олов — `ReturnRequest`-ийг эхэлж устгадагтай ЯГ ижил зарчмаар
+    `CouponRedemption`-ийг Order устгахаас ӨМНӨ эхэлж устгадаг болгож
+    засав (`Coupon.usageCount`-ыг ЗОРИУДАА буцааж бууруулаагүй —
+    debris Order-ийн купон хэрэглэлт бодитоор "хэрэглэгдсэн" явдал
+    хэвээр байсан гэж үзсэн).
+    Тест: unit (`coupon-discount.util.spec.ts` — PERCENTAGE/FIXED_AMOUNT/
+    maxDiscountAmount/сөрөг дүн хамгаалалт, `coupon.service.spec.ts` —
+    validateForCheckout-ийн бүх татгалзах зам, create/update validation)
+    + e2e (`test/coupons.e2e-spec.ts`, 18 тест: RBAC 7 дүр тус бүрээр,
+    coupons_insert/update RLS policy-г шууд SQL-ээр (INSERT алдаа
+    шиддэг, UPDATE 0 мөр өөрчилдөг — CLAUDE.md-ийн "Тестийн стандарт"
+    зарчмын дагуу), `GET /coupons/validate`-ийн бүх алдааны зам, checkout
+    нэгтгэл, **ЗААВАЛ шаардлагатай race-тест: Promise.all-аар ЗЭРЭГ 2 ӨӨР
+    хэрэглэгч сүүлчийн 1 ашиглалттай купон дээр checkout хийхэд ЗӨВХӨН
+    НЭГ нь 201, нөгөө нь 409, `usageCount` хэзээ ч 1-ээс хэтрээгүй,
+    `coupon_redemptions` яг 1 мөртэй** гэдгийг баталгаажуулсан).
+  - **Admin-web:** `/coupons` дэлгэц (`CouponsPage.tsx`) — жагсаалт
+    (код, хямдрал, ашиглалт X/Y, хугацаа, "Идэвхгүй"/"Хугацаа дууссан"
+    badge), `CouponDialog.tsx` (Нэмэх/Засах, PERCENTAGE/FIXED_AMOUNT
+    сонголт, `datetime-local` input-ууд) — Category/Product-той ЯГ ижил
+    "Устгах товч ЗОРИУДАА байхгүй, зөвхөн isActive toggle" зарчим
+    (backend-д `DELETE /coupons/:id` route байгаа ч admin-web UI-д
+    дуудагдахгүй). `roles.ts`-д `COUPON_CREATE_ROLES`/`COUPON_UPDATE_ROLES`
+    (backend-ийн `@Roles()`-той ЯГ тохирсон). Vitest+RTL smoke тест
+    (`CouponsPage.test.tsx` — role-оор "Купон нэмэх" товч харуулах/нуух).
+  - **Mobile:** `features/coupons/` (`CouponRepository`/`CouponValidation`,
+    checkout_repository.dart/checkout_result.dart-тай ижил DI+JSON загвар)
+    — `OrderReviewScreen`-д "Купон код" талбар + "Ашиглах"/"Хасах" товч:
+    амжилттай бол шугамдсан дэд дүн + "Хямдрал (КОД)" мөр + шинэ (бодит,
+    `CouponValidation.discountAmount`-аас тооцсон, зөвхөн ХАРУУЛАХ
+    зорилготой ойролцоо) нийт дүн харагдана — эцсийн жинхэнэ dutn/
+    discount ГАНЦ газар (backend) л шийддэг зарчим (ADR 005) энд ч
+    хэвээр: checkout амжилттай болмогц `CheckoutResult.discountAmount`
+    (бодит) нь UI-ийн урьдчилсан тооцоог орлоно. Алдаатай код бол
+    backend-ийн монгол алдааны мессежийг (`error.message`, тусдаа map
+    шаардлагагүй) талбарын дор шууд харуулна. Widget тест: 2 шинэ (хүчинтэй
+    код амжилттай, алдаатай код) `order_review_screen_test.dart`-д, `test/
+    support/fake_coupon_repository.dart` (Dio-г бүрэн тойрсон fake).
+  `flutter analyze` 0 алдаа, `flutter test` 93/93. Backend: `pnpm --filter
+  api test` 41/41 suite (261/261), `test:e2e` 15/16 suite (154/155 — ганц
+  алдаа зөвхөн `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo
+  харьцуулалт, дээрх адил ХОЛБООГҮЙ). admin-web: `vitest` 13/13 suite
+  (29/29), `tsc -b`/`oxlint`/`vite build` цэвэр.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

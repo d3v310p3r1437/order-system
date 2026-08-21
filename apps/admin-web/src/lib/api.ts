@@ -312,6 +312,46 @@ export interface ReportDateRangeFilter {
   branchId?: string;
 }
 
+export type CouponDiscountType = "PERCENTAGE" | "FIXED_AMOUNT";
+
+// discountValue/maxDiscountAmount/minOrderAmount — Prisma Decimal тул
+// HTTP JSON-д string болж сериалайзлагддаг (ProductVariant.basePrice-тэй
+// адил зарчим).
+export interface Coupon {
+  id: string;
+  code: string;
+  description: string | null;
+  discountType: CouponDiscountType;
+  discountValue: string;
+  maxDiscountAmount: string | null;
+  minOrderAmount: string | null;
+  usageLimit: number | null;
+  usageCount: number;
+  usageLimitPerCustomer: number;
+  validFrom: string;
+  validTo: string;
+  isActive: boolean;
+  createdByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CouponInput {
+  code: string;
+  description?: string;
+  discountType: CouponDiscountType;
+  discountValue: number;
+  maxDiscountAmount?: number;
+  minOrderAmount?: number;
+  usageLimit?: number;
+  usageLimitPerCustomer?: number;
+  validFrom: string;
+  validTo: string;
+  isActive?: boolean;
+}
+
+export type CouponUpdateInput = Partial<CouponInput>;
+
 interface ApiErrorBody {
   error: { code: string; message: string; details: unknown };
 }
@@ -769,4 +809,36 @@ export async function exportSalesSummaryCsv(
     await parseErrorOrThrow(res);
   }
   return res.blob();
+}
+
+// apps/api/src/coupons/coupon.controller.ts-ийн GET /coupons — RLS
+// (coupons_select) хэн ямар мөрийг харахыг шийднэ (§6.1 матриц), admin-web
+// талд дахин шүүлт хийхгүй.
+export function getCoupons(accessToken: string): Promise<Coupon[]> {
+  return apiFetch<Coupon[]>("/coupons", accessToken);
+}
+
+export function getCoupon(accessToken: string, id: string): Promise<Coupon> {
+  return apiFetch<Coupon>(`/coupons/${id}`, accessToken);
+}
+
+export function createCoupon(
+  accessToken: string,
+  dto: CouponInput,
+): Promise<Coupon> {
+  return apiFetch<Coupon>("/coupons", accessToken, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function updateCoupon(
+  accessToken: string,
+  id: string,
+  dto: CouponUpdateInput,
+): Promise<Coupon> {
+  return apiFetch<Coupon>(`/coupons/${id}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
 }

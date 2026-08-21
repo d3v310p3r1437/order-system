@@ -14,7 +14,8 @@ class FakeCheckoutRepository implements CheckoutRepository {
   List<OrderDetail> orders = const [];
   ApiException? listOrdersError;
 
-  final List<({String branchId, String deliveryMethod})> checkoutCalls = [];
+  final List<({String branchId, String deliveryMethod, String? couponCode})>
+  checkoutCalls = [];
   final List<String> simulatePaidCalls = [];
   int listOrdersCallCount = 0;
 
@@ -34,8 +35,13 @@ class FakeCheckoutRepository implements CheckoutRepository {
     String? deliveryAddress,
     double? deliveryLatitude,
     double? deliveryLongitude,
+    String? couponCode,
   }) async {
-    checkoutCalls.add((branchId: branchId, deliveryMethod: deliveryMethod));
+    checkoutCalls.add((
+      branchId: branchId,
+      deliveryMethod: deliveryMethod,
+      couponCode: couponCode,
+    ));
     if (checkoutError != null) {
       throw checkoutError!;
     }

@@ -9,6 +9,7 @@ import { BranchModule } from './branch/branch.module.js';
 import { CartModule } from './cart/cart.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import { AuditInterceptor } from './common/audit.interceptor.js';
+import { CouponModule } from './coupons/coupon.module.js';
 import { RlsMiddleware } from './common/rls.middleware.js';
 import { DebugController } from './debug/debug.controller.js';
 import { HealthController } from './health/health.controller.js';
@@ -30,6 +31,7 @@ import { SettingsModule } from './settings/settings.module.js';
     BranchModule,
     CartModule,
     CatalogModule,
+    CouponModule,
     InventoryModule,
     OrderModule,
     SettingsModule,

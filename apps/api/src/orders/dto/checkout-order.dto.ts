@@ -1,7 +1,9 @@
 import {
   IsIn,
   IsOptional,
+  IsString,
   IsUUID,
+  MaxLength,
   registerDecorator,
   type ValidationArguments,
   type ValidationOptions,
@@ -97,4 +99,14 @@ export class CheckoutOrderDto {
 
   @IsDeliveryField(isValidLongitude)
   deliveryLongitude?: number;
+
+  // §7 модуль #10 (Урамшуулал/купон): заавал биш, өгөгдвөл
+  // OrderService.checkout() CouponService.validateForCheckout()-оор
+  // subtotal-аас хямдрал тооцож, totalAmount-аас хасна. Хэрэглэгчийн
+  // "хямдралын дүн" ХЭЗЭЭ Ч клиентээс ирдэггүй — зөвхөн код л ирнэ, дүн
+  // сервэр талд ГАНЦ газар (CouponService) тооцоологдоно.
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  couponCode?: string;
 }
