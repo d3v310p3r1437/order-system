@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/providers.dart';
 import '../data/checkout_repository.dart';
 import '../data/geocoding_repository.dart';
+import '../data/location_service.dart';
 import '../domain/order_detail.dart';
 import '../domain/order_route.dart';
 
@@ -12,6 +13,10 @@ final checkoutRepositoryProvider = Provider<CheckoutRepository>((ref) {
 
 final geocodingRepositoryProvider = Provider<GeocodingRepository>((ref) {
   return GeocodingRepository();
+});
+
+final locationServiceProvider = Provider<LocationService>((ref) {
+  return LocationService();
 });
 
 // ⚠️ `OrderEventsClient`-д (WebSocket) ЗОРИУДАА provider бичээгүй — энэ

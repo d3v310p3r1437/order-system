@@ -500,6 +500,24 @@ SET LOCAL app.accessible_branches = $3;
       параметрээр өргөтгөж, шинэ `app_cache_order_route()` WRITE SECURITY
       DEFINER функцээр (ADR 005) шийдвэрлэв. Дэлгэрэнгүй: CLAUDE.md-ийн
       "Одоогийн Phase" хэсэг, `docs/adr/009-flutter-map-nominatim.md`.
+- [x] **(2026-08-21 нэмэлт) AddressScreen — захиалагчийн бодит GPS
+      байршлыг анхны pin болгох**: `geolocator` dependency, Android
+      (`ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION`)/iOS
+      (`NSLocationWhenInUseUsageDescription`) зөвшөөрөл нэмэгдэв.
+      `features/checkout/data/location_service.dart` (`LocationService`,
+      `CartRepository`/`CatalogRepository`-тэй ижил DI загвар — geolocator-ийн
+      static метод шууд дуудахын оронд, widget тестэд орлуулах боломжтой
+      болгосон). Зөвшөөрөгдсөн бол GPS байршлаар (`LocationAccuracy.medium`)
+      pin/газрын зургийн төв эхэлнэ; татгалзсан/алдаа гарсан бол хуучин
+      fallback (сонгосон салбар → тодорхойгүй бол хотын төв) хэвээр,
+      апп хэзээ ч блокдохгүй. "Миний байршил руу очих" FAB (`Icons.
+      my_location`) — GPS-ийг дахин дуудна, хайж байх үед л FAB дотроо
+      жижиг spinner (тусдаа overlay нэмээгүй). Энэ бол **backlog-ийн
+      "geolocation auto-routing" (хамгийн ойрхон салбар АВТОМАТААР
+      сонгох)-той ОГТ ӨӨР зүйл** — тэр backlog хэвээр байна, энд зөвхөн
+      DELIVERY хаягийн pin-ийг эхлүүлэх зорилготой. Тест:
+      `test/support/fake_location_service.dart` (granted/denied/error 3
+      тохиолдол), `address_screen_test.dart`-д 4 шинэ widget тест.
 
 ### Phase 3b — Бодит цаг, төлбөр, ухаалаг чиглүүлэлт (2-3 долоо хоног) — **шинэ, тусад нь**
 

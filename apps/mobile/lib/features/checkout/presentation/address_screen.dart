@@ -44,6 +44,10 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
   bool _searching = false;
   bool _searchFailed = false;
   bool _centerInitializedFromBranch = false;
+  // GPS-ийн анхны хайлт хараахан дуусаагүй (screen нээгдмэгц эхэлдэг тул
+  // анхны утга нь ЗААВАЛ `true` — initState-ийн синхрон хэсэгт setState
+  // дуудахаас зайлсхийхийн тулд field-ийн анхны утгаар шууд илэрхийлсэн).
+  bool _locationResolving = true;
 
   @override
   void initState() {
@@ -52,6 +56,45 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
       vsync: this,
       duration: _selectAnimationDuration,
     );
+    _resolveGpsLocation();
+  }
+
+  /// Захиалагчийн бодит GPS байршлыг ав (зөвшөөрөгдсөн бол pin-ийг тэр
+  /// байршилд шилжүүлнэ) — татгалзсан/алдаа гарсан бол ХЭЗЭЭ Ч апп-ыг
+  /// блокдохгүй, `build()`-ийн доорх сонгосон салбар/хотын төв fallback
+  /// логик хэвээрээ ажиллана. `announceErrors: true` (FAB-аас дахин
+  /// дуудахад) үед л алдааны SnackBar харуулна — анхны чимээгүй оролдлого
+  /// (initState) алдаа гарсан ч хэрэглэгчид юу ч харуулахгүй.
+  Future<void> _resolveGpsLocation({bool announceErrors = false}) async {
+    try {
+      final coords = await ref.read(locationServiceProvider).getCurrentLocation();
+      if (!mounted) {
+        return;
+      }
+      final target = LatLng(coords.latitude, coords.longitude);
+      // Салбарын fallback centering-ийг (build()-ийн дотор) цаашид дахин
+      // ажиллуулахгүй байхын тулд — GPS амжилттай бол ЭНЭ л эцсийн үг.
+      _centerInitializedFromBranch = true;
+      setState(() {
+        _center = target;
+        _locationResolving = false;
+      });
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _mapController.move(target, 16);
+        }
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _locationResolving = false);
+      if (announceErrors) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Байршил тодорхойлж чадсангүй')),
+        );
+      }
+    }
   }
 
   @override
@@ -179,10 +222,14 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
     final theme = Theme.of(context);
 
     // Анхны нээхэд боломжтой бол сонгосон салбарын байршлаар (тодорхойгүй
-    // бол хотын төвөөр) pin эхлүүлнэ — 3-р шаардлага. Ганц удаа л ажиллана
+    // бол хотын төвөөр) pin эхлүүлнэ — GPS байршил ХЭЗЭЭ Ч ирэхгүй
+    // (татгалзсан/алдаа) тохиолдлын fallback. Ганц удаа л ажиллана
     // (`_centerInitializedFromBranch` flag), branchesProvider дахин
-    // ачаалагдах/rebuild болох бүрд давтагдахгүй.
-    if (!_centerInitializedFromBranch) {
+    // ачаалагдах/rebuild болох бүрд давтагдахгүй. ⚠️ `_locationResolving`
+    // хараахан true байхад (GPS хайлт явж байхад) ЭНЭ блок огт ажиллахгүй
+    // — эс бөгөөс GPS амжилттай ирэхээс өмнө салбарын байршил түр зуур
+    // "анивчиж" харагдах эрсдэлтэй.
+    if (!_locationResolving && !_centerInitializedFromBranch) {
       ref.watch(branchesProvider).whenData((branches) {
         if (_centerInitializedFromBranch) {
           return;
@@ -319,6 +366,30 @@ class _AddressScreenState extends ConsumerState<AddressScreen>
                     ),
                 ],
               ),
+            ),
+          ),
+          // "Миний байршил руу очих" — газрын зургийн буланд, GPS хайлт
+          // (анхны автомат оролдлого эсвэл энэ товчийг дахин дарсны)
+          // явцад spinner-оор орлуулагдана (шаардлага #3-ийн "жижиг,
+          // анзаарамгүй ачааллын indicator" — тусдаа overlay нэмэлгүйгээр,
+          // яг ЭНЭ товч дотроо харуулав).
+          Positioned(
+            right: 16,
+            bottom: 96,
+            child: FloatingActionButton.small(
+              key: const Key('my_location_button'),
+              heroTag: 'address_my_location_button',
+              onPressed: () {
+                setState(() => _locationResolving = true);
+                _resolveGpsLocation(announceErrors: true);
+              },
+              child: _locationResolving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location),
             ),
           ),
           Positioned(
