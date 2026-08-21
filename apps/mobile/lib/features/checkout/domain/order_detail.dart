@@ -35,13 +35,26 @@ class OrderItemLine {
   final String? productName;
   final String? variantName;
 
-  /// "Кока-Кола 0.5Л" маягийн харуулах нэр — productName байхгүй бол
-  /// (устсан бүтээгдэхүүн) variantId-ийн товч хэлбэрийг эргэлт буцаана.
+  /// "Ariel угаалгын нунтаг 3кг" маягийн харуулах нэр — productName
+  /// байхгүй бол (устсан бүтээгдэхүүн) variantId-ийн товч хэлбэрийг
+  /// эргэлт буцаана.
+  /// ⚠️ Зарим демо/бодит бүтээгдэхүүний `Product.name`-д АЛЬ ХЭДИЙН
+  /// хэмжээ/сав баглаа орсон байдаг (жиш: "Кока-Кола 0.5Л"-ийн variant
+  /// нэр нь мөн "0.5Л") — ийм үед `variantName`-г шууд залгавал
+  /// "Кока-Кола 0.5Л 0.5Л" гэж давхардуулна. Тиймээс `productName`-д
+  /// `variantName` АЛЬ ХЭДИЙН орсон эсэхийг (том/жижиг үсэг үл
+  /// хамааран) шалгаад, орсон бол дахин залгахгүй.
   String get displayName {
     if (productName == null) {
       return variantId.length > 8 ? variantId.substring(0, 8) : variantId;
     }
-    return variantName == null ? productName! : '$productName $variantName';
+    if (variantName == null) {
+      return productName!;
+    }
+    final alreadyIncluded = productName!
+        .toLowerCase()
+        .contains(variantName!.toLowerCase());
+    return alreadyIncluded ? productName! : '$productName $variantName';
   }
 }
 
