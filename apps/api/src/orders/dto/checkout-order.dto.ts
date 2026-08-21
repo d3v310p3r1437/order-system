@@ -1,13 +1,7 @@
-import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
-  IsArray,
   IsIn,
-  IsInt,
   IsOptional,
   IsUUID,
-  Min,
-  ValidateNested,
   registerDecorator,
   type ValidationArguments,
   type ValidationOptions,
@@ -15,15 +9,6 @@ import {
 import type { OrderDeliveryMethod } from '@prisma/client';
 
 export const DEFAULT_DELIVERY_METHOD: OrderDeliveryMethod = 'PICKUP';
-
-export class CheckoutOrderItemDto {
-  @IsUUID()
-  variantId!: string;
-
-  @IsInt()
-  @Min(1)
-  quantity!: number;
-}
 
 const DELIVERY_METHODS: OrderDeliveryMethod[] = ['PICKUP', 'DELIVERY'];
 
@@ -86,6 +71,12 @@ function isValidLongitude(value: unknown): boolean {
 // (энэ огт өөр асуудал — Phase 4-ийн доорх deliveryLatitude/Longitude нь
 // АЛЬ ХЭДИЙН сонгогдсон захиалганд хүргэх ЦЭГИЙГ илэрхийлнэ, салбар
 // автоматаар сонгох биш).
+//
+// ⚠️ (2026-08-20, Cart→Checkout→QPay) `items` талбар ЗОРИУДАА ЭНД
+// БАЙХГҮЙ: захиалгын item-үүд ХЭЗЭЭ Ч клиентийн HTTP body-оос шууд
+// ирдэггүй, зөвхөн `OrderService.checkout()`-д Redis-ийн
+// `cart:{userId}`-аас (аль хэдийн сервэр талд бичигдсэн variantId/
+// quantity) уншигдана — `CartService.listForCheckout()`-ыг үз.
 export class CheckoutOrderDto {
   @IsUUID()
   branchId!: string;
@@ -106,10 +97,4 @@ export class CheckoutOrderDto {
 
   @IsDeliveryField(isValidLongitude)
   deliveryLongitude?: number;
-
-  @IsArray()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => CheckoutOrderItemDto)
-  items!: CheckoutOrderItemDto[];
 }

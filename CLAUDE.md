@@ -67,6 +67,51 @@ PATH-д ороогүй ч Program Files дор бодитоор оршдог") �
 аргыг (хэрэглэгчийн PATH-д Windows-ийн бодит суулгасан замыг нэмэх,
 `.bashrc`-д давхардуулах) ашиглана.
 
+**Mobile (Flutter) кодын өөрчлөлт бүрд яагаад бүтэн `flutter run` дахин
+хийдэг вэ — hot reload/restart-ыг ЗОРИУДАА ашигладаггүй (2026-08-21,
+судалж баталгаажуулсан):** Claude Code-ийн Android emulator дээрх
+Flutter UI баталгаажуулалт бүрд (жиш: AddressScreen/OrderTrackingScreen
+дизайны PR) `flutter run`-г **background процессоор нээлттэй байлгаж,
+stdin руу `r` (hot reload) илгээх** боломжтой эсэхийг тусгайлан
+судалж, БОДИТООР ЭНЭ орчинд туршиж баталгаажуулсан:
+- Named pipe (`mkfifo`)-ийг `flutter run`-ий stdin болгож дамжуулахыг
+  оролдоход (`flutter run < /tmp/fifo`, тэр байтугай `flutter --version
+  < /tmp/fifo` гэсэн хамгийн энгийн дуудлага дээр ч) **`flutter.bat`
+  ЯГ ЛУУГААР ажиллахгүй, өөрийн эх batch-скриптийн кодын мөрүүдийг
+  (`SET /P dart_installed_version=<...`, `FOR /F %%i IN (...)` гэх мэт)
+  шууд stdout руу гаргаад зогсдог** болохыг давтан (2 удаа тусдаа
+  туршилтаар) баталгаажуулсан — жинхэнэ Flutter хувилбар хэзээ ч
+  хэвлэгдээгүй, процесс цаашид ахиагүй. Харин piped stdin-гүйгээр
+  ижил `flutter --version`-г шууд дуудахад алдаагүй ажилласан — тул
+  энэ бол Windows batch launcher (`flutter.bat`)-ийн MSYS/Git Bash-ийн
+  pipe-based stdin-тэй давхцахад гарах өвөрмөц зөрчил (`run` тушаалтай
+  ч, ерөнхийдөө ямар ч тушаалтай ч хамааралгүй) гэдгийг нотолсон.
+- Дараагийн оролдлого болгон `winpty`-г (Windows console апп-уудыг
+  MSYS/Git Bash дор ажиллуулах стандарт хэрэгсэл) туршихад **winpty
+  өөрөө "stdin is not a tty" алдаа өгч ажиллахаас татгалзсан** — учир
+  нь Claude Code-ийн Bash tool-ийн ажиллуулдаг орчин өөрөө жинхэнэ
+  interactive TTY биш (stdout аль хэдийн uншихад зориулж дамжуулагдсан
+  байдаг) тул winpty pseudo-console холбож чадахгүй.
+- Дүгнэлт: энэ орчинд (Claude Code Bash tool + Windows + Git Bash +
+  `flutter.bat`) background `flutter run`-д stdin-аар hot reload/restart
+  илгээх найдвартай арга **олдсонгүй** — 2 өөр аргачлал (raw named pipe,
+  winpty) хоёул суурь түвшинд эвдэрсэн тул "заримдаа ажиллана" гэсэн
+  хагас-найдвартай байдал ч биш, огт ажиллахгүй нь тодорхой болсон.
+
+  **Шийдвэр — АЮУЛГҮЙ ТАЛЫГ сонгосон:** Flutter UI өөрчлөлт бүрийг
+  баталгаажуулахдаа **бүтэн `flutter run` (35 секунд орчмын Gradle
+  build)-ийг дахин хийдэг өмнөх зарчмыг хэвээр үлдээв** — энэ бол
+  "hot reload бичихэд төвөгтэй учир" гэсэн тайвшралын шийдвэр БИШ,
+  харин **бодитоор туршиж, суурь орчны түвшинд (`flutter.bat`-ийн
+  batch launcher, winpty-ийн tty шаардлага) эвдэрснийг нотолсны дараа
+  гаргасан ухамсартай, найдвартай байдлыг тэргүүн зэрэгт тавьсан
+  сонголт**. Ирээдүйд өөр орчинд (жиш: жинхэнэ Linux/macOS, эсвэл
+  Windows дээр WSL2 доторх Git Bash биш bash) ижил судалгаа хийвэл
+  дээрх 2 бэрхшээл (batch launcher, tty) аль аль нь байхгүй байж
+  болзошгүй тул дахин үнэлж болно — гэхдээ **энэ тодорхой орчинд
+  (Windows + Git Bash + flutter.bat) дахин оролдохгүй байхыг зөвлөж
+  байна**, учир нь яг ижил 2 бэрхшээл давтагдах магадлал өндөр.
+
 ## Кодын стандарт (дэлгэрэнгүй: docs/plan.md §4)
 - TypeScript strict mode, ESLint+Prettier заавал
 - Commit: Conventional Commits (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`)
@@ -130,10 +175,13 @@ Phase 2 — Каталог ба агуулах (§7 модуль #3, #4) БҮР�
 ажлын урсгал + Mobile UI хараахан үлдсэн). Phase 5 — Тайлан ба
 олон-салбарын удирдлага (§7 модуль #14) дууссан. **Сагс (Redis persist) +
 Mobile cart/branch-select UI (§7 модуль #5-ийн үлдсэн хэсэг) дууссан**
-(доор дэлгэрэнгүй) — checkout (захиалга үүсгэх дуудлага) өөрөө хараахан
-дараагийн ажил. Geolocation auto-routing (автоматаар хамгийн ойрхон салбар
-сонгох — Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан
-backlog хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
+(доор дэлгэрэнгүй). **Cart→Checkout→QPay бүрэн урсгал (backend checkout
+Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Review→Payment
+(QR/deeplink)→Success→Tracking дэлгэцүүд) дууссан** (доор
+"(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз). Geolocation auto-routing
+(автоматаар хамгийн ойрхон салбар сонгох — Phase 4-ийн хүргэлтийн
+чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog хэвээр. Дэлгэрэнгүй:
+`docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -1182,14 +1230,207 @@ backlog хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
   порт дээр сонсож байгааг, `.env`-ийн `PORT`-той (болон mobile-ийн
   `resolveApiBaseUrl()`-ийн анхдагч утгатай) таарч байгаа эсэхийг
   шалга — код/өгөгдлийн алдаа гэж яараад бүү шийд.
+- **(2026-08-20, Cart→Checkout→QPay) Сагс→Захиалга→QPay төлбөр→бодит
+  цагийн урсгал бүрэн дууссан** (`docs/plan.md` §8, өмнөх "Сагс + Mobile
+  cart/branch-select"-ийн шууд үргэлжлэл — "Захиалах" товч placeholder-ийг
+  жинхэнэ checkout болгов):
+  - **Хэсэг A (backend):** ⚠️ **Чухал засвар:** `OrderService.checkout()`
+    урьд нь захиалгын item-үүдийг ШУУД HTTP body-оос авдаг байсныг (§7
+    модуль #5-ийн Redis сагс аль хэдийн бэлэн байсан ч checkout ЭНЭ
+    сагсыг огт ашигладаггүй, зэрэгцээ 2 эх сурвалж байсан зөрчил) засаж,
+    `CartService.listForCheckout()`-аар зөвхөн Redis-ийн `cart:{userId}`-аас
+    л уншдаг болгов (`CheckoutOrderDto`-оос `items` талбарыг бүрмөсөн
+    устгасан) — checkout амжилттай commit хийгдсэний ДАРАА (SearchIndexer/
+    NotificationTrigger-тэй ЯГ ижил `onCommit()`-гэйт зарчим, cart цэвэрлэх
+    Redis DEL rollback-ийн эрсдэлтэй тул) сагс автоматаар цэвэрлэгдэнэ.
+    Үнэ (`resolveEffectivePrice()`) өмнө нь ч клиентийн оролтод итгэдэггүй
+    байсан тул аюулгүй байдлын цоорхой БИШ байсан ч, "cart бол цорын ганц
+    checkout эх сурвалж" гэсэн архитектурын нийцтэй байдлын зорилготой.
+    `PaymentProvider.createInvoice()`-ийн `CreateInvoiceResult`-д
+    `qrText`/`bankDeeplinks` (`{bankName, link}[]`) нэмэгдэв —
+    `MockPaymentProvider` dummy утга (`mock-qr:...`, хоосон массив)
+    буцаадаг, `QPayProvider` боломжтой бол (`qr_text`/`urls`, ЭХ СУРВАЛЖ
+    БАТАЛГААЖААГҮЙ тул хамгаалалттай fallback-тайгаар) уншина.
+    6 e2e-spec файл (`orders`/`payment`/`delivery-routing`/`realtime`/
+    `reports`/`returns`) checkout дуудлага бүрийн өмнө эхлээд
+    `POST /cart/items`-ээр сагсаа бичдэг болгож шинэчлэгдэв.
+    ⚠️ **Шинэ RLS цоорхой (е2е тестээр Mobile-ийн шаардлагаар илэрсэн):**
+    `GET /orders/:id/route`-ийг CUSTOMER-д (зөвхөн ӨӨРИЙН DELIVERY
+    захиалгад — OrderTrackingScreen-д зам харуулах ёстой тул) нээхэд
+    2 өөр RLS блок дараалан илэрсэн: (1) `branches_select` RLS CUSTOMER-д
+    ХЭЗЭЭ Ч мөр буцаадаггүй (Branch debris цэвэрлэлтийн Phase-д аль хэдийн
+    нээгдсэн ЯГ ижил язгуур шалтгаан, `app_public_branches()`-г шийдвэрлэсэн
+    байсан ч `OrderService.getRoute()` тэр функцийг ашигладаггүй байсан) —
+    `app_public_branches()`-г (`20260820130000` migration, DROP+CREATE,
+    буцаах TABLE бүтэц өөрчлөгдсөн тул) `latitude`/`longitude` баганa +
+    сонголтот `p_branch_id` параметрээр өргөтгөж, `OrderService.
+    findBranchForRoute()`-д CUSTOMER-ийн үед ашигласан (staff хэвээр RLS-ээр
+    шууд). (2) Салбарын байршил зөв уншсаны ДАРАА route-ийн кэшийг
+    `tx.order.update()`-ээр бичихэд `orders_update` RLS-ийн WITH CHECK
+    CUSTOMER-д ЗӨВХӨН `status='CANCELLED'`-руу шилжихийг л зөвшөөрдөг тул
+    (status-той огт хамааралгүй энэ метадата бичилт) "new row violates
+    row-level security policy" алдаа шидсэн — ADR 005-ийн WRITE ангилалд
+    (`app_adjust_inventory_for_order()`-тэй ижил загвар: зөвшөөрлийг
+    `orders_select`-тэй ижил нөхцлөөр функц дотроо шалгаад RLS-ийг тойрч
+    бичнэ) шинэ `app_cache_order_route()` функц (`20260820140000` migration)
+    нэмж шийдвэрлэв. Хоёулаа `order.service.spec.ts`/
+    `delivery-routing.e2e-spec.ts`-д (CUSTOMER ӨӨРИЙН DELIVERY захиалгаа
+    харна, өөр хэрэглэгчийнхийг харахгүй) тусад нь баталгаажуулсан.
+  - **Хэсэг B (Mobile):** шинэ `features/checkout/` — `CheckoutDraft`
+    (`Notifier<CheckoutDraft?>`, DeliveryMethod→Address→Review 3 алхмын
+    дундуур PICKUP/DELIVERY+хаяг/координат хуримтлуулна, PICKUP руу буцахад
+    хуучин хаяг ЗААВАЛ цэвэрлэгдэнэ — backend DTO validation-той нийцүүлэх).
+    `DeliveryMethodScreen` (`SegmentedButton`) → `AddressScreen`
+    (`flutter_map` OSM tile + Nominatim geocoding хайлт debounce 300мс +
+    газрын зургийн ТӨВД тогтмол pin — чирэхэд `onPositionChanged`-аар
+    координат уншина, `docs/adr/009-flutter-map-nominatim.md`) →
+    `OrderReviewScreen` (эцсийн нийт дүнг `CartItem.estimatedLineTotal`
+    (ойролцоо) БИШ, `cartBranchValidationProvider`-аас — ADR 005-ийн "ганц
+    газар л шийднэ" зарчим Mobile талд ч мөн хамаарна) → `POST /orders`
+    (`items` талбар ОГТ илгээхгүй) → `PaymentScreen` (`qr_flutter` QR +
+    bank deeplink товчнууд + WebSocket `order:${orderId}` room-д нэгдэж
+    `order.payment_confirmed` хүлээх, зөвхөн `kDebugMode`-д "Mock төлбөр
+    симуляц" товч) → `OrderSuccessScreen` (2.5 секундын дараа автомат
+    шилжилт) → `OrderTrackingScreen` (`order.status_changed`-ээр бодит
+    цагийн `OrderStatusTimeline`, DELIVERY-д `OrderRouteMap` —
+    admin-web-ийн `DeliveryRouteMap.tsx`-тэй ЯГ ижил `[lng,lat]→[lat,lng]`
+    хөрвүүлэлтийн зарчим). ⚠️ **Чухал заль (WebSocket client lifecycle):**
+    `OrderEventsClient`-д ЗОРИУДАА Riverpod provider бичээгүй — зөвхөн
+    `ref.read()`-ээр ашиглавал `Provider.autoDispose` ямар ч listener
+    бүртгэгдээгүй тул дараагийн microtask-д шууд dispose хийчихэж болзошгүй
+    (watch хийхгүй бол autoDispose-ийн зарчим шууд хэрэгждэг) — тул
+    PaymentScreen/OrderTrackingScreen screen бүр `State.initState()`-д
+    шууд өөрөө үүсгэж, `State.dispose()`-д өөрөө хаадаг. pubspec.yaml:
+    `flutter_map`/`latlong2`/`qr_flutter`/`url_launcher` нэмэгдэв.
+    Тест: `checkout_draft_test.dart` (PICKUP↔DELIVERY branching, cleanup),
+    `order_status_timeline_test.dart`, `delivery_method_screen_test.dart`,
+    `order_review_screen_test.dart` (checkout амжилттай/OUT_OF_STOCK алдаа)
+    — `flutter analyze` 0 алдаа, `flutter test` бүгд ногоон.
+  ⚠️🔴 **Ноцтой олдвор — Android emulator дээр бодитоор турших үед олдсон,
+  widget тестээр ОГТ илрээгүй логикийн цоорхой:** PaymentScreen-ийн debug
+  "Mock төлбөр симуляц хийх" товч анхны хувилбарт ЗӨВХӨН
+  `POST /payment/mock/simulate-paid/:id`-г дуудаж байсан — энэ нь
+  `MockPaymentProvider`-ийн ДОТООД (санах ойн) статусыг PAID болгодог ч,
+  Order.paidAt-г ЖИНХЭНЭ тавьж `order.payment_confirmed` WebSocket
+  event-ийг өдөөдөг цорын ганц газар бол `POST /payment/webhook/:orderId`
+  (docs/adr/006-ийн "verify don't trust" урсгал) байсныг мартсанаас болж,
+  товч дархад QR дэлгэц мөнхөд "Холбогдож байна..."/"Төлбөр хүлээгдэж
+  байна..." төлөвт зогсч байв (backend талд ЯМАР Ч алдаа гарахгүй, зөвхөн
+  чимээгүй "юу ч болохгүй" — HTTP 200 буцаадаг тул Flutter талд ч алдаа
+  барих боломжгүй байсан). Бодит QPay-ийн урсгалд энэ асуудал байхгүй
+  (QPay-ийн сервэр өөрөө webhook-ыг дуудна), зөвхөн ЭНЭ debug-only
+  симуляцид л хамааралтай байсан. **Засвар:**
+  `CheckoutRepository.simulatePaid()`-г 2 дараалсан HTTP дуудлага хийдэг
+  болгов (1. simulate-paid, 2. webhook) — 2 дахь алхмыг НЭМЭЭГҮЙ бол
+  1-р алхам дангаараа ямар ч бодит захиалгын төлөв өөрчлөхгүй гэдгийг
+  тодорхой тайлбарласан. **Сургамж:** widget тест (fake repository)
+  зөвхөн "API дуудагдсан эсэх"-ийг шалгадаг тул ийм 2-алхамт орхигдсон
+  дуудлагын алдааг барьж чадахгүй — end-to-end (бодит backend + бодит
+  WebSocket) турших ЗААВАЛ шаардлагатай байсныг батлав.
+  ✅ **Android emulator (dark + light mode) дээрх бүрэн урсгалын
+  баталгаажуулалт:** Cart (item +/- , "Захиалах") → BranchSelectionScreen
+  (Branch debris цэвэрлэлтийн дараа зөвхөн "Мобайл демо салбар" ганцаараа
+  харагдаж, сонголт хялбар болсныг ажиглав) → DeliveryMethodScreen
+  (PICKUP↔DELIVERY toggle зөв ажиллав) → AddressScreen (**flutter_map
+  OSM tile бодитоор ачаалж Улаанбаатарын газрын зураг харагдав, Nominatim
+  хайлт "Sukhbaatar" гэж бичихэд бодит Cyrillic үр дүн (Сүхбаатар аймаг
+  г.м.) буцаав, газрын зургийг чирэхэд төвийн pin тогтмол үлдэж зөвхөн
+  дэвсгэр зураг шилжсэнийг screenshot-аар баталгаажуулав**) →
+  OrderReviewScreen (нийт дүн `cartBranchValidationProvider`-аас зөв
+  тооцогдов) → `POST /orders` бодитоор дуудагдаж → PaymentScreen (**бодит
+  QR код `qr_flutter`-ээр зурагдав**, debug товч дээрх засвар хийсний
+  дараа) → OrderSuccessScreen (WebSocket `order.payment_confirmed`-ээр
+  автоматаар гарч ирэв) → 2.5 секундын дараа автомат шилжилт →
+  OrderTrackingScreen (`OrderStatusTimeline` зөв зурагдав) →
+  **staff эрхээр (`PATCH /orders/:id/status` → CONFIRMED) backend-ээс
+  шууд дуудаж, апп ДАХИН АЧААЛАХГҮЙгээр (зөвхөн WebSocket `order.
+  status_changed` event-ээр) дэлгэц дээрх timeline бодит цагт "Баталгаажлаа"
+  алхам руу шинэчлэгдэхийг screenshot-оор баталгаажуулав** — энэ бол
+  бүхэл Cart→Checkout→QPay→бодит цагийн архитектурын хамгийн чухал
+  батламж. Light/Dark хоёуланд нь (Тохиргоо дэлгэцээр сольж) Cart/
+  BranchSelection/DeliveryMethod/AddressScreen дэлгэцүүдийг screenshot-оор
+  харьцуулж, cobalt-indigo дизайны палет хоёр горимд адил цэвэрхэн
+  харагдахыг нотолсон. ⚠️ **Turших явцад олдсон, кодтой шууд холбоогүй
+  орчны зөвлөмжүүд:** (1) `adb shell input text` Cyrillic тэмдэгт огт
+  дэмждэггүй (KeyEvent-д суурилсан симуляци тул зөвхөн идэвхтэй keyboard
+  layout-д байгаа тэмдэгтийг л явуулж чаддаг, Android-ийн танигдсан
+  хязгаарлалт) — Cyrillic UI текст бичих турших шаардлагатай бол Redis/DB
+  руу шууд бичих эсвэл Latin түлхүүр үг ашиглах хэрэгтэй. (2) `adb shell
+  cmd uimode night <yes|no>` систем түвшний horим сольсон нь Flutter-ийн
+  Impeller GPU renderer-тэй хослохдоо screenshot foolage-г түр
+  гажуудуулсан (апп доторх Тохиргоо дэлгэцээр өнгө сольсон нь ийм
+  асуудалгүй) — систем түвшний horим биш апп доторх theme toggle-ийг
+  ашиглах нь илүү найдвартай. (3) Riverpod-ийн `AsyncNotifierProvider`
+  (autoDispose БИШ, `cartProvider` шиг) апп бүхэл ажиллах хугацаанд НЭГ
+  удаа л `build()`-ээ дуудаж кэшилдэг тул Redis/DB-д гаднаас шууд бичсэн
+  өөрчлөлт апп-ийн аль хэдийн үүссэн provider instance-д ХАРАГДАХГҮЙ
+  (зөвхөн апп доторх action, жиш `CartNotifier.setQuantity()`, шинэ
+  утгаар state-ээ ШУУД дарж бичдэг тул харагдана) — E2E турших/debug
+  хийхдээ гаднаас өгөгдөл өөрчилсний дараа апп-ыг бүрэн (`force-stop`
+  + дахин `start`) дахин ачаалах ёстойг санах.
+- **(2026-08-21) AddressScreen — захиалагчийн бодит GPS байршлыг анхны pin
+  болгож ашиглах дууссан** (§7 модуль #5-ийн үргэлжлэл, ⚠️ доорх backlog-ийн
+  "geolocation auto-routing" (хамгийн ойрхон салбар АВТОМАТААР сонгох)-той
+  ОГТ ХОЛБООГҮЙ — энэ бол зөвхөн DELIVERY хаягийн pin-ийг эхлүүлэх зорилготой,
+  тэр backlog зүйл хэвээрээ үлдсэн): `geolocator: ^14.0.3` dependency,
+  Android (`ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION`)/iOS
+  (`NSLocationWhenInUseUsageDescription`) зөвшөөрөл нэмэгдэв.
+  `features/checkout/data/location_service.dart` (`LocationService` —
+  `CartRepository`/`CatalogRepository`-тэй ижил DI Provider загвар, geolocator-ийн
+  static метод шууд дуудахын оронд widget тестэд орлуулах боломжтой
+  болгосон). `AddressScreen.initState()`-д зөвшөөрөл асууж, зөвшөөрөгдвөл
+  `LocationAccuracy.medium`-аар GPS байршил авч pin/газрын зургийн төвийг
+  ЭНЭ рүү шилжүүлнэ; татгалзсан/алдаа гарвал ХУУЧИН fallback (сонгосон
+  салбар → тодорхойгүй бол хотын төв) хэвээр ажиллаж, апп хэзээ ч блокдохгүй
+  (`_locationResolving` flag-аар салбарын fallback-effect-ийг GPS оролдлого
+  дуустал түр зогсоож, "анивчих" зөрчлөөс сэргийлсэн). "Миний байршил руу
+  очих" `FloatingActionButton.small` (`Icons.my_location`, газрын зургийн
+  буланд) — дахин дуудахад л алдааны SnackBar ("Байршил тодорхойлж
+  чадсангүй") харуулна, ачааллах үед FAB дотроо өөрөө жижиг spinner
+  (тусдаа overlay нэмээгүй). Тест: `test/support/fake_location_service.dart`
+  (granted/denied/error 3 тохиолдол) + `address_screen_test.dart`-д 4 шинэ
+  widget тест (GPS амжилттай/татгалзсан/өөр алдаа/FAB дахин дуудах).
+  ⚠️ **Чухал нээлт (Android emulator дээр бодитоор турших үед илэрсэн,
+  кодын алдаа БИШ):** Android emulator-ийн симуляцлагдсан GPS-ийн "cold
+  start" (эхний, идэвхгүй байснаас хойшхи) хүсэлт ихэвчлэн (энэ орчинд
+  давтан ажиглагдсан) МУУДАГ (татгалзаагүй ч, `getCurrentPosition()`
+  дотооддоо алдаа шидэж чимээгүй fallback руу орно) — жинхэнэ утасны GPS
+  чипийн "Time-To-First-Fix" (TTFF) үзэгдэлтэй адилтгаж болно, real
+  device дээр ихэвчлэн сүлжээ-туслалцаатай (network-assisted) хурдан fix
+  авдаг тул ийм зэрэгцээ саатал ажиглагдахгүй байх магадлалтай. Гэвч
+  APP-ийн ХЭДИЙ НЭГ удаа амжилттай GPS хүсэлт хийсний ДАРАА (жиш: "Миний
+  байршил руу очих" товч дарсны дараа) дараагийн хүсэлтүүд (тэр ч байтугай
+  ШИНЭ `AddressScreen` instance дээр ч) бас л ижил "эхний удаагийн"
+  саатлыг дахин үзүүлж болохыг ажиглав (жиш: emulator-ийг удаан идэвхгүй
+  орхисны дараа) — өөрөөр хэлбэл найдвартай бус, харин "Миний байршил руу
+  очих" FAB **яг ийм тохиолдолд зориулсан сэргээх механизм** болж бодитоор
+  ажилласныг Android emulator дээр (`adb emu geo fix <lng> <lat>`-ээр
+  байршил тохируулж) screenshot-оор баталгаажуулсан. **Сургамж:** GPS
+  timeout/warm-up-той холбоотой "заримдаа удаа/бүтэлгүйтдэг" зан төлөв
+  ХАРИЛЦАГЧИЙН талд аюулгүй (chimeeгүй fallback + гараар сэргээх товч)
+  тул кодыг цаашид тохируулах (жиш: retry logic автоматжуулах) ШААРДЛАГАГҮЙ
+  гэж үзсэн — даалгаврын анхны зааврын "1-2 секунд" гэсэн урьдчилсан
+  таамаглал бодит утсанд илүү нийцтэй байх магадлалтай, зөвхөн emulator-ийн
+  симуляцлагдсан GPS-д илүү удаан татагдсан гэж дүгнэв.
+  ✅ **Android emulator дээрх баталгаажуулалт (light+dark):** `adb pm revoke`-оор
+  зөвшөөрөл цуцалж → AddressScreen нээхэд дахин зөвшөөрлийн prompt гарч,
+  "Don't allow" дарахад алдаагүйгээр хуучин fallback (хотын төв pin) руу
+  шилжсэнийг screenshot-оор баталгаажуулав (light горим) → тэр TÖлөвт FAB
+  дарахад "Байршил тодорхойлж чадсангүй" SnackBar зөв харагдав → зөвшөөрөл
+  дахин олгож (`adb pm grant`), "While using the app" сонгоод, эхний
+  оролдлого дээрх TTFF-ийн улмаас хотын төвд буцаад, харин FAB-аар дахин
+  дуудахад `emu geo fix`-ээр тохируулсан GPS координатад (өргөн гудамжны
+  нэр/дэлгүүрийн icon зэрэг street-level нарийвчлалтай) ЯГ тохирсон
+  байршилд шилжсэнийг баталгаажуулав → Тохиргоо дэлгэцээр dark горимд
+  сольж, FAB болон fallback дэлгэцийг dark горимд screenshot-оор мөн
+  баталгаажуулсан (контраст зөв). `flutter analyze` 0 алдаа, `flutter
+  test` бүх (74/74) тест ногоон.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
-  хараахан хэрэгжээгүй зүйл хэвээр), **Mobile-ийн захиалга үүсгэх (checkout)
-  + бодит цагийн/хүргэлтийн UI** (каталог үзэх/хайх БОЛОН сагс/салбар
-  сонгох дууссан — доорх "(2026-08-20)" бичлэгийг үз, "Захиалах" товч
-  BranchSelectionScreen дээр placeholder хэвээр — checkout API дуудалт
-  дараагийн ажил), push notification (Mobile апп push
+  хараахан хэрэгжээгүй зүйл хэвээр — Cart→Checkout→QPay бүрэн урсгал
+  (доорх "(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз) ДУУССАН), push
+  notification (Mobile апп push
   бүртгэл хараахан эхлээгүй тул
   хүлээн авах төхөөрөмж алга, backlog), бодит SMS vendor сонгож
   `SmtpNotificationProvider.sendSms()`-ийн стабыг солих (§11.3, Phase 1-ээс

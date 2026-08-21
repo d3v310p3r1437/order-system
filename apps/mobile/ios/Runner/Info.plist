@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Checkout-ийн AddressScreen-д захиалагчийн бодит байршлыг анхны pin
+	     болгож санал болгоход шаардлагатай (LocationService/geolocator). -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Хүргэх хаягаа хялбар сонгохын тулд таны байршил хэрэгтэй</string>
 	<!-- iOS simulator-аас dev backend руу http://localhost:3100 (TLS-гүй)
 	     хандахын тулд шаардлагатай — зөвхөн "local" (localhost/.local/
 	     numeric IP-гүй) хаягт хамаарна, интернэт даяар cleartext зөвшөөрөхгүй

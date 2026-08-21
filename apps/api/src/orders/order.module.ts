@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CartModule } from '../cart/cart.module.js';
 import { RolesGuard } from '../common/roles.guard.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PaymentModule } from '../payment/payment.module.js';
@@ -13,9 +14,16 @@ import { OrderService } from './order.service.js';
 // өөрчлөгдөх бүрт WebSocket event), PaymentModule (checkout дээр
 // PaymentProvider.createInvoice()) нэмэгдэв. Phase 4: RoutingModule
 // (GET /:id/route), NotificationModule (статус өөрчлөгдөх бүрт
-// SMS/email мэдэгдэл).
+// SMS/email мэдэгдэл). (2026-08-20) CartModule: checkout item-үүдийг
+// Redis сагснаас уншиж, амжилттай commit хийгдсэний дараа цэвэрлэнэ.
 @Module({
-  imports: [RealtimeModule, PaymentModule, RoutingModule, NotificationModule],
+  imports: [
+    CartModule,
+    RealtimeModule,
+    PaymentModule,
+    RoutingModule,
+    NotificationModule,
+  ],
   controllers: [OrderController],
   providers: [OrderService, RolesGuard],
 })

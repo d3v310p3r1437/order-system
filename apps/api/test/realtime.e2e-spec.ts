@@ -159,10 +159,16 @@ describe('Realtime order events (e2e)', () => {
   });
 
   it('staff холбогдоход өөрийн салбарын room-д автоматаар нэгдэж, PATCH /orders/:id/status-ийн дараа event хүлээн авна', async () => {
+    // (2026-08-20) checkout item-үүдийг Redis сагснаас уншина.
+    await request(app.getHttpServer())
+      .post('/cart/items')
+      .set('Authorization', `Bearer ${customerToken}`)
+      .send({ variantId, quantity: 1 })
+      .expect(201);
     const checkoutRes = await request(app.getHttpServer())
       .post('/orders')
       .set('Authorization', `Bearer ${customerToken}`)
-      .send({ branchId: branch.id, items: [{ variantId, quantity: 1 }] })
+      .send({ branchId: branch.id })
       .expect(201);
     const orderId = (checkoutRes.body as OrderBody).id;
 

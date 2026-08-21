@@ -32,15 +32,22 @@ const STATUS_UPDATE_ROLES = [
   'CUSTOMER',
 ] as const;
 
-// docs/plan.md §8 Phase 4, Хэсэг A #5: "staff эрхтэй" — STATUS_UPDATE_ROLES-с
-// CUSTOMER хассан (харилцагч өөрийн захиалгын чиглэлийг харах шаардлага
-// энэ даалгаварт тодорхой заагаагүй тул нэмээгүй, зөвхөн staff).
+// docs/plan.md §8 Phase 4, Хэсэг A #5-д анх staff-аар хязгаарласан байсан
+// ("харилцагчийн харах шаардлага тодорхой заагаагүй" гэсэн тэмдэглэл).
+// ⚠️ (2026-08-20, Cart→Checkout→QPay) Mobile-ийн OrderTrackingScreen
+// DELIVERY захиалгад admin-web-ийн DeliveryRouteMap-тай ижил зам зурах
+// шаардлагатай болсон тул CUSTOMER-ийг нэмэв — аюулгүй, учир нь
+// OrderService.getRoute()→findOne() нь orders_select RLS-ээр л шүүгддэг
+// (CUSTOMER зөвхөн ӨӨРИЙН захиалгаа харна, order.controller.ts-ийн
+// findOne()-той ижил зарчим), @Roles() зөвхөн "аль дүрд ЕРӨНХИЙД нь
+// зөвшөөрөгдсөн бэ" гэдгийг шалгадаг тул мөр-түвшний хамгаалалт хэвээр.
 const ROUTE_VIEW_ROLES = [
   'SUPER_ADMIN',
   'ALL_BRANCH_MANAGER',
   'BRANCH_ADMIN',
   'BRANCH_MANAGER',
   'SALESPERSON',
+  'CUSTOMER',
 ] as const;
 
 @Controller('orders')

@@ -5,9 +5,20 @@
 // залгах боломжтой (PaymentModule, env `PAYMENT_PROVIDER=mock|qpay`).
 export type PaymentStatus = 'PAID' | 'PENDING' | 'FAILED';
 
+// docs/plan.md §8 (Cart→Checkout→QPay): QR код + банкны deeplink-үүд.
+// bankName/link-ийн бодит бүтэц QPay-ийн эх сурвалжаас баталгаажаагүй
+// (docs/adr/006-ийн "QPay бодит холболт ирэхэд заавал баталгаажуулах
+// зүйлс" адил тэмдэглэл) тул MockPaymentProvider dummy утга л буцаана.
+export interface BankDeeplink {
+  bankName: string;
+  link: string;
+}
+
 export interface CreateInvoiceResult {
   providerInvoiceId: string;
   payUrl?: string;
+  qrText?: string;
+  bankDeeplinks?: BankDeeplink[];
 }
 
 export interface CheckPaymentResult {

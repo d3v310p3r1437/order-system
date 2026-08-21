@@ -29,6 +29,11 @@ export class MockPaymentProvider implements PaymentProvider {
     return Promise.resolve({
       providerInvoiceId,
       payUrl: `mock://pay/${providerInvoiceId}`,
+      // Flutter-ийн QR widget-д зориулж бүтэц зөв, dummy утга — QPay бодит
+      // credential ирэх хүртэл жинхэнэ QR payload шаардлагагүй
+      // (docs/adr/006-ийн "бодит холболт ирэхэд заавал баталгаажуулах" зарчим).
+      qrText: `mock-qr:${providerInvoiceId}`,
+      bankDeeplinks: [],
     });
   }
 

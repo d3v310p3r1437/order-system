@@ -8,11 +8,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, type OrderStatus, type RoleName } from '@prisma/client';
+import { CartService, type CartItemRecord } from '../cart/cart.service.js';
 import { resolveEffectivePrice } from '../catalog/inventory-effective.util.js';
 import {
   isCheckConstraintViolation,
   isForeignKeyViolation,
 } from '../common/prisma-errors.js';
+import { RequestContextService } from '../common/request-context.js';
 import { withSavepoint } from '../common/savepoint.util.js';
 import { resolveUserRoleNames } from '../common/user-roles.js';
 import { NotificationTrigger } from '../notification/notification-trigger.service.js';
@@ -27,10 +29,7 @@ import {
   type RouteResult,
   type RoutingProvider,
 } from '../routing/routing-provider.interface.js';
-import type {
-  CheckoutOrderDto,
-  CheckoutOrderItemDto,
-} from './dto/checkout-order.dto.js';
+import type { CheckoutOrderDto } from './dto/checkout-order.dto.js';
 import type { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import {
   isOrderTransitionAllowed,
@@ -56,6 +55,10 @@ const NOT_DELIVERY_ORDER = {
 const BRANCH_LOCATION_MISSING = {
   code: 'BRANCH_LOCATION_MISSING',
   message: 'Салбарын байршил (latitude/longitude) бүртгэгдээгүй байна',
+};
+const CART_EMPTY = {
+  code: 'CART_EMPTY',
+  message: 'Сагс хоосон байна',
 };
 
 // PATCH /orders/:id/status-ыг дуудаж болох "staff" дүрс (§6.1 матриц:
@@ -98,6 +101,8 @@ export class OrderService {
     @Inject(ROUTING_PROVIDER) private readonly routingProvider: RoutingProvider,
     private readonly orderEvents: OrderEventsPublisher,
     private readonly notificationTrigger: NotificationTrigger,
+    private readonly cartService: CartService,
+    private readonly requestContext: RequestContextService,
   ) {}
 
   findAll(filter: { status?: OrderStatus; branchId?: string }) {
@@ -163,11 +168,7 @@ export class OrderService {
       };
     }
 
-    // branches_select RLS-ийг л дахин ашиглана (§6.1 "Салбар" мөр) —
-    // staff энэ endpoint-ыг дуудахад аль хэдийн харах эрхтэй.
-    const branch = await this.prisma.tx.branch.findUnique({
-      where: { id: order.branchId },
-    });
+    const branch = await this.findBranchForRoute(order.branchId);
     if (!branch || branch.latitude == null || branch.longitude == null) {
       throw new BadRequestException(BRANCH_LOCATION_MISSING);
     }
@@ -177,16 +178,44 @@ export class OrderService {
       { lat: order.deliveryLatitude, lng: order.deliveryLongitude },
     );
 
-    await this.prisma.tx.order.update({
-      where: { id },
-      data: {
-        routeDistanceMeters: route.distanceMeters,
-        routeDurationSeconds: route.durationSeconds,
-        routeGeometry: route.geometry,
-      },
-    });
+    // ⚠️ (2026-08-20) `tx.order.update()` (typed Prisma) БИШ, ADR 005-ийн
+    // шинэ WRITE функц ашиглана — `orders_update`-ийн WITH CHECK CUSTOMER-д
+    // ЗӨВХӨН status='CANCELLED'-руу шилжихийг зөвшөөрдөг тул статустай
+    // хамааралгүй энэ кэш-бичилт CUSTOMER-ийн session-ээр RLS-д
+    // татгалзагдана (20260820140000 migration-ийг үз).
+    await this.prisma.tx.$executeRaw`
+      SELECT app_cache_order_route(${id}, ${route.distanceMeters}, ${route.durationSeconds}, ${JSON.stringify(route.geometry)}::jsonb)
+    `;
 
     return route;
+  }
+
+  // ⚠️ (2026-08-20) branches_select RLS (`app_accessible_branch_ids()`)
+  // ЗӨВХӨН staff (user_branch_roles мөртэй)-д зориулагдсан тул CUSTOMER-д
+  // ХЭЗЭЭ Ч мөр буцаадаггүй (branch.service.ts-ийн ЯГ адилхан нээлт,
+  // 20260820120000 migration) — order.controller.ts-ийн ROUTE_VIEW_ROLES-д
+  // CUSTOMER нэмэгдсэнээр ЭНД ч давтагдсаныг e2e тестээр илрүүлсэн. Салбарын
+  // байршил нууц МЭДЭЭЛЭЛ БИШ (дэлгүүрийн байршил, PICKUP-д ч харагдах
+  // ёстой) тул ADR 005-ийн "READ-redact" зарчмаар app_public_branches()-г
+  // (branch.service.ts-тэй адил, 20260820130000-аар p_branch_id параметр
+  // нэмж өргөтгөсөн) CUSTOMER-ийн үед л ашиглана — staff хэвээр RLS-ээр
+  // (`tx.branch.findUnique()`) шууд авна.
+  private async findBranchForRoute(
+    branchId: string,
+  ): Promise<{ latitude: number | null; longitude: number | null } | null> {
+    const { userId } = this.requestContext.get();
+    const roles = userId
+      ? await resolveUserRoleNames(this.prisma.tx, userId)
+      : [];
+
+    if (roles.includes('CUSTOMER')) {
+      const rows = await this.prisma.tx.$queryRaw<
+        { latitude: number | null; longitude: number | null }[]
+      >`SELECT latitude, longitude FROM app_public_branches(${branchId})`;
+      return rows[0] ?? null;
+    }
+
+    return this.prisma.tx.branch.findUnique({ where: { id: branchId } });
   }
 
   // Checkout: Order + OrderItem-үүдийг үүсгээд InventoryItem.quantity-г
@@ -199,9 +228,22 @@ export class OrderService {
   // зүйлсийг (Order, OrderItem-үүд, өмнөх амжилттай decrement-үүд)
   // ROLLBACK TO SAVEPOINT-оор буцаана — тэр файлын тайлбарыг үз.
   async checkout(customerId: string, dto: CheckoutOrderDto) {
+    // ⚠️ (2026-08-20) Захиалгын item-үүд ХЭЗЭЭ Ч клиентийн HTTP body-оос
+    // шууд ирэхгүй — зөвхөн Redis-ийн `cart:{userId}`-аас (харилцагч
+    // өөрөө `POST /cart/items`-ээр аль хэдийн сервэр талд бичсэн
+    // variantId/quantity) уншина. Үнийг (unitPrice) доор
+    // resolveCheckoutItem() ЯГ адилхан InventoryItem/ProductVariant-аас
+    // л тооцдог тул client dto items-тэй ижил аюулгүй байдал (клиентийн
+    // үнэ хэзээ ч итгэмжлэгддэггүй байсан ч) — энэ өөрчлөлт зорилго нь
+    // "cart нь цорын ганц эх сурвалж" гэсэн архитектурын нийцтэй байдал.
+    const cartItems = await this.cartService.listForCheckout(customerId);
+    if (cartItems.length === 0) {
+      throw new BadRequestException(CART_EMPTY);
+    }
+
     // Үнэ тооцоолол (READ-ONLY) — SAVEPOINT-ын гадна, учир нь юу ч бичихгүй.
     const resolvedItems = await Promise.all(
-      dto.items.map((item) => this.resolveCheckoutItem(item, dto.branchId)),
+      cartItems.map((item) => this.resolveCheckoutItem(item, dto.branchId)),
     );
     const totalAmount = resolvedItems.reduce(
       (sum, item) => sum.add(item.unitPrice.mul(item.quantity)),
@@ -261,7 +303,26 @@ export class OrderService {
       return this.findOne(order.id);
     });
 
-    return { ...result, payUrl: invoice.payUrl };
+    // Checkout бодитоор амжилттай (SAVEPOINT RELEASE хийгдсэн) ч, Redis
+    // сагс цэвэрлэхийг ШУУД биш, RlsMiddleware-ийн бүхэл хүсэлтийн
+    // транзакц бодитоор COMMIT хийгдсэний ДАРАА л хийнэ (SearchIndexer/
+    // NotificationTrigger-тэй ЯГ ижил onCommit()-гэйт зарчим) — эс бөгөөс
+    // хариу бичихэд ямар нэг алдаа гарч бүхэл транзакц rollback хийгдвэл
+    // (Order бодитоор үүсээгүй бол ч) харилцагчийн сагс дэмий алдагдана.
+    this.requestContext.onCommit(() => {
+      this.cartService.clear(customerId).catch((err: unknown) => {
+        this.logger.warn(
+          `Checkout-ийн дараа Redis сагс цэвэрлэхэд алдаа гарлаа (orderId=${orderId}): ${String(err)}`,
+        );
+      });
+    });
+
+    return {
+      ...result,
+      payUrl: invoice.payUrl,
+      qrText: invoice.qrText,
+      bankDeeplinks: invoice.bankDeeplinks ?? [],
+    };
   }
 
   // Staff-ийн статус шинэчлэлт БОЛОН харилцагчийн cancel (docs/plan.md §7
@@ -339,7 +400,7 @@ export class OrderService {
   }
 
   private async resolveCheckoutItem(
-    item: CheckoutOrderItemDto,
+    item: CartItemRecord,
     branchId: string,
   ): Promise<ResolvedCheckoutItem> {
     const variant = await this.prisma.tx.productVariant.findUnique({

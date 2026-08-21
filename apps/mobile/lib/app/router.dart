@@ -10,6 +10,13 @@ import '../features/branch/presentation/branch_selection_screen.dart';
 import '../features/cart/presentation/cart_screen.dart';
 import '../features/catalog/presentation/catalog_screen.dart';
 import '../features/catalog/presentation/product_detail_screen.dart';
+import '../features/checkout/domain/checkout_result.dart';
+import '../features/checkout/presentation/address_screen.dart';
+import '../features/checkout/presentation/delivery_method_screen.dart';
+import '../features/checkout/presentation/order_review_screen.dart';
+import '../features/checkout/presentation/order_success_screen.dart';
+import '../features/checkout/presentation/order_tracking_screen.dart';
+import '../features/checkout/presentation/payment_screen.dart';
 import 'home_screen.dart';
 import 'settings_screen.dart';
 
@@ -64,6 +71,35 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/branch-select',
         builder: (context, state) => const BranchSelectionScreen(),
+      ),
+      GoRoute(
+        path: '/checkout/delivery-method',
+        builder: (context, state) => const DeliveryMethodScreen(),
+      ),
+      GoRoute(
+        path: '/checkout/address',
+        builder: (context, state) => const AddressScreen(),
+      ),
+      GoRoute(
+        path: '/checkout/review',
+        builder: (context, state) => const OrderReviewScreen(),
+      ),
+      GoRoute(
+        path: '/orders/:id/payment',
+        builder: (context, state) => PaymentScreen(
+          orderId: state.pathParameters['id']!,
+          checkoutResult: state.extra as CheckoutResult?,
+        ),
+      ),
+      GoRoute(
+        path: '/orders/:id/success',
+        builder: (context, state) =>
+            OrderSuccessScreen(orderId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/orders/:id',
+        builder: (context, state) =>
+            OrderTrackingScreen(orderId: state.pathParameters['id']!),
       ),
     ],
   );

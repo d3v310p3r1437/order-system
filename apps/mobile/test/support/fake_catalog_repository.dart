@@ -14,6 +14,7 @@ class FakeCatalogRepository implements CatalogRepository {
   List<Category> categories = [];
   List<Product> Function(String q, String? categoryId)? searchHandler;
   Object? searchError;
+  Product Function(String id)? getProductHandler;
 
   /// Тестэд "ачаалж байгаа" төлөвийг (нэг frame-ийн турш ч) баримтжуулах
   /// боломж олгодог — жинхэнэ HTTP хүсэлт шиг микротаск дунд шууд
@@ -41,7 +42,9 @@ class FakeCatalogRepository implements CatalogRepository {
 
   @override
   Future<Product> getProduct(String id) async {
-    throw UnimplementedError();
+    final handler = getProductHandler;
+    if (handler == null) throw UnimplementedError();
+    return handler(id);
   }
 }
 

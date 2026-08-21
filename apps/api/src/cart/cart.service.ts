@@ -139,6 +139,13 @@ export class CartService {
     await this.redis.del(this.key(userId));
   }
 
+  // OrderService.checkout()-ийн цорын ганц эх сурвалж — захиалгын item-үүд
+  // ХЭЗЭЭ Ч клиентийн HTTP body-оос шууд ирэхгүй, зөвхөн энд (аль хэдийн
+  // сервэр талд бичигдсэн) Redis сагснаас л уншигдана.
+  async listForCheckout(userId: string): Promise<CartItemRecord[]> {
+    return this.readRaw(userId);
+  }
+
   // Redis-ийн variantId+quantity-г Postgres-ээс уншсан бүтээгдэхүүний
   // нэр/зураг/variant.basePrice-тай нэгтгэнэ. Устсан/idle variant (эсвэл
   // эцэг Product idle) байвал алдаа шидэхгүй, зөвхөн `unavailable: true`

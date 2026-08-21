@@ -60,6 +60,17 @@ dependencies:
   json_annotation: ^4.9.0
   shared_preferences: ^2.5.5
 
+  # Checkout: хүргэлтийн хаяг сонгох газрын зураг (docs/adr/009 —
+  # Google Maps биш OSM/Nominatim), QR төлбөрийн код, банкны deeplink нээх
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
+  qr_flutter: ^4.1.0
+  url_launcher: ^6.3.2
+
+  # AddressScreen-ийн анхны pin-ийг захиалагчийн бодит GPS байршлаар
+  # эхлүүлэхэд (зөвшөөрөл татгалзвал хуучин fallback: салбар/хотын төв)
+  geolocator: ^14.0.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
