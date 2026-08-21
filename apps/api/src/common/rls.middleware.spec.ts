@@ -257,6 +257,80 @@ describe('RlsMiddleware', () => {
   );
 
   it(
+    'controller res.end()-ийг АМЖИЛТТАЙ дуудсаны ДАРАА (handler(tx) аль ' +
+      'хэдийн дуусаад) `runRequestTransaction` COMMIT-ийн үед л REJECT ' +
+      'хийвэл (жинхэнэ Prisma-ийн interactive transaction timeout-той ' +
+      'адилхан — "Transaction already closed: ... expired") res.end() ' +
+      'ЯГ 1 удаа, СҮҮЛИЙН (алдааны) биетэйгээр дуудагдана — 2 дахь ' +
+      'дуудлага (write-after-end/процесс унагаах эрсдэлтэй) ХЭЗЭЭ Ч ' +
+      'болохгүй',
+    async () => {
+      // GET /orders-ийн 7758 мөрийн join query-той адил: query ӨӨРӨӨ
+      // (handler(tx)) АМЖИЛТТАЙ дуусаж, controller res.end()-ийг зөв
+      // (200) биетэйгээр дуудсан ч, Prisma COMMIT хийхээр оролдоход
+      // 5000ms-ийн transaction timeout аль хэдийн давсан байх нь бий —
+      // энэ үед `runRequestTransaction`-ий буцаах Promise өөрөө REJECT
+      // хийнэ (handler(tx) АМЖИЛТТАЙ дуусаад ч). Хуучин код (fix-ээс
+      // өмнө) энэ тохиолдолд res.end()-ийг ХОЁР удаа (эхлээд амжилтын
+      // 200, дараа нь next(err)-ийн алдааны 500) дуудуулж, бодит Node.js
+      // орчинд `ERR_STREAM_WRITE_AFTER_END` шидэж, res-ийн 'error'
+      // listener байхгүй тул процессыг унагаадаг байсан.
+      const timeoutErr = new Error(
+        'Transaction API error: Transaction already closed: A commit ' +
+          'cannot be executed on an expired transaction.',
+      );
+      const prisma = {
+        runRequestTransaction: jest
+          .fn()
+          .mockImplementation(
+            async (
+              _userId: string | null,
+              handler: (tx: unknown) => Promise<void>,
+            ) => {
+              await handler({});
+              throw timeoutErr;
+            },
+          ),
+      } as unknown as PrismaService;
+
+      const middleware = new RlsMiddleware(
+        prisma,
+        requestContext,
+        tokenVerifier,
+      );
+      const { res, originalEndSpy } = buildResponse();
+      res.headersSent = false;
+
+      const next: NextFunction = jest.fn((err?: unknown) => {
+        if (!err) {
+          // Controller: тооцоолол амжилттай дууссан гэж үзээд шууд 200
+          // хариу бэлдэнэ (жинхэнэ OrderController.findAll()-той адил).
+          void Promise.resolve().then(() => {
+            res.end('{"ok":true}');
+          });
+        } else {
+          // HttpExceptionFilter: транзакц REJECT хийсний дараа л,
+          // controller-ийн "амжилттай" гэж бодсон хариуг ААЛГАЖ, ЖИНХЭНЭ
+          // алдааны хариугаар СОЛИНО.
+          void Promise.resolve().then(() => {
+            res.end('{"error":{"code":"INTERNAL_ERROR"}}');
+          });
+        }
+      });
+
+      void middleware.use(req, res, next);
+      await flushMicrotasks();
+      await flushMicrotasks();
+      await flushMicrotasks();
+
+      expect(originalEndSpy).toHaveBeenCalledTimes(1);
+      expect(originalEndSpy).toHaveBeenCalledWith(
+        '{"error":{"code":"INTERNAL_ERROR"}}',
+      );
+    },
+  );
+
+  it(
     'client холболтоо цуцалж res.end() ХЭЗЭЭ Ч дуудагдаагүй ч ' +
       "('close' event) транзакц мөнхөд зогсохгүй",
     async () => {

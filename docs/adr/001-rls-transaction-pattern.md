@@ -190,3 +190,130 @@ pipeline-д барьж, `res.end()`-ийг ЯГ амжилттай хариут�
 cancel) ХЭЗЭЭ Ч ажиглагдаагүй, аль алинд нь. Энэ нь засвар зөвхөн "200
 хариуг хойшлуулна" гэсэн хязгаарлагдмал зорилгоор биш, `res.end()`-ийн
 БҮХ дуудлагыг (статус кодоос үл хамаарч) тэгш хамарсныг нотолж байна.
+
+## 2026-08-21 нэмэлт: ноцтой засвар — `res.end()`-ийн monkey-patch өөрөө давхар дуудагдаж БҮХЭЛ Node процессыг унагаадаг байсан
+
+**Асуудал (Захиалгын түүх дэлгэц нэмэх ажлын явцад бодит crash-аар илэрсэн):**
+`GET /orders`-ийн `items` include-д `variant.product` join нэмэгдсэний
+дараа, dev DB-д туршилтын debris (7758 захиалга) хуримтлагдсан нэг
+харилцагчийн `GET /orders` query 6000-6200ms үргэлжилж, Prisma-ийн
+interactive transaction-ий 5000ms анхдагч timeout-ыг давав. Үр дүнд нь
+backend процесс **бүхэлдээ, детерминистикээр (санамсаргүй биш) 2/2 удаа
+давтан** унасныг ажиглав:
+
+```
+ERROR [RlsMiddleware] RLS transaction алдаа гарлаа
+PrismaClientKnownRequestError: Transaction API error: Transaction already
+closed: A commit cannot be executed on an expired transaction...
+ERROR [HttpExceptionFilter] Internal server error
+...
+node:events:487
+      throw er; // Unhandled 'error' event
+Error [ERR_STREAM_WRITE_AFTER_END]: write after end
+    at ServerResponse.end (node:_http_outgoing:1047:15)
+    at <anonymous> (rls.middleware.ts:84:9)
+Emitted 'error' event on ServerResponse instance at: ...
+Node.js v24.16.0
+```
+
+**Язгуур шалтгаан:** дээрх 2026-08-19-ний засвар `res.end()`-ийг
+monkey-patch хийж, controller дуудсан МӨЧИД биш, `transactionSettled`
+(COMMIT/ROLLBACK бүрэн дуусах) хүлээгээд л жинхэнэ `originalEnd()`-ийг
+дуудна гэдгийг зөв шийдсэн ч, **энэ patch өөрөө идемпотент БИШ** байсан:
+
+```ts
+res.end = ((...args) => {
+  signalControllerDone();
+  void transactionSettled.finally(() => {
+    originalEnd(...args);   // ⚠️ res.end() дуудагдах БҮР дахин бүртгэгдэнэ
+  });
+  return res;
+}) as Response['end'];
+```
+
+`GET /orders`-ийн query (`handler(tx)`, controller) АМЖИЛТТАЙ дуусаж, Nest
+`res.end('...200 OK JSON...')`-ийг ЭХЭЛЖ дуудсан ч (patch-ийн 1-р дуудлага,
+`originalEnd` хараахан ажиллаагүй, зөвхөн ХОЙШЛУУЛСАН), яг тэр мөчид Prisma
+өөрөө COMMIT хийхээр оролдоход **5000ms аль хэдийн давсан байсан тул COMMIT
+ӨӨРӨӨ REJECT** хийсэн — `runRequestTransaction(...)`-ийн Promise иймд REJECT
+хийж, `RlsMiddleware`-ийн `.catch()` (§"Асуудал" мөрийн 119-127 мөр) ажиллаж
+`next(err)`-ийг дуудсан. Энэ нь Nest-ийн `HttpExceptionFilter`-ээр дамжиж
+**`res.end()`-ийг ХОЁР ДАХЬ удаа** (500 алдааны биетэй) дуудуулсан. Патчийн
+хуучин хувилбарт `res.end()`-ийн дуудлага БҮРД шинэ, тусдаа
+`transactionSettled.finally(() => originalEnd(...))` бүртгэгддэг байсан тул
+хоёр дахь дуудлага ХОЁР ДАХЬ `originalEnd()` дуудлага болж, эхнийх нь аль
+хэдийн урсгалыг "төгсгөсөн" байхад Node.js-ийн `ServerResponse` дахин
+бичихийг оролдож `ERR_STREAM_WRITE_AFTER_END`-г **'error' event-ээр**
+(throw-оор биш) шидсэн — `res`-д ЯМАР Ч `'error'` listener бүртгэгдээгүй
+байсан тул Node.js-ийн стандарт зарчмаар (listener-гүй EventEmitter дээр
+'error' emit хийвэл unhandled exception болж процессыг унагана) **бүхэл
+процесс crash хийсэн**, зөвхөн тухайн НЭГ HTTP хүсэлт биш.
+
+⚠️ **Чухал ялгаа өмнөх (2026-08-19) олдвороос:** тэр удаагийн бүх race
+(ROLLBACK/4xx зам орсон ч) `runRequestTransaction`-ий callback (`handler(tx)`)
+АМЖИЛТТАЙ дуусаж, `$transaction()`-ий Promise ЧАМ ч бас АМЖИЛТТАЙ (resolve)
+дуусдаг байсан тохиолдлуудыг л хамарсан (§"Нэмэлт баталгаажуулалт" хэсгийг
+үз) — `res.end()` ямар ч тохиолдолд **ГАНЦ УДАА** л дуудагддаг гэсэн
+ДАРАЛТ (implicit assumption) дор зөв ажилладаг байсан. Энэ удаагийн олдвор
+бол **тэр дарлагыг зөрчсөн, шинэ тохиолдол**: `handler(tx)` АМЖИЛТТАЙ
+дуусаад ч, Prisma-ийн COMMIT ӨӨРӨӨ (callback-аас ХАРААТ бусаар, зөвхөн
+хугацаанаас шалтгаалж) REJECT хийж болдгийг 2026-08-19-ний засвар (мөн
+түүний unit тестүүд) тооцоогүй байв.
+
+**Баталгаажуулалт 1 (unit, детерминист):** `rls.middleware.spec.ts`-д шинэ
+тест нэмж (`runRequestTransaction`-ийн mock: `handler(tx)` АМЖИЛТТАЙ
+дуусаад л, ДАРАА нь `throw` хийдэг болгосон — яг Prisma-ийн жинхэнэ
+"COMMIT-ийн үед timeout" зан төлөвтэй ижил), засварын ӨМНӨ **`originalEnd`
+яг 2 удаа дуудагдсаныг** (`toHaveBeenCalledTimes(1)` → бодит 2, тест FAIL)
+шууд нотолсон.
+
+**Баталгаажуулалт 2 (бодит HTTP, live pg_sleep):** түр зуурын
+`GET /debug/slow-query` endpoint (`this.prisma.tx.$queryRaw\`SELECT
+pg_sleep(6)\``, засвар баталгаажсаны дараа commit хийгдэлгүй устгасан)-ыг
+бодит ажиллаж буй dev backend (`localhost:3100`)-д curl-аар дуудаж:
+- Засварын ӨМНӨ (кодыг түр буцааж шалгах шаардлагагүй болсон — 2/2 бодит
+  crash аль хэдийн CI бус, ЭНЭ Захиалгын түүх дэлгэц нэмэх ажлын явцад
+  бодитоор ажиглагдсан байсан, дээрх "Асуудал"-ыг үз).
+- **Засварын ДАРАА:** `curl http://localhost:3100/debug/slow-query` →
+  6.2 секундын дараа `HTTP 500` (`{"error":{"code":"INTERNAL_ERROR",...}}`)
+  цэвэр хариу авав (hang/silent drop БИШ). **Яг үүний дараа**
+  `curl http://localhost:3100/health` → `200 {"status":"ok"}` ШУУД
+  хариулж, `netstat`-аар порт хэвээр LISTENING байгааг баталгаажуулсан —
+  өөрөөр хэлбэл **процесс бүхэлдээ амьд, дараагийн хүсэлтэд хэвийн хариу
+  өгч байгааг бодит HTTP хүсэлтээр нотолсон**.
+
+**Засвар (`src/common/rls.middleware.ts`):**
+```ts
+let flushed = false;
+let pendingEndArgs: Parameters<Response['end']> | null = null;
+res.end = ((...args) => {
+  signalControllerDone();
+  pendingEndArgs = args;               // "сүүлчийн бичилт ялна"
+  void transactionSettled.finally(() => {
+    if (flushed) return;               // идемпотент хамгаалалт
+    flushed = true;
+    originalEnd(...(pendingEndArgs as Parameters<Response['end']>));
+  });
+  return res;
+}) as Response['end'];
+res.on('error', (err) => {             // дэд хамгаалалт (defense-in-depth)
+  this.logger.error('HTTP response стрим алдаа гарлаа (процесс амьд үлдэнэ)', err);
+});
+```
+Хоёр хэсэгтэй: (1) `flushed` — `originalEnd`-ийг ЯГ 1 удаа л дуудна, хэдэн
+удаа `res.end()` дуудагдсанаас үл хамаарч (энэ өөрөө crash-ийг арилгана);
+(2) `pendingEndArgs`-ийг ХАМГИЙН СҮҮЛД дуудсан аргументаар дахин бичих —
+энэ нь зөвхөн crash-ийг арилгаад зогсохгүй, **зөв (алдааны) хариуг клиент
+рүү явуулна** (controller "амжилттай" гэж эхлээд бодсон ч, транзакц
+бодитоор COMMIT хийгдээгүй бол — ялангуяа WRITE endpoint-уудад — клиент
+ХУУРАМЧ 200 авах ёсгүй). (3) `res.on('error', ...)` — ирээдүйд өөр (одоо
+мэдэгдээгүй) замаар double-end гарвал ч БҮХЭЛ процессыг УНАГАХГҮЙ, зөвхөн
+лог бичих Node.js-ийн стандарт "unhandled 'error' event = crash"
+зарчмаас урьдчилан сэргийлсэн дэд давхарга.
+
+**Ач холбогдол:** энэ засвар мөн `RlsMiddleware`-ийг ашигладаг **бүх**
+endpoint дээр нөлөөлдөг (§"2026-08-19 нэмэлт"-тэй адил) — Prisma-ийн 5000ms
+timeout-ыг давдаг АЛЬ Ч удаан query (том жагсаалт, pagination-гүй
+aggregate, гэх мэт) яг ижил crash-ийн эрсдэлтэй байсан. Одоо ямар ч ийм
+удаан query зөвхөн ТУХАЙН хүсэлтэд 500 (эсвэл цаашид тохиргоо нэмвэл 503)
+өгөөд, backend бүхэлдээ хэвийн ажиллаж үлдэнэ.

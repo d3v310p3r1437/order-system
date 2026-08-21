@@ -78,13 +78,59 @@ export class RlsMiddleware implements NestMiddleware {
       ...args: Parameters<Response['end']>
     ) => Response;
     let transactionSettled: Promise<void> = Promise.resolve();
+    // ⚠️ ЧУХАЛ ЗАСВАР (2026-08-21, backend процессыг бүхэлд нь унагаадаг
+    // байсан ноцтой алдаа): Prisma-ийн interactive transaction-ий 5000ms
+    // timeout нь `handler(tx)` (→ `next(); await controllerDone;`) АМЖИЛТТАЙ
+    // дуусаад ч (controller аль хэдийн 200 хариу бэлдчихсэн байсан ч),
+    // ЗӨВХӨН COMMIT хийх мөчид "Transaction already closed: ... expired"
+    // алдаа шидэж болохыг олов (жиш: `GET /orders`-ийн олон мянган мөрийн
+    // join query 5с-аас удаан үргэлжлэхэд) — ийм тохиолдолд
+    // `runRequestTransaction`-ий Promise REJECT хийж, доод `.catch()`
+    // `next(err)`-ийг дуудна, энэ нь Nest-ийн exception filter-ээр дамжиж
+    // `res.end()`-ийг ХОЁР ДАХЬ удаа (алдааны биетэй) дуудуулдаг байсан.
+    // Хуучин код `res.end()`-ийн дуудлага БҮРД ШУУД шинэ
+    // `transactionSettled.finally(() => originalEnd(...))` бүртгэдэг байсан
+    // тул хоёр дахь удаагийн бүртгэл ХОЁР ДАХЬ `originalEnd()` дуудлага
+    // болж, Node.js-ийн ServerResponse аль хэдийн "төгссөн" урсгал руу
+    // дахин бичихийг оролдоход `ERR_STREAM_WRITE_AFTER_END`-г 'error'
+    // event-ээр шидэж (`res`-д listener бүртгэгдээгүй тул) БҮХЭЛ Node
+    // процессыг unhandled exception-оор унагаадаг байв (2 удаа бодитоор
+    // давтан баталгаажуулсан, `rls.middleware.spec.ts`-ийн "controller
+    // res.end()-ийг АМЖИЛТТАЙ дуудсаны ДАРАА..." тестээр регресс
+    // болгосон). **Засвар:** (1) `flushed` — `originalEnd`-ийг ЯГ 1 удаа л
+    // дуудна (идемпотент хамгаалалт, давхар дуудлагаас процесс унахаас
+    // сэргийлнэ); (2) `pendingEndArgs`-ийг ХАМГИЙН СҮҮЛД дуудсан
+    // `res.end()`-ийн аргументаар ДАХИН БИЧНЭ ("сүүлчийн бичилт ялна") —
+    // ингэснээр controller "амжилттай" гэж эхлээд бодсон ч, транзакц
+    // эцэст нь бодитоор REJECT хийвэл клиент ХУУРАМЧ 200 БИШ, ЖИНХЭНЭ
+    // (алдааны) хариуг л хүлээн авна.
+    let flushed = false;
+    let pendingEndArgs: Parameters<Response['end']> | null = null;
     res.end = ((...args: Parameters<Response['end']>) => {
       signalControllerDone();
+      pendingEndArgs = args;
       void transactionSettled.finally(() => {
-        originalEnd(...args);
+        if (flushed) {
+          return;
+        }
+        flushed = true;
+        originalEnd(...(pendingEndArgs as Parameters<Response['end']>));
       });
       return res;
     }) as Response['end'];
+    // Дэд хамгаалалт (defense-in-depth): дээрх засвар double-end-ийг
+    // логикийн түвшинд арилгасан ч, ирээдүйд ижил төстэй өөр зам
+    // (жиш: streaming response, өөр middleware) санамсаргүй дахин
+    // давхар бичвэл ч БҮХЭЛ процессыг унагахгүй, зөвхөн лог бичээд
+    // өнгөрнө — Node.js-ийн стандарт зарчим: EventEmitter-ийн 'error'
+    // event-д listener байхгүй бол throw хийдэг тул ямар ч 'error'
+    // listener-гүй response объект procees-crash-ийн нэг эх үүсвэр байдаг.
+    res.on('error', (err: unknown) => {
+      this.logger.error(
+        'HTTP response стрим алдаа гарлаа (процесс амьд үлдэнэ)',
+        err instanceof Error ? err.stack : err,
+      );
+    });
 
     // Энэ массивыг `run()`-д дамжуулсан context-той ИЖИЛ reference-ээр
     // хуваалцаж, доор (transaction амжилттай commit хийгдсэний дараа) дахин
