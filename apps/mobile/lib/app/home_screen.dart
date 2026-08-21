@@ -4,10 +4,10 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/auth_provider.dart';
 import '../features/auth/domain/auth_state.dart';
-import '../features/cart/presentation/cart_providers.dart';
+import 'widgets/cart_app_bar_action.dart';
 
-/// Каталог/сагс/тохиргоо руу орох цэг — захиалга дараагийн Phase-д
-/// нэмэгдэх хүртэл нүүр дэлгэц энэ навигацийн зорилготой хэвээр байна.
+/// Нүүр tab — мэндчилгээ + каталог руу орох CTA. Тохиргоо/Гарах
+/// `ProfileScreen`-рүү зөөгдсөн (§8 навигацийн цэгцлэлт).
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -19,35 +19,11 @@ class HomeScreen extends ConsumerWidget {
       _ => '',
     };
     final theme = Theme.of(context);
-    final cartItemCount = ref.watch(cartItemCountProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Нүүр'),
-        actions: [
-          IconButton(
-            key: const Key('open_cart_button'),
-            icon: Badge(
-              label: Text('$cartItemCount'),
-              isLabelVisible: cartItemCount > 0,
-              child: const Icon(Icons.shopping_cart_outlined),
-            ),
-            tooltip: 'Сагс',
-            onPressed: () => context.push('/cart'),
-          ),
-          IconButton(
-            key: const Key('settings_button'),
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: 'Тохиргоо',
-            onPressed: () => context.push('/settings'),
-          ),
-          IconButton(
-            key: const Key('logout_button'),
-            icon: const Icon(Icons.logout),
-            tooltip: 'Гарах',
-            onPressed: () => ref.read(authProvider.notifier).logout(),
-          ),
-        ],
+        actions: const [CartAppBarAction()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),

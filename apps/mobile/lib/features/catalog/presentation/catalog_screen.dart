@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/widgets/cart_app_bar_action.dart';
 import 'catalog_providers.dart';
 import 'widgets/catalog_empty_state.dart';
 import 'widgets/category_chip_row.dart';
@@ -37,6 +38,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Каталог'),
+        actions: const [CartAppBarAction()],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(

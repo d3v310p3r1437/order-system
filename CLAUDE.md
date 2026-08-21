@@ -178,10 +178,12 @@ Mobile cart/branch-select UI (§7 модуль #5-ийн үлдсэн хэсэг
 (доор дэлгэрэнгүй). **Cart→Checkout→QPay бүрэн урсгал (backend checkout
 Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Review→Payment
 (QR/deeplink)→Success→Tracking дэлгэцүүд) дууссан** (доор
-"(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз). Geolocation auto-routing
-(автоматаар хамгийн ойрхон салбар сонгох — Phase 4-ийн хүргэлтийн
-чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog хэвээр. Дэлгэрэнгүй:
-`docs/plan.md` §8.
+"(2026-08-20, Cart→Checkout→QPay)" бичлэгийг үз). **Захиалгын түүх,
+Буцаалт хүсэх, Профайл + Mobile 4-tab навигаци (§7 модуль #6, #9-ийн
+CUSTOMER тал) дууссан** (доор "(2026-08-21) Захиалгын түүх..." бичлэгийг
+үз). Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
+Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
+хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -1425,6 +1427,105 @@ Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Revi
   сольж, FAB болон fallback дэлгэцийг dark горимд screenshot-оор мөн
   баталгаажуулсан (контраст зөв). `flutter analyze` 0 алдаа, `flutter
   test` бүх (74/74) тест ногоон.
+- **(2026-08-21) Захиалгын түүх, Буцаалт хүсэх, Профайл + Mobile
+  навигацийг цэгцлэх дууссан** (§7 модуль #6, #9 — CUSTOMER-ийн талыг
+  ЭНЭ Phase-д гүйцээв, "Харилцагчийн буцаалт хүсэх зөвхөн API/e2e
+  түвшинд шалгасан, Flutter UI ороогүй" гэсэн өмнөх тэмдэглэл ЭНЭ
+  Phase-ээр хуучирсан):
+  - **Хэсэг A (навигаци):** `lib/app/router.dart`-ийг `StatefulShellRoute.
+    indexedStack`-руу шинэчилж (`MainShell` widget, Material 3
+    `NavigationBar`, 4 branch: `/home`/`/catalog`/`/orders`/`/profile`)
+    доод navigation bar нэмэв — гүнзгий route-ууд (`/orders/:id`,
+    `/orders/:id/return`, `/products/:id` гэх мэт) shell-ийн ГАДНА,
+    bottom nav-гүй бүтэн дэлгэц хэвээр (Android emulator дээр screenshot
+    цуврал баталгаажуулсан). Сагсны icon (badge-тэй) шинэ
+    `lib/app/widgets/cart_app_bar_action.dart`-д нэгтгэж 4 tab-ийн
+    AppBar бүрд (`HomeScreen`/`CatalogScreen`/`OrderListScreen`/
+    `ProfileScreen`) дахин ашигласан — HomeScreen-ийн хуучин Тохиргоо/
+    Гарах icon-ыг ProfileScreen рүү зөөв.
+  - **Хэсэг B (захиалгын түүх):** `features/orders/` шинэ модуль —
+    `OrderListScreen` (`GET /orders`, идэвхтэй/түүх 2 бүлэг, skeleton/
+    empty/error 3 төлөв, pull-to-refresh, `OrderListCard`: дугаар
+    (`OrderSummaryCard.shortOrderId()` дахин ашигласан)/огноо/дүн/
+    `OrderStatusBadge`/барааны товч жагсаалт "Бүтээгдэхүүн Вариант ×N
+    +M өөр"). ⚠️ **Backend өргөтгөл:** `order.service.ts`-ийн
+    `findAll`/`findOne`-ийн `items` include-д `variant: { include:
+    { product: true } }` нэмэв (ADR 005: Product/ProductVariant аль
+    аль нь `*_select` RLS-ээр бүх нэвтэрсэн хэрэглэгчид нээлттэй тул
+    шинэ SECURITY DEFINER функц/RLS өөрчлөлт ШААРДАГГҮЙ) — Mobile-ийн
+    `OrderItemLine`-д `id`/`productName`/`variantName`/`displayName`
+    нэмэв, `OrderDetail`-д `createdAt`/`completedAt`/`canRequestReturn`
+    (7 хоногийн цонх, backend-ийн `RETURN_WINDOW_DAYS`-тэй ЯГ тохирсон
+    UI-ийн урьдчилсан шийдвэр).
+  - **Хэсэг C (буцаалт хүсэх):** `features/returns/` шинэ модуль —
+    `OrderTrackingScreen`-д COMPLETED захиалганд `_ReturnSection`:
+    буцаалт байхгүй бол "Буцаалт хүсэх" товч (`canRequestReturn`),
+    байвал хамгийн сүүлийн (`requestedAt`) хүсэлтийн `ReturnStatusBadge`
+    (slate/blue/red/emerald/amber, `AvailabilityBadge`-тэй ЯГ ижил
+    brightness-based хатуу өнгөний загвар — эдгээр семантик өнгө
+    `Theme.colorScheme`-д байхгүй тул). `ReturnRequestScreen`: item
+    сонголт (checkbox, идэвхтэй/REFUNDED буцаалттай item идэвхгүй),
+    шалтгаан (заавал), "Илгээх" → `POST /returns` (олон item сонговол
+    дараалан дуудна, DTO нэг мөрөөр л хүлээн авдаг тул) → SnackBar →
+    `context.pop()` → tracking дэлгэц дээр badge шууд харагдана.
+    WebSocket `return.status_changed` (аль хэдийн байсан event, Phase
+    3c-ээс) `orderReturnsProvider`-ийг invalidate хийж staff зөвшөөрөх/
+    татгалзахад badge бодит цагт шинэчлэгддэг.
+  - **Хэсэг D (профайл):** `features/profile/` — утасны дугаар, "Тохиргоо"
+    (одоо байгаа `/settings`), "Гарах" (HomeScreen-ээс зөөв).
+  - ⚠️🔴 **Ноцтой олдвор — backend-ийг бүхэлд нь унагаадаг байсан,
+    ЭНЭ ажлын шууд өргөтгөлөөс болж дэлгэгдсэн (гэхдээ язгуур нь
+    ӨМНӨ ЧЬ БАЙСАН) production-хэлбэрийн асуудал:** тестийн
+    `+97688112233` (Mobile emulator баталгаажуулалтад тогтмол дахин
+    ашигладаг акаунт, `[[dev-test-customer-account]]` санах ойг үз)
+    dev DB-д **7758 захиалга** хуралт (олон удаагийн туршилтын debris,
+    2 хоногийн дотор) хуримтлагдсан байсныг олов. `GET /orders`-ийн
+    pagination байхгүй (санаатай, backlog-д тэмдэглэсэн шийдвэр) дээр
+    дээрх `variant`/`product` join нэмэгдсэнээр 7758 мөрийн query
+    RlsMiddleware-ийн interactive transaction-ийн 5000ms timeout-ийг
+    ДАВСАН (6000-6200ms) — энэ нь `rls.middleware.ts`-ийн ӨМНӨ НЬ
+    БАЙСАН, огт ӨӨР (`ERR_STREAM_WRITE_AFTER_END`, timeout-ийн дараа
+    хариу бичихийг оролдох) алдааны боловсруулалтын цоорхойг өдөөж,
+    **бүхэл Node процессыг унагаасан** (2 удаа тусад нь давтан
+    баталгаажуулсан). Яаралтай засвар (энэ ажлын хамрах хүрээнээс
+    гадуур том рефактор — `RlsMiddleware`-ийн timeout-ийн алдааны
+    боловсруулалтыг бүрэн засах — тул хийгээгүй): dev DB-ийн энэ
+    debris-ийг **хэрэглэгчийн зөвшөөрлөөр** шууд SQL-ээр (`DELETE FROM
+    orders WHERE "customerId"='...'`, `return_requests` холбоогүй эсэхийг
+    урьдчилж баталгаажуулсан) цэвэрлэж шийдвэрлэв — 7758-аас 0 болгосны
+    дараа `GET /orders` 0.1с-д багтав. Дэлгэрэнгүй (яагаад дахин гарч
+    болзошгүй, яаж шалгах): `[[dev-test-customer-account]]` санах ой.
+    **Branch debris мөн давхар дэлгэгдсэн** (өмнө нь баримтжуулсан,
+    удаан хугацаанд дахин цэвэрлэгдээгүй) — `pnpm --filter api run
+    cleanup:branch-debris`-ийг дахин ажиллуулж 45→1 идэвхтэй Branch
+    болгов (`docs/plan.md`/CLAUDE.md-ийн "Branch debris цэвэрлэлт"
+    хэсгийн зөвлөсөн "тогтмол давтамжтай дахин ажиллуулж болно" зарчмыг
+    практикт нотолсон жишээ).
+  - ✅ **Android emulator дээрх баталгаажуулалт (`+97688112233`
+    акаунтаар, light+dark):** нэвтрэх → 4 tab-ийн доод navigation bar
+    зөв ажиллаж (Нүүр/Каталог/Захиалгууд/Профайл), сагсны icon
+    badge-тэй бүх tab-д хадгалагдав → бодит checkout (Ariel угаалгын
+    нунтаг, "Мобайл демо салбар", PICKUP, mock төлбөр симуляц) хийж
+    шинэ захиалга үүсгэв → Postgres руу шууд орж (`UPDATE orders SET
+    status='COMPLETED'`) COMPLETED болгов → апп-ыг force-stop+дахин
+    ачаалсны дараа (Riverpod-ийн кэшийн зарчмын дагуу) Захиалгууд tab-д
+    "Түүх" бүлэгт ногоон "Дуссан" badge-тэй карт, барааны нэр ("Ariel
+    угаалгын нунтаг 3кг ×1"), дүн зөв харагдав → карт дээр дарж
+    OrderTrackingScreen-д бүх алхам гүйцэтгэсэн timeline + "Буцаалт
+    хүсэх" товч харагдав → товч дарж item сонгож, шалтгаан бичиж
+    Илгээхэд SnackBar + автомат буцаж badge ("Хүсэлт гаргасан") шууд
+    солигдов → Профайл tab (утасны дугаар, Тохиргоо, Гарах) → Тохиргоо
+    → Гэрэл горимд сольж дээрх бүх дэлгэцийг (Захиалгууд/Захиалгын явц/
+    Профайл) дахин screenshot-оор баталгаажуулав (контраст зөв, cobalt-
+    indigo палет хоёр горимд адил цэвэрхэн). `flutter analyze` 0 алдаа,
+    `flutter test` 87/87 (шинэ: `main_shell_test.dart`,
+    `order_list_screen_test.dart`, `order_list_provider_test.dart`,
+    `return_request_screen_test.dart`, `profile_screen_test.dart`).
+    Backend: `order.service.spec.ts` 13/13, `test/orders.e2e-spec.ts` +
+    `test/returns.e2e-spec.ts` 39/39 (бүтэн e2e suite 132/137 — 5 алдаа
+    зөвхөн `delivery-routing.e2e-spec.ts`-д, амьд OSRM public demo
+    сервертэй харьцуулалт, ЭНЭ ажилтай ХОЛБООГҮЙ, `docs/adr/007`-ийн
+    мэдэгдэж буй хязгаарлалт).
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

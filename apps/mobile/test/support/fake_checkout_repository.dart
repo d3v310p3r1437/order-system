@@ -11,9 +11,21 @@ class FakeCheckoutRepository implements CheckoutRepository {
   ApiException? checkoutError;
   OrderDetail? orderDetail;
   OrderRoute? orderRoute;
+  List<OrderDetail> orders = const [];
+  ApiException? listOrdersError;
 
   final List<({String branchId, String deliveryMethod})> checkoutCalls = [];
   final List<String> simulatePaidCalls = [];
+  int listOrdersCallCount = 0;
+
+  @override
+  Future<List<OrderDetail>> listOrders() async {
+    listOrdersCallCount++;
+    if (listOrdersError != null) {
+      throw listOrdersError!;
+    }
+    return orders;
+  }
 
   @override
   Future<CheckoutResult> checkout({
@@ -48,6 +60,7 @@ class FakeCheckoutRepository implements CheckoutRepository {
           branchId: 'branch-1',
           items: const [],
           deliveryMethod: 'PICKUP',
+          createdAt: DateTime(2026, 8, 20).toIso8601String(),
         );
   }
 
