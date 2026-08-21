@@ -61,6 +61,15 @@ const CART_EMPTY = {
   message: 'Сагс хоосон байна',
 };
 
+// Mobile-ийн Захиалгын түүх/Буцаалт хүсэх дэлгэцэд барааны нэр (жиш:
+// "Кока-Кола 0.5Л") харуулах шаардлагатай болсон (§7 модуль #6, #9) тул
+// нэмэв — Product/ProductVariant аль аль нь `*_select` RLS-ээр бүх
+// нэвтэрсэн хэрэглэгчид (CUSTOMER-ийг оролцуулаад) нээлттэй тул шинэ
+// SECURITY DEFINER функц/RLS өөрчлөлт ШААРДАГГҮЙ (ADR 005).
+const ORDER_ITEM_VARIANT_INCLUDE = {
+  variant: { include: { product: true } },
+} as const;
+
 // PATCH /orders/:id/status-ыг дуудаж болох "staff" дүрс (§6.1 матриц:
 // OWNER-д зөвхөн R байдаг тул орохгүй). Эдгээрээс өөр (зөвхөн CUSTOMER)
 // дүртэй хүсэлтийг OrderService.updateStatus() cancel-only дүрмээр шалгана.
@@ -111,14 +120,14 @@ export class OrderService {
     return this.prisma.tx.order.findMany({
       where: { status: filter.status, branchId: filter.branchId },
       orderBy: { createdAt: 'desc' },
-      include: { items: true },
+      include: { items: { include: ORDER_ITEM_VARIANT_INCLUDE } },
     });
   }
 
   async findOne(id: string) {
     const order = await this.prisma.tx.order.findUnique({
       where: { id },
-      include: { items: true },
+      include: { items: { include: ORDER_ITEM_VARIANT_INCLUDE } },
     });
     if (!order) {
       throw new NotFoundException(ORDER_NOT_FOUND);
