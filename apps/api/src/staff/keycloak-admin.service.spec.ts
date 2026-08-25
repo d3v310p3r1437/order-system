@@ -4,8 +4,13 @@ import { KeycloakAdminService } from './keycloak-admin.service.js';
 // osrm-routing.provider.spec.ts/qpay.provider.spec.ts-тэй ижил зарчим:
 // бодит Keycloak рүү хэзээ ч хандахгүй, зөвхөн HTTP давхаргыг (global
 // fetch) mock хийж URL/дараалал/хариу задлах логикийг л шалгана.
-function mockFetch(handler: (url: string, init?: RequestInit) => { status: number; body?: unknown; headers?: Record<string, string> }) {
-  const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
+function mockFetch(
+  handler: (
+    url: string,
+    init?: RequestInit,
+  ) => { status: number; body?: unknown; headers?: Record<string, string> },
+) {
+  const fetchMock = jest.fn((url: string, init?: RequestInit) => {
     const { status, body, headers } = handler(url, init);
     return {
       ok: status >= 200 && status < 300,
@@ -81,7 +86,9 @@ describe('KeycloakAdminService.provisionUser', () => {
         };
       }
       if (init?.method === 'POST' && url.endsWith('/users')) {
-        throw new Error('Шинээр үүсгэх ЁСГҮЙ (олдсон хэрэглэгчийг дахин ашиглах ёстой)');
+        throw new Error(
+          'Шинээр үүсгэх ЁСГҮЙ (олдсон хэрэглэгчийг дахин ашиглах ёстой)',
+        );
       }
       if (init?.method === 'PUT') {
         return { status: 204 };

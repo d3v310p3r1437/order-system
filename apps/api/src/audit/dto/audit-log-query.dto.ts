@@ -1,5 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export const DEFAULT_AUDIT_LOG_LIMIT = 50;
 export const MAX_AUDIT_LOG_LIMIT = 200;

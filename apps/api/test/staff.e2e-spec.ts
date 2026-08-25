@@ -169,20 +169,26 @@ describe('Staff management (e2e)', () => {
 
     superAdminToken = (await createStaff('SUPER_ADMIN', null)).token;
     branchAdminAToken = (await createStaff('BRANCH_ADMIN', branchA.id)).token;
-    branchManagerAToken = (await createStaff('BRANCH_MANAGER', branchA.id)).token;
+    branchManagerAToken = (await createStaff('BRANCH_MANAGER', branchA.id))
+      .token;
   });
 
   afterAll(async () => {
     for (const keycloakUserId of createdKeycloakUserIds) {
       await fetch(
         `${keycloakUrl}/admin/realms/${keycloakRealm}/users/${keycloakUserId}`,
-        { method: 'DELETE', headers: { Authorization: `Bearer ${adminToken}` } },
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${adminToken}` },
+        },
       ).catch(() => undefined);
     }
     await superuserPrisma.userBranchRole.deleteMany({
       where: { userId: { in: createdUserIds } },
     });
-    await superuserPrisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
+    await superuserPrisma.user.deleteMany({
+      where: { id: { in: createdUserIds } },
+    });
     await app.close();
     await superuserPrisma.$disconnect();
   });
@@ -192,7 +198,12 @@ describe('Staff management (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email, fullName: 'Шинэ Ажилтан', role: 'BRANCH_MANAGER', branchId: branchA.id })
+      .send({
+        email,
+        fullName: 'Шинэ Ажилтан',
+        role: 'BRANCH_MANAGER',
+        branchId: branchA.id,
+      })
       .expect(201);
 
     const body = res.body as StaffCreateBody;
@@ -200,7 +211,9 @@ describe('Staff management (e2e)', () => {
     expect(body.temporaryPassword.length).toBeGreaterThan(0);
     createdUserIds.push(body.id);
 
-    const dbUser = await superuserPrisma.user.findUnique({ where: { id: body.id } });
+    const dbUser = await superuserPrisma.user.findUnique({
+      where: { id: body.id },
+    });
     expect(dbUser?.email).toBe(email);
     const dbRole = await superuserPrisma.userBranchRole.findFirst({
       where: { userId: body.id, role: 'BRANCH_MANAGER', branchId: branchA.id },
@@ -220,7 +233,12 @@ describe('Staff management (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${branchAdminAToken}`)
-      .send({ email, fullName: 'Салбарын Ажилтан', role: 'SALESPERSON', branchId: branchA.id })
+      .send({
+        email,
+        fullName: 'Салбарын Ажилтан',
+        role: 'SALESPERSON',
+        branchId: branchA.id,
+      })
       .expect(201);
 
     const body = res.body as StaffCreateBody;
@@ -236,7 +254,12 @@ describe('Staff management (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${branchAdminAToken}`)
-      .send({ email, fullName: 'Хориотой Ажилтан', role: 'SALESPERSON', branchId: branchB.id })
+      .send({
+        email,
+        fullName: 'Хориотой Ажилтан',
+        role: 'SALESPERSON',
+        branchId: branchB.id,
+      })
       .expect(403);
 
     expect((res.body as ErrorBody).error.code).toBe('FORBIDDEN');
@@ -286,7 +309,12 @@ describe('Staff management (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email, fullName: 'Давхардсан Имэйл', role: 'SALESPERSON', branchId: branchA.id })
+      .send({
+        email,
+        fullName: 'Давхардсан Имэйл',
+        role: 'SALESPERSON',
+        branchId: branchA.id,
+      })
       .expect(409);
 
     expect((res.body as ErrorBody).error.code).toBe('STAFF_EMAIL_TAKEN');
@@ -316,7 +344,12 @@ describe('Staff management (e2e)', () => {
     await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email, fullName: 'Буруу Оролт', role: 'SUPER_ADMIN', branchId: branchA.id })
+      .send({
+        email,
+        fullName: 'Буруу Оролт',
+        role: 'SUPER_ADMIN',
+        branchId: branchA.id,
+      })
       .expect(400);
 
     const kcUser = await findKeycloakUserByEmail(adminToken, email);
@@ -330,7 +363,10 @@ describe('Staff management (e2e)', () => {
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
 
-    const body = res.body as { id: string; roles: { branchId: string | null }[] }[];
+    const body = res.body as {
+      id: string;
+      roles: { branchId: string | null }[];
+    }[];
     expect(body.length).toBeGreaterThan(0);
     for (const staff of body) {
       expect(staff.roles.some((r) => r.branchId === branchA.id)).toBe(true);
@@ -360,16 +396,26 @@ describe('Staff management (e2e)', () => {
       .set('Authorization', `Bearer ${superAdminToken}`)
       .send({ isActive: false })
       .expect(200);
-    const deactivated = await superuserPrisma.user.findUnique({ where: { id: created.id } });
+    const deactivated = await superuserPrisma.user.findUnique({
+      where: { id: created.id },
+    });
     expect(deactivated?.isActive).toBe(false);
 
     await request(app.getHttpServer())
       .patch(`/staff/${created.id}`)
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ oldBranchId: branchA.id, role: 'BRANCH_MANAGER', branchId: branchA.id })
+      .send({
+        oldBranchId: branchA.id,
+        role: 'BRANCH_MANAGER',
+        branchId: branchA.id,
+      })
       .expect(200);
     const promoted = await superuserPrisma.userBranchRole.findFirst({
-      where: { userId: created.id, role: 'BRANCH_MANAGER', branchId: branchA.id },
+      where: {
+        userId: created.id,
+        role: 'BRANCH_MANAGER',
+        branchId: branchA.id,
+      },
     });
     expect(promoted).not.toBeNull();
     const oldRole = await superuserPrisma.userBranchRole.findFirst({

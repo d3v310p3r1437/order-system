@@ -107,15 +107,21 @@ describe('Audit logs (e2e)', () => {
       .expect(200);
 
     const body = res.body as AuditLogBody[];
-    expect(body.some((r) => r.recordId === markerRecordId && r.tableName === 'categories')).toBe(
-      true,
-    );
+    expect(
+      body.some(
+        (r) => r.recordId === markerRecordId && r.tableName === 'categories',
+      ),
+    ).toBe(true);
   });
 
   it('tableName/action-аар шүүж болно', async () => {
     const res = await request(app.getHttpServer())
       .get('/audit-logs')
-      .query({ tableName: 'categories', action: 'categories.created', limit: 5 })
+      .query({
+        tableName: 'categories',
+        action: 'categories.created',
+        limit: 5,
+      })
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
 

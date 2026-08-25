@@ -2,7 +2,10 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { Roles } from '../common/roles.decorator.js';
 import { RolesGuard } from '../common/roles.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { AuditLogQueryDto, DEFAULT_AUDIT_LOG_LIMIT } from './dto/audit-log-query.dto.js';
+import {
+  AuditLogQueryDto,
+  DEFAULT_AUDIT_LOG_LIMIT,
+} from './dto/audit-log-query.dto.js';
 
 // ⚠️ Чухал хязгаарлалт: `AuditInterceptor.writeAuditLog()`
 // (src/common/audit.interceptor.ts) одоогоор `branchId`-г ХЭЗЭЭ Ч
@@ -16,7 +19,11 @@ import { AuditLogQueryDto, DEFAULT_AUDIT_LOG_LIMIT } from './dto/audit-log-query
 // жагсаалт л харагдах байсан тул (§Даалгавар #9-ийн "аудит логийн UI
 // байгаа эсэхийг шалга" — шинэ branchId populate хийх ажил ЭНЭ
 // даалгаврын хамрах хүрээнд ОРООГҮЙ, ирээдүйн ажил).
-const AUDIT_LOG_VIEW_ROLES = ['SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER'] as const;
+const AUDIT_LOG_VIEW_ROLES = [
+  'SUPER_ADMIN',
+  'OWNER',
+  'ALL_BRANCH_MANAGER',
+] as const;
 
 @Controller('audit-logs')
 @UseGuards(RolesGuard)

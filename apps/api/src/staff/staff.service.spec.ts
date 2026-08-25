@@ -72,7 +72,9 @@ describe('StaffService.create — Keycloak+Postgres атомик орчуулг�
       wasCreated: true,
       temporaryPassword: 'temp-pass-123',
     });
-    mocks.queryRaw.mockResolvedValue([{ app_create_staff_member: 'FORBIDDEN' }]);
+    mocks.queryRaw.mockResolvedValue([
+      { app_create_staff_member: 'FORBIDDEN' },
+    ]);
 
     const service = newService(prisma, keycloakAdmin);
     await expect(
@@ -123,7 +125,9 @@ describe('StaffService.create — Keycloak+Postgres атомик орчуулг�
       wasCreated: false,
       temporaryPassword: 'temp-pass-123',
     });
-    mocks.queryRaw.mockResolvedValue([{ app_create_staff_member: 'FORBIDDEN' }]);
+    mocks.queryRaw.mockResolvedValue([
+      { app_create_staff_member: 'FORBIDDEN' },
+    ]);
 
     const service = newService(prisma, keycloakAdmin);
     await expect(
@@ -176,7 +180,10 @@ describe('StaffService.update', () => {
   it('дүр/салбар амжилттай солиход UPDATED буцаана', async () => {
     const { prisma, mocks } = buildPrismaMock();
     const keycloakAdmin = buildKeycloakAdminMock();
-    mocks.userFindUnique.mockResolvedValue({ id: 'u-1', authProvider: 'KEYCLOAK' });
+    mocks.userFindUnique.mockResolvedValue({
+      id: 'u-1',
+      authProvider: 'KEYCLOAK',
+    });
     mocks.queryRaw.mockResolvedValue([{ app_update_staff_member: 'UPDATED' }]);
 
     const service = newService(prisma, keycloakAdmin);
@@ -192,8 +199,13 @@ describe('StaffService.update', () => {
   it('SQL FORBIDDEN буцаавал ForbiddenException шиднэ', async () => {
     const { prisma, mocks } = buildPrismaMock();
     const keycloakAdmin = buildKeycloakAdminMock();
-    mocks.userFindUnique.mockResolvedValue({ id: 'u-1', authProvider: 'KEYCLOAK' });
-    mocks.queryRaw.mockResolvedValue([{ app_update_staff_member: 'FORBIDDEN' }]);
+    mocks.userFindUnique.mockResolvedValue({
+      id: 'u-1',
+      authProvider: 'KEYCLOAK',
+    });
+    mocks.queryRaw.mockResolvedValue([
+      { app_update_staff_member: 'FORBIDDEN' },
+    ]);
 
     const service = newService(prisma, keycloakAdmin);
     await expect(
@@ -204,7 +216,10 @@ describe('StaffService.update', () => {
   it('SQL ASSIGNMENT_NOT_FOUND буцаавал NotFoundException шиднэ', async () => {
     const { prisma, mocks } = buildPrismaMock();
     const keycloakAdmin = buildKeycloakAdminMock();
-    mocks.userFindUnique.mockResolvedValue({ id: 'u-1', authProvider: 'KEYCLOAK' });
+    mocks.userFindUnique.mockResolvedValue({
+      id: 'u-1',
+      authProvider: 'KEYCLOAK',
+    });
     mocks.queryRaw.mockResolvedValue([
       { app_update_staff_member: 'ASSIGNMENT_NOT_FOUND' },
     ]);
@@ -245,12 +260,12 @@ describe('StaffService.findAll', () => {
 
     expect(mocks.userFindMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
+        where: {
           authProvider: 'KEYCLOAK',
           userBranchRoles: {
             some: { role: 'SALESPERSON', branchId: 'branch-1' },
           },
-        }),
+        },
       }),
     );
   });
