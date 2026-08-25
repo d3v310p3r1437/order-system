@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthCustomerModule } from './auth-customer/auth-customer.module.js';
 import { AuthStaffModule } from './auth-staff/auth-staff.module.js';
+import { AuditLogModule } from './audit/audit-log.module.js';
 import { BranchModule } from './branch/branch.module.js';
 import { CartModule } from './cart/cart.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
@@ -20,6 +21,7 @@ import { RedisModule } from './redis/redis.module.js';
 import { ReportModule } from './reports/report.module.js';
 import { ReturnModule } from './returns/return.module.js';
 import { SettingsModule } from './settings/settings.module.js';
+import { StaffModule } from './staff/staff.module.js';
 
 @Module({
   imports: [
@@ -28,6 +30,7 @@ import { SettingsModule } from './settings/settings.module.js';
     AuthModule,
     AuthCustomerModule,
     AuthStaffModule,
+    AuditLogModule,
     BranchModule,
     CartModule,
     CatalogModule,
@@ -35,6 +38,7 @@ import { SettingsModule } from './settings/settings.module.js';
     InventoryModule,
     OrderModule,
     SettingsModule,
+    StaffModule,
     ReturnModule,
     ReportModule,
   ],

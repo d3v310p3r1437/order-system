@@ -92,3 +92,89 @@ const ubrRows = await tx.userBranchRole.findMany({ where: { userId } });
   бүтээгдэхүүний шаардлага гарвал Redis эсвэл DB-д хадгалж revoke хийх
   боломжтой болгоно (энэ бол зөвхөн Phase 1 spike-ийн хамрах хүрээнээс
   гадуурх бүтээгдэхүүний шийдвэр тул энд шийдээгүй болгож үлдээв).
+
+## Инцидент (2026-08-25): `local_user_id` DB-д тохирох мөргүй байсан —
+цэвэрлэлтийн script БИШ, дутуу гар тохиргоо байсныг нотолсон
+
+**Шинж тэмдэг:** `super.admin@order-system.mn`-ээр admin-web-д нэвтрэхэд
+токен зөв ирсэн ч "Эрх оноогдоогүй" гарч, Агуулах/Захиалгууд/Буцаалтууд
+бүгд "Танд хандах эрхтэй салбар алга" гэдэг байв.
+
+**Оношилгоо (3 давхарга дараалан шалгав):**
+1. Keycloak дээр (`kcadm get users -q email=...`) `local_user_id` custom
+   attribute бодитоор байсан (`26a7d6af-6562-4ff8-8c82-44b3671b4694`).
+2. Тэр UUID-аар Postgres-ийн `users` хүснэгтээс (superuser `DATABASE_URL`,
+   RLS bypass) хайхад **0 мөр** — email-ээр хайхад ч 0 мөр. Мөр ерөнхийдөө
+   БАЙХГҮЙ байсан (зөвхөн `user_branch_roles` мөр дутсан асуудал БИШ).
+3. `audit_logs`-аас яг энэ `recordId`-тай 3 `staff.login` мөр (2026-08-19,
+   2026-08-21×2) олдсон нь эхэндээ "мөр байсан, дараа устсан" гэсэн
+   таамаглал төрүүлсэн ч, `auth-staff.controller.ts`-ийн
+   `recordIdFromIssuedToken()`-ийг уншихад **`@Audit`-ийн `recordId` нь
+   Keycloak-ийн ЗӨВ ШАЛГАСАН биш, зөвхөн шинээр гарсан JWT-г `decodeJwt`-ээр
+   (баталгаажуулалтгүйгээр) уншсан утга** болохыг олов — өөрөөр хэлбэл
+   `/auth/staff/login` нь Postgres-д ОГТ ХАНДДАГГҮЙ (зөвхөн Keycloak ROPC
+   grant), тул "staff.login амжилттай" гэдэг нь DB-д тухайн хэрэглэгч
+   байгааг ЯМАР Ч байдлаар нотлохгүй. Энэ нээлт 2-р алхмын дүгнэлтийг
+   (мөр угаасаа байгаагүй) баталсан, эсрэгээр биш.
+
+**Язгуур шалтгаан:** `infra/keycloak/setup-realm.sh`-ийн коммент дэх
+3 алхамт гар тохиргооны журам ("1. Postgres-д users мөр үүсгэ → 2.
+Keycloak дээр `local_user_id` attribute тавь → 3. `user_branch_roles`
+мөр нэмэ") **1 болон 3-р алхам огт хийгдээгүй**, зөвхөн 2-р алхам
+(Keycloak тал) хийгдсэн байсан — өөрөөр хэлбэл анхнаасаа дутуу
+тохируулсан, дараа нь "устсан" биш. Үүнийг баталгаажуулахын тулд:
+- `schema.prisma`-ийн `User` модель бол схемийн root (ямар ч гадаад
+  түлхүүрээр өөр хүснэгт рүү заадаггүй) тул **ямар ч cascade delete
+  зам `users` мөрийг устгаж чадахгүй** — зөвхөн `users` нь ӨӨРӨӨ бусад
+  олон хүснэгтийн parent.
+- `apps/api/prisma/cleanup-debris.ts`-г бүтэн уншиж баталгаажуулахад
+  энэ script **`users`/`user_branch_roles` хүснэгтэд ЗУРААС Ч хүрдэггүй**
+  (зөвхөн `Branch.name`/`Category.slug`/`Product.slug`-ийн 10+ оронтой
+  debris pattern, мөн debris Branch-д хамаарах `Order`/`ReturnRequest`/
+  `CouponRedemption`). `git log --diff-filter=D` -ээр аль хэдийн устсан
+  `cleanup-branch-debris.ts`-ийг ч шалгаж, мөн адил зөвхөн Branch-д л
+  хүрдэг байсныг баталгаажуулсан.
+- `src/` доторх ямар ч endpoint `users` мөр устгадаггүй (delete endpoint
+  байхгүй).
+
+Иймд **§"Хэзээ ч дараах зүйлийг бүү хий" маягийн cleanup script-ийн
+WHERE нөхцөл чангатгах шаардлагагүй** гэдгийг тодорхой дүгнэв — эдгээр
+script анхнаасаа зөв хамрах хүрээтэй (blast radius) байсан.
+
+**Засвар:** алдагдсан 2 мөрийг superuser холболтоор (cleanup script-үүдтэй
+ижил зарчим) шууд нөхөн оруулав:
+```sql
+INSERT INTO users (id, email, "authProvider", "fullName", "isActive", "createdAt", "updatedAt")
+VALUES ('26a7d6af-6562-4ff8-8c82-44b3671b4694', 'super.admin@order-system.mn', 'KEYCLOAK', 'Super Admin', true, now(), now());
+
+INSERT INTO user_branch_roles (id, "userId", "branchId", role, "createdAt")
+VALUES (gen_random_uuid(), '26a7d6af-6562-4ff8-8c82-44b3671b4694', NULL, 'SUPER_ADMIN', now());
+```
+Баталгаажуулалт: (1) `curl`-аар бодит `POST /auth/staff/login` →
+`GET /auth/me` дуудаж `roles: [{role: "SUPER_ADMIN", branchId: null}]`
+зөв ирснийг, `GET /orders`/`GET /returns`/`GET /reports/sales-summary`
+бүгд бодит өгөгдөл (алдаа биш) буцааж байгааг батлав; (2) Playwright-аар
+admin-web дээр бодитоор нэвтэрч (ADR 004-ийн зарчмын дагуу `page.goto()`
+БИШ, SPA дотоод nav линк дараад) "Дүр: Супер админ" + Агуулах/Захиалгууд/
+Буцаалтууд 3 дэлгэц бүгд "Танд хандах эрхтэй салбар алга" МЕССЕЖГҮЙгээр
+ачаалж байгааг screenshot-оор баталгаажуулсан.
+
+**Чухал систем-дизайны сул тал (олдсон, ЗАСААГҮЙ — цаашдын ажил):**
+JWT-ийн `local_user_id` claim Postgres-д тохирох мөргүй болсон үед
+(жиш: энэ инцидент шиг дутуу тохиргоо, эсвэл ирээдүйд ямар нэг зам
+`users` мөрийг устгавал) систем **ЯМАР Ч алдаа шиддэггүй** —
+`TokenVerifierService.verify()` зөвхөн JWT-ийн гарын үсэг зөв эсэхийг
+шалгаад `localUserId`-г буцаадаг, дараа нь RLS-ээр хамгаалагдсан
+`user_branch_roles` query зүгээр л 0 мөр буцаадаг тул `/auth/me` хоосон
+`roles: []` буцааж, admin-web үүнийг "Эрх оноогдоогүй" гэсэн ЕРӨНХИЙ
+(distinguish хийдэггүй) мессеж болгож харуулдаг — жинхэнэ "энэ ажилтанд
+эрх өгөөгүй" гэдэгтэй ялгаагүй харагддаг тул оношлоход цаг их зарцуулдаг
+(энэ инцидентэд Keycloak→Postgres→audit_logs 3 давхарга бүрийг гараар
+шалгах шаардлагатай болсон). **Санал болгож буй сайжруулалт (backlog,
+хэрэгжүүлээгүй):** `TokenVerifierService.verifyKeycloakToken()`
+(эсвэл `RlsMiddleware`) дотор `localUserId`-аар `users` мөр байгаа
+эсэхийг (superuser/app_has_global_scope шалгалтгүйгээр, зөвхөн
+existence) шалгаж, байхгүй бол тодорхой `ORPHANED_IDENTITY`
+(эсвэл ижил төстэй) алдааны код бүхий 401/403 шидвэл админ (болон
+дэмжлэгийн баг) шууд "энэ Keycloak хэрэглэгч DB-тэй холбогдоогүй байна"
+гэдгийг мэдэх боломжтой болно.

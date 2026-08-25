@@ -14,11 +14,24 @@ export function isRecordNotFoundError(
 }
 
 // Давхардсан @@unique (жиш: InventoryItem-ийн variantId+branchId хос) үед
-// Postgres 23505 (unique_violation) → Prisma P2002.
+// Postgres 23505 (unique_violation) → typed Prisma дуудлагад (`.create()`
+// гэх мэт) P2002. ⚠️ `$queryRaw`/`$executeRaw`-аар дамжуулж ижил зөрчил
+// гарвал (жиш: StaffService.create()-ийн `app_create_staff_member()`
+// дотрох INSERT) Prisma ЭНЭ ТОХИРГООГ БИШ, харин "Raw query failed"
+// (P2010, доторх message-даа Postgres-ийн 23505 кодыг л агуулна) шидэх нь
+// e2e тестээр батлагдсан — isCheckConstraintViolation()-ийн раw-query
+// gotcha-тай ЯГ ижил зарчим тул хоёуланг нь энд шалгана.
 export function isUniqueConstraintViolation(error: unknown): boolean {
-  return (
+  if (
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === 'P2002'
+  ) {
+    return true;
+  }
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2010' &&
+    error.message.includes('23505')
   );
 }
 

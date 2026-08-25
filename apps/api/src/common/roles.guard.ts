@@ -19,6 +19,23 @@ import { resolveUserRoleNames } from './user-roles.js';
 // шалгана, шинэ authorization архитектур зохиогоогүй — одоо байгаа
 // audit.decorator.ts/AuditInterceptor-той ижил SetMetadata+Reflector
 // pattern-ийг л ашиглав.
+//
+// ⚠️⚠️ ЧУХАЛ (staff.module.ts зохиох явцад олдсон): `resolveUserRoleNames()`
+// (user-roles.ts) `user_branch_roles.role`-ийг ЗӨВХӨН НЭРЭЭР нь буцаадаг,
+// `branchId`-тай ХАМТ шалгадаггүй. Өөрөөр хэлбэл `@Roles('SUPER_ADMIN')`
+// гэдэг нь бодит `app_has_global_scope()`-ийн адил "branchId IS NULL"
+// гэдгийг ШАЛГАДАГГҮЙ — branchId-той (жиш: нэг салбарт "хавсарсан")
+// SUPER_ADMIN-ийн нэртэй мөртэй хэрэглэгч ч энэ guard-ыг АМЖИЛТТАЙ
+// давна (харин `app_has_global_scope()`-д тулгуурласан RLS/SECURITY
+// DEFINER функцүүд зөв татгалзана). Ийм мөр өөрөө SQL-ээр шууд бичихээс
+// өөр аргаар үүсэхгүй байсан тул өнөөг хүртэл асуудал үзүүлээгүй, гэвч
+// хэрэв ирээдүйд шинэ endpoint (staff CRUD шиг) хэрэглэгчийн role/
+// branchId-г чөлөөтэй бичих боломж олговол, ЗААВАЛ (1) branch-scoped
+// дуудагчийг глобал нэртэй role (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER)
+// оноохоос хориглох, эсвэл (2) мутацийг ЗӨВХӨН SECURITY DEFINER функц
+// дотор app_has_global_scope()-оор ДАХИН шалгах ёстой (staff/
+// staff.service.ts + migration 20260825090000-ийн
+// app_create_staff_member()-ийн жишээг үз) — @Roles() ганцаараа хангалтгүй.
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(

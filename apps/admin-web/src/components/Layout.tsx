@@ -1,7 +1,12 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
 import { useOrderEvents } from "@/lib/realtime";
-import { REPORT_VIEW_ROLES, ROLE_LABELS } from "@/lib/roles";
+import {
+  AUDIT_LOG_VIEW_ROLES,
+  REPORT_VIEW_ROLES,
+  ROLE_LABELS,
+  STAFF_MANAGE_ROLES,
+} from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +18,11 @@ const NAV_ITEMS = [
   { to: "/orders", label: "Захиалгууд" },
   { to: "/returns", label: "Буцаалтууд" },
   { to: "/coupons", label: "Купон" },
+  // SALESPERSON/BRANCH_MANAGER §6.1 матрицад ажилтан удирдах эрхгүй
+  // (Тайлантай ижил зарчим) — 403-той хоосон хуудас руу шилжихийн
+  // оронд нэвтрэлтийн цэснээс нуусан.
+  { to: "/staff", label: "Ажилтнууд", roles: STAFF_MANAGE_ROLES },
+  { to: "/audit-logs", label: "Аудит лог", roles: AUDIT_LOG_VIEW_ROLES },
   // SALESPERSON/CUSTOMER §6.1 матрицад "Тайлан/аналитик"-д огт эрхгүй
   // (бусад мөрөнд байдаг "зөвхөн харна"-той адил хэсэгчилсэн ХАРАГДАХГҮЙ,
   // 403-той хоосон хуудас руу шилжихийн оронд нэвтрэлтийн цэснээс нуусан).
