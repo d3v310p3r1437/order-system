@@ -9,6 +9,7 @@ import type { App } from 'supertest/types';
 import { AppModule } from '../src/app.module';
 import { CUSTOMER_JWT_ISSUER } from '../src/auth/constants.js';
 import { HttpExceptionFilter } from '../src/common/http-exception.filter';
+import { PrismaService } from '../src/prisma/prisma.service.js';
 
 interface ErrorBody {
   error: { code: string; message: string; details: unknown };
@@ -105,11 +106,13 @@ async function waitFor<T>(
 describe('Staff management (e2e)', () => {
   let app: INestApplication<App>;
   let superuserPrisma: PrismaClient;
+  let prismaService: PrismaService;
   let adminToken: string;
 
   let branchA: { id: string };
   let branchB: { id: string };
   let superAdminToken: string;
+  let branchAdminAId: string;
   let branchAdminAToken: string;
   let branchManagerAToken: string;
 
@@ -157,6 +160,7 @@ describe('Staff management (e2e)', () => {
     superuserPrisma = new PrismaClient({
       datasources: { db: { url: process.env.DATABASE_URL } },
     });
+    prismaService = app.get(PrismaService);
     adminToken = await getKeycloakAdminToken();
 
     const unique = Date.now();
@@ -168,7 +172,9 @@ describe('Staff management (e2e)', () => {
     });
 
     superAdminToken = (await createStaff('SUPER_ADMIN', null)).token;
-    branchAdminAToken = (await createStaff('BRANCH_ADMIN', branchA.id)).token;
+    const branchAdminA = await createStaff('BRANCH_ADMIN', branchA.id);
+    branchAdminAId = branchAdminA.id;
+    branchAdminAToken = branchAdminA.token;
     branchManagerAToken = (await createStaff('BRANCH_MANAGER', branchA.id))
       .token;
   });
@@ -447,5 +453,162 @@ describe('Staff management (e2e)', () => {
       .set('Authorization', `Bearer ${branchAdminAToken}`)
       .send({ oldBranchId: branchB.id, isActive: false })
       .expect(404);
+  });
+
+  // §Даалгавар: "PATCH /staff-д ижил escalation шалгалт бодитоор
+  // хэрэгжсэн эсэхийг батал" — POST-ийн адил ЗӨВХӨН app_create_staff_member()-д
+  // биш, app_update_staff_member()-д ч (migration 20260825090000) ЯГ ижил
+  // "branch-scoped дуудагч глобал нэртэй role оноож чадахгүй" шалгалт бий
+  // эсэхийг 2 давхаргаар (HTTP/DTO-той хамт БОЛОН DTO-г тойрсон шууд SQL)
+  // баталгаажуулна.
+  it('⚠️ ЦӨМ (PATCH, HTTP давхарга): BRANCH_ADMIN өөрийн салбарын ажилтныг SUPER_ADMIN болгохыг оролдвол 403, DB-д role бодитоор ӨӨРЧЛӨГДӨӨГҮЙ', async () => {
+    const createRes = await request(app.getHttpServer())
+      .post('/staff')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        email: `staff-e2e-patch-escalation-${Date.now()}@example.com`,
+        fullName: 'Escalation Бай',
+        role: 'SALESPERSON',
+        branchId: branchA.id,
+      })
+      .expect(201);
+    const created = createRes.body as StaffCreateBody;
+    createdUserIds.push(created.id);
+    const kcUser = await findKeycloakUserByEmail(adminToken, created.email);
+    if (kcUser) {
+      createdKeycloakUserIds.push(kcUser.id);
+    }
+
+    // Глобал role бол DTO-ийн дагуу branchId ЗААВАЛ орхигдоно (400
+    // BRANCH_ID_NOT_ALLOWED-оос зайлсхийхийн тулд) — энэ бол HTTP/DTO
+    // давхаргаар зөвшөөрөгдөх ХАМГИЙН ойрхон (илбэрхэн) escalation оролдлого.
+    await request(app.getHttpServer())
+      .patch(`/staff/${created.id}`)
+      .set('Authorization', `Bearer ${branchAdminAToken}`)
+      .send({ oldBranchId: branchA.id, role: 'SUPER_ADMIN' })
+      .expect(403);
+
+    const stillSalesperson = await superuserPrisma.userBranchRole.findFirst({
+      where: { userId: created.id, role: 'SALESPERSON', branchId: branchA.id },
+    });
+    expect(stillSalesperson).not.toBeNull();
+    const escalated = await superuserPrisma.userBranchRole.findFirst({
+      where: { userId: created.id, role: 'SUPER_ADMIN' },
+    });
+    expect(escalated).toBeNull();
+  });
+
+  it('⚠️ ЦӨМ (PATCH, SQL функцийн давхарга): app_update_staff_member()-г ӨӨРИЙГ нь (DTO-г БҮРЭН тойрсон, HTTP биш шууд SQL) branchId-той ХАМТ глобал role дамжуулж дуудахад ч FORBIDDEN буцаана', async () => {
+    // ⚠️ ЭНЭ тест ЗОРИУДАА UpdateStaffDto-ийн "глобал role бол branchId
+    // хориотой" шалгалтыг ТОЙРЧ, app_update_staff_member() SQL функц
+    // ӨӨРӨӨ (application давхаргаас үл хамааран) ямар ч тохиолдолд
+    // branch-scoped дуудагчид глобал role оноохыг хориглодгийг батална
+    // (migration 20260825090000-ийн 121-123-р мөрийн "IF NOT v_is_global
+    // AND p_new_role IN ('SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER')"
+    // шалгалт) — CLAUDE.md-ийн "RLS mutation policy-г service давхаргыг
+    // тойрсон аргаар шалгах ёстой" стандарттай ЯГ ижил зарчим.
+    const rows = await prismaService.runRequestTransaction(
+      branchAdminAId,
+      (tx) => tx.$queryRaw<{ app_update_staff_member: string }[]>`
+        SELECT app_update_staff_member(
+          ${branchAdminAId}, ${branchA.id}, 'SUPER_ADMIN', ${branchA.id}, NULL
+        )
+      `,
+    );
+    expect(rows[0]?.app_update_staff_member).toBe('FORBIDDEN');
+
+    const stillBranchAdmin = await superuserPrisma.userBranchRole.findFirst({
+      where: {
+        userId: branchAdminAId,
+        role: 'BRANCH_ADMIN',
+        branchId: branchA.id,
+      },
+    });
+    expect(stillBranchAdmin).not.toBeNull();
+  });
+});
+
+// §Даалгавар: инцидентийн эцсийн БҮТЦИЙН хамгаалалт — migration
+// 20260826070000_add_global_role_branch_check_constraint. ADR
+// 002/005-ийн SECURITY DEFINER функцүүд (app_create_staff_member/
+// app_update_staff_member) ӨӨРСДИЙН дуудлагын замд л escalation
+// шалгалт хийдэг — энэ CHECK constraint бол ТҮҮНЭЭС ЯЛГААТАЙ, ЯМАР Ч
+// код зам (одоо байгаа/ирээдүйн endpoint, гар SQL)-аас ҮЛ ХАМААРАН DB
+// түвшинд бүрмөсөн хориглодог сүүлчийн давхарга гэдгийг батлахын тулд
+// service/SECURITY DEFINER функц АЛЬ АЛИНЫГ Ч ОГТ дуудалгүй, шууд
+// superuser холболтоор (RLS-ээс ч тусгаарлаж) raw INSERT оролдоно.
+describe('user_branch_roles CHECK constraint (chk_global_role_no_branch)', () => {
+  let superuserPrisma: PrismaClient;
+  let anyUserId: string;
+  let anyBranchId: string;
+
+  beforeAll(async () => {
+    superuserPrisma = new PrismaClient({
+      datasources: { db: { url: process.env.DATABASE_URL } },
+    });
+    const branch = await superuserPrisma.branch.create({
+      data: { name: `CHK constraint E2E Салбар ${Date.now()}` },
+    });
+    anyBranchId = branch.id;
+    const user = await superuserPrisma.user.create({
+      data: {
+        id: randomUUID(),
+        email: `chk-constraint-e2e-${Date.now()}@example.com`,
+        authProvider: 'KEYCLOAK',
+      },
+    });
+    anyUserId = user.id;
+  });
+
+  afterAll(async () => {
+    await superuserPrisma.userBranchRole.deleteMany({
+      where: { userId: anyUserId },
+    });
+    await superuserPrisma.user
+      .delete({ where: { id: anyUserId } })
+      .catch(() => undefined);
+    await superuserPrisma.branch
+      .delete({ where: { id: anyBranchId } })
+      .catch(() => undefined);
+    await superuserPrisma.$disconnect();
+  });
+
+  it('SUPER_ADMIN + branchId NOT NULL — 23514 constraint зөрчил шиднэ (service/SECURITY DEFINER функц ОГТ ашиглаагүй, шууд superuser raw INSERT)', async () => {
+    await expect(
+      superuserPrisma.$executeRaw`
+        INSERT INTO user_branch_roles (id, "userId", "branchId", role, "createdAt")
+        VALUES (${randomUUID()}, ${anyUserId}, ${anyBranchId}, 'SUPER_ADMIN', now())
+      `,
+    ).rejects.toThrow(/chk_global_role_no_branch/);
+
+    const leaked = await superuserPrisma.userBranchRole.findFirst({
+      where: { userId: anyUserId, role: 'SUPER_ADMIN' },
+    });
+    expect(leaked).toBeNull();
+  });
+
+  it('SALESPERSON (салбарын role) + branchId NULL — 23514 constraint зөрчил шиднэ', async () => {
+    await expect(
+      superuserPrisma.$executeRaw`
+        INSERT INTO user_branch_roles (id, "userId", "branchId", role, "createdAt")
+        VALUES (${randomUUID()}, ${anyUserId}, NULL, 'SALESPERSON', now())
+      `,
+    ).rejects.toThrow(/chk_global_role_no_branch/);
+
+    const leaked = await superuserPrisma.userBranchRole.findFirst({
+      where: { userId: anyUserId, role: 'SALESPERSON', branchId: null },
+    });
+    expect(leaked).toBeNull();
+  });
+
+  it('OWNER + branchId NULL (зөв хослол) — амжилттай INSERT хийгдэнэ (constraint эерэг замыг хориглохгүй)', async () => {
+    await superuserPrisma.$executeRaw`
+      INSERT INTO user_branch_roles (id, "userId", "branchId", role, "createdAt")
+      VALUES (${randomUUID()}, ${anyUserId}, NULL, 'OWNER', now())
+    `;
+    const created = await superuserPrisma.userBranchRole.findFirst({
+      where: { userId: anyUserId, role: 'OWNER', branchId: null },
+    });
+    expect(created).not.toBeNull();
   });
 });

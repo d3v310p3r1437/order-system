@@ -178,3 +178,86 @@ existence) шалгаж, байхгүй бол тодорхой `ORPHANED_IDENTI
 (эсвэл ижил төстэй) алдааны код бүхий 401/403 шидвэл админ (болон
 дэмжлэгийн баг) шууд "энэ Keycloak хэрэглэгч DB-тэй холбогдоогүй байна"
 гэдгийг мэдэх боломжтой болно.
+
+## Инцидентийн эцсийн, БҮТЦИЙН (structural) хамгаалалт (2026-08-26):
+`user_branch_roles`-ийн CHECK constraint
+
+Дээрх инцидентийн (2026-08-25) шууд үргэлжлэл болгон бий болгосон
+"Ажилтны удирдлагын UI" (`POST/PATCH /staff`, `app_create_staff_member()`/
+`app_update_staff_member()` SECURITY DEFINER функц, migration
+`20260825090000_add_staff_management_functions`) зохиох явцад **шинэ,
+холбоотой escalation зам** олдсон: `RolesGuard`/`resolveUserRoleNames()`
+(`src/common/roles.guard.ts`, `src/common/user-roles.ts`) `user_branch_roles.role`-ийг
+**ЗӨВХӨН НЭРЭЭР нь** шалгадаг, `branchId`-той ХАМТ шалгадаггүй —
+`app_has_global_scope()`-ийн "branchId IS NULL AND role IN (...)" нөхцөлтэй
+ЯЛГААТАЙ. Өөрөөр хэлбэл, хэрэв `user_branch_roles`-д `role='SUPER_ADMIN'`
+(эсвэл `OWNER`/`ALL_BRANCH_MANAGER`) АГЛУУ `branchId` NULL БИШ (нэг
+салбартай "хавсарсан") мөр аль нэг замаар (одоо байгаа/ирээдүйн endpoint,
+гар SQL, debug script) бий болвол, тэр хэрэглэгч `app_has_global_scope()`-аар
+хамгаалагдсан ЖИНХЭНЭ глобал зүйлд (RLS/SECURITY DEFINER функц) хандахгүй
+ч, зөвхөн `@Roles('SUPER_ADMIN')`-ээр (нэмэлт RLS-гүй) хамгаалагдсан
+ямар ч endpoint-ыг дуудах боломжтой болно.
+
+`app_create_staff_member()`/`app_update_staff_member()` СЕРВЭР ФУНКЦ
+өөрсдийн дуудлагын замд энэ хослолыг ЗААВАЛ хориглодог (branch-scoped
+дуудагч глобал нэртэй role оноож чадахгүй) — гэвч энэ бол зөвхөн ТҮҮНИЙ
+Л дуудлагын замын хамгаалалт. **Код зам (application layer) хэдий чинээ
+олон бол, "мартаж/буруу бичсэн шинэ endpoint" эсвэл "гар SQL debug
+script" нэг ч удаа зөрчих магадлал тэгээс их байсаар байна** — яг л энэ
+даалгаврын язгуур инцидент ("гар тохиргооны 1 алхам мартагдсан") нотолсон
+шиг.
+
+**Шийдвэр:** код замаас (application, SECURITY DEFINER функц,
+`RolesGuard`) ЯМАР Ч байдлаар ҮЛ ХАМААРАН, DB-ийн `user_branch_roles`
+хүснэгт ӨӨРӨӨ логикийн хувьд боломжгүй хослолыг БҮРМӨСӨН татгалздаг
+CHECK constraint нэмэв (migration
+`20260826070000_add_global_role_branch_check_constraint`):
+
+```sql
+ALTER TABLE user_branch_roles
+  ADD CONSTRAINT chk_global_role_no_branch CHECK (
+    (role IN ('SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER') AND "branchId" IS NULL)
+    OR
+    (role NOT IN ('SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER') AND "branchId" IS NOT NULL)
+  );
+```
+
+Энэ бол **ADR 002-ийн инцидентийн язгуур сургамжийг шууд хэрэгжүүлсэн
+эцсийн давхарга**: "гар/дутуу код зам логикийн алдаа гаргаж болно, харин
+DB constraint үүнийг физикээр боломжгүй болгодог" — яг л RLS (§6.3)-ийг
+"мөр-түвшний сүүлчийн хамгаалалт" гэж баримталдагтай ижил зарчмаар, энэ
+CHECK constraint нь "role/branchId хослолын сүүлчийн хамгаалалт" болно.
+
+**Баталгаажуулалт:**
+- Migration-оос ӨМНӨ dev DB-ийн бүх 1078 (тухайн үеийн) `user_branch_roles`
+  мөр (359 SUPER_ADMIN + 7 OWNER + 7 ALL_BRANCH_MANAGER, бүгд `branchId`
+  NULL; 44 BRANCH_ADMIN + 474 BRANCH_MANAGER + 187 SALESPERSON, бүгд
+  `branchId` NOT NULL) шинэ дүрмийг АЛЬ ХЭДИЙН зөрчихгүй байгааг шууд SQL
+  `GROUP BY`-аар баталгаажуулж, ЗӨВХӨН ТЭГЭЭД `ALTER TABLE ADD CONSTRAINT`
+  ажиллуулсан (`migrate deploy` ямар ч алдаагүй амжилттай хэрэгжсэн нь
+  үүнийг давхар нотлов).
+- Гараар `INSERT ... VALUES (..., 'some-branch-id', 'SUPER_ADMIN', ...)`
+  оролдож, `ERROR: new row for relation "user_branch_roles" violates
+  check constraint "chk_global_role_no_branch"` алдаа шидэхийг шууд
+  psql-ээр баталгаажуулав.
+- `test/staff.e2e-spec.ts`-д **3 давхаргаар** автомат тест нэмэв: (1)
+  `app_update_staff_member()`-г ӨӨРИЙГ нь (DTO/HTTP-г БҮРЭН тойрсон, шууд
+  SQL) branchId-той ХАМТ глобал role дамжуулж дуудахад ч FORBIDDEN
+  буцаадаг (SECURITY DEFINER функцийн өөрийн дотоод хамгаалалт); (2) шинэ
+  `describe('user_branch_roles CHECK constraint ...')` блок — **service/
+  SECURITY DEFINER функц АЛЬ АЛИНЫГ Ч ОГТ дуудалгүй**, зөвхөн superuser
+  холболтоор (RLS-ээс ч тусгаарлаж) шууд raw INSERT хийж, constraint
+  зөрчигдсөн (`chk_global_role_no_branch`, Postgres 23514) хоёр чиглэл
+  (глобал role+branchId-той, салбарын role+branchId-гүй) аль алиныг нь
+  татгалзаж байгааг, мөн зөв хослол (`OWNER`+branchId NULL) хэвийн
+  амжилттай INSERT хийгддэгийг батлав; (3) HTTP давхаргад (PATCH
+  `/staff/:id`-ээр BRANCH_ADMIN SUPER_ADMIN болгохыг оролдох) 403 +
+  DB-д бодит өөрчлөлт ороогүйг баталгаажуулав.
+
+⚠️ **Цаашдын анхаарал:** ирээдүйд `RoleName` enum-д шинэ "глобал" утга
+(жиш: бүх салбарыг хамарсан шинэ дүр) нэмэгдвэл, ЭНЭ CHECK constraint-ийг
+(мөн `app_has_global_scope()`-ийн `role IN (...)` жагсаалт, `app_can_manage_staff()`,
+`GLOBAL_ROLES` — `staff.service.ts`) **бүгдийг ХАМТ** шинэчлэх ёстой,
+эс бөгөөс шинэ дүр CHECK constraint-аар татгалзагдана (аюулгүй, "gap"
+БИШ) эсвэл (constraint шинэчлэгдээгүй ч тухайн дүрийг `NOT IN`-ийн
+жагсаалтад автоматаар "салбарын" гэж тооцно) буруу ангилагдана.

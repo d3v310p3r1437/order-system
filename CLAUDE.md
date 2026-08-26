@@ -1737,7 +1737,7 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     зохиогоогүй). Тест: e2e (`test/audit-log.e2e-spec.ts`, 4 тест) +
     admin-web smoke (`AuditLogsPage.test.tsx`).
   - Backend: `pnpm --filter api test` 43/43 suite (276/276),
-    `pnpm --filter api test:e2e` 17/18 suite (169/170 — ганц алдаа хэвээр
+    `pnpm --filter api test:e2e` 17/18 suite (174/175 — ганц алдаа хэвээр
     зөвхөн `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo, ХОЛБООГҮЙ).
     admin-web: `vitest` 15/15 suite (34/34), `tsc -b`/`oxlint`/`vite build`
     цэвэр. `feature/coupon-system` (аль хэдийн main-руу merge хийгдсэн
@@ -1752,6 +1752,23 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     `required action`-аар (ROPC биш browser-based auth урсгал нэмэгдвэл)
     сольж баталгаажуулах урсгал болгох боломж (одоогоор ROPC-ийн
     хязгаарлалтаас болж дэмжигдэхгүй).
+  - **(2026-08-26 нэмэлт) Инцидентийн эцсийн БҮТЦИЙН хамгаалалт:**
+    `user_branch_roles`-д `chk_global_role_no_branch` CHECK constraint
+    нэмэв (migration `20260826070000_add_global_role_branch_check_constraint`)
+    — "role∈{SUPER_ADMIN,OWNER,ALL_BRANCH_MANAGER} ⇔ branchId IS NULL"
+    хослолыг код замаас (application/SECURITY DEFINER функц/RolesGuard)
+    ҮЛ ХАМААРАН DB түвшинд бүрмөсөн хориглоно — `RolesGuard`-ийн role-ийг
+    branchId-гүйгээр нэрээр нь л шалгадаг сул талыг (дээр дурдсан) ямар ч
+    ирээдүйн код зам ашиглаж чадахгүй болгосон "сүүлчийн шугам". Migration-оос
+    өмнө одоо байгаа өгөгдөл (1078 мөр) зөрчихгүй эсэхийг шалгаж
+    баталгаажуулсан, гараар зөрчсөн INSERT оролдож 23514 алдаа шидэхийг
+    psql-ээр батлав. `test/staff.e2e-spec.ts`-д 3 давхаргын тест нэмэв:
+    PATCH-ийн HTTP escalation, SQL функцийн (DTO тойрсон) escalation,
+    БОЛОН **service/SECURITY DEFINER функц АЛЬ АЛИНЫГ Ч тойрсон, шууд
+    superuser raw INSERT-ээр constraint-ийг ӨӨРИЙГ нь** шалгасан 3 тест
+    (глобал+branchId, салбарын+branchId-гүй хоёул 23514 шиднэ; зөв
+    хослол хэвийн ажиллана). Дэлгэрэнгүй: `docs/adr/002`-ийн "Инцидентийн
+    эцсийн, БҮТЦИЙН хамгаалалт (2026-08-26)" хэсэг.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
