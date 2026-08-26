@@ -1,10 +1,14 @@
+import '../../reviews/domain/review.dart';
 import 'availability.dart';
 import 'product_image.dart';
 import 'product_variant.dart';
 
 /// `GET /catalog/search`/`GET /products/:id`-ийн буцаах хэлбэр
 /// (`ProductDetail`, admin-web-ийн `src/lib/api.ts`-тэй тохирно) —
-/// variant/зурган мэдээллийг нэгтгэсэн.
+/// variant/зурган мэдээллийг нэгтгэсэн. `canReview`/`myReview` (§7 модуль
+/// #11) зөвхөн нэвтэрсэн CUSTOMER-д `GET /products/:id`-ийн хариунд
+/// ирдэг (`ProductController.findOne()`-ийг үз) тул nullable — staff/
+/// каталогийн жагсаалт (`findManyWithAvailability`)-д ХЭЗЭЭ Ч ирдэггүй.
 class Product {
   const Product({
     required this.id,
@@ -15,6 +19,8 @@ class Product {
     required this.images,
     this.description,
     this.brand,
+    this.canReview,
+    this.myReview,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -31,6 +37,10 @@ class Product {
       images: (json['images'] as List<dynamic>)
           .map((i) => ProductImage.fromJson(i as Map<String, dynamic>))
           .toList(),
+      canReview: json['canReview'] as bool?,
+      myReview: json['myReview'] == null
+          ? null
+          : Review.fromJson(json['myReview'] as Map<String, dynamic>),
     );
   }
 
@@ -42,6 +52,8 @@ class Product {
   final bool isActive;
   final List<ProductVariant> variants;
   final List<ProductImage> images;
+  final bool? canReview;
+  final Review? myReview;
 
   String? get primaryImageUrl => images.isEmpty ? null : images.first.url;
 

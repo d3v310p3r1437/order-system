@@ -105,6 +105,15 @@ export const STAFF_MANAGE_ROLES = [
 // жагсаалт л харагдах байсан (audit-log.controller.ts-ийн коммент).
 export const AUDIT_LOG_VIEW_ROLES = ["SUPER_ADMIN", "OWNER", "ALL_BRANCH_MANAGER"];
 
+// ↔ apps/api/src/reviews/review.controller.ts (REVIEW_MODERATION_ROLES) —
+// §7 модуль #11-д §6.1 матрицад тусгайлан мөр байхгүй тул audit-log-той
+// (AUDIT_LOG_VIEW_ROLES) ижил "3 глобал-эрхийн дүр" загварыг ашигласан.
+export const REVIEW_MODERATION_ROLES = [
+  "SUPER_ADMIN",
+  "OWNER",
+  "ALL_BRANCH_MANAGER",
+];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

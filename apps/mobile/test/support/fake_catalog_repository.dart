@@ -4,6 +4,7 @@ import 'package:mobile/features/catalog/domain/category.dart';
 import 'package:mobile/features/catalog/domain/product.dart';
 import 'package:mobile/features/catalog/domain/product_image.dart';
 import 'package:mobile/features/catalog/domain/product_variant.dart';
+import 'package:mobile/features/reviews/domain/review.dart';
 
 /// `Dio`/HTTP давхарга огт хөндөхгүй fake — `CatalogSearchNotifier`/
 /// `CatalogScreen`-ийн логикийг (debounce, filter, 3 UI төлөв) тусад нь
@@ -55,12 +56,16 @@ Product buildTestProduct({
   AvailabilityStatus status = AvailabilityStatus.inStock,
   int? leadDays,
   String? imageUrl,
+  bool? canReview,
+  Review? myReview,
 }) {
   return Product(
     id: id,
     name: name,
     slug: 'test-$id',
     isActive: true,
+    canReview: canReview,
+    myReview: myReview,
     images: imageUrl == null
         ? []
         : [

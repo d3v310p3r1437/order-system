@@ -756,7 +756,17 @@ SET LOCAL app.accessible_branches = $3;
       код" оруулах талбар/Ашиглах товч, хямдралыг шугамдсан дэд
       дүн+шинэ нийт дүнгээр харуулна. Дэлгэрэнгүй: CLAUDE.md-ийн
       "Одоогийн Phase" хэсэг.
-- [ ] Сэтгэгдэл/үнэлгээ
+- [x] **(2026-08-26) Сэтгэгдэл/үнэлгээ** (§7 модуль #11): `Review` Prisma
+      загвар + 2 migration (`add_reviews`, `enable_reviews_rls` —
+      SELECT бүх нэвтэрсэн, INSERT зөвхөн verified-purchase (COMPLETED
+      захиалгаар худалдаж авсан) CUSTOMER, UPDATE зөвхөн өөрийн, DELETE
+      өөрийн ЭСВЭЛ app_has_global_scope() модераци). `src/reviews`
+      модуль: `POST/GET /products/:id/reviews`, `PATCH/DELETE
+      /reviews/:id`, `GET /reviews` (модераци). `GET /products/:id`
+      CUSTOMER-д canReview/myReview нэмж нэгтгэсэн. Admin-web: `/reviews`
+      модераци дэлгэц. Mobile: rating badge + сэтгэгдлийн жагсаалт +
+      бичих/засварлах дэлгэц. Дэлгэрэнгүй: CLAUDE.md-ийн "Одоогийн Phase"
+      хэсэг.
 - [ ] Харилцагчийн үйлчилгээний тасалбар
 - [x] Аудит лог **UI** (админ самбарт хэн юу хийснийг харах хуудас) — §7 модуль #15-ыг эндээс дуусгана
       (2026-08-26, `super.admin@order-system.mn`-ийн DB мөр дутуу байсан

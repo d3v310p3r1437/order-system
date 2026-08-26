@@ -1791,6 +1791,101 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     (глобал+branchId, салбарын+branchId-гүй хоёул 23514 шиднэ; зөв
     хослол хэвийн ажиллана). Дэлгэрэнгүй: `docs/adr/002`-ийн "Инцидентийн
     эцсийн, БҮТЦИЙН хамгаалалт (2026-08-26)" хэсэг.
+- **(2026-08-26) Сэтгэгдэл/үнэлгээ (§7 модуль #11) дууссан** (backend +
+  admin-web + Mobile): §6.1 матрицад тусгайлан мөр байхгүй тул
+  даалгаврын шууд заавраар код болгов.
+  - **Backend:** `Review` Prisma загвар (customerId/productId FK,
+    `@@unique([customerId, productId])`, rating 1-5 CHECK constraint
+    `reviews_rating_range` — defense-in-depth, class-validator
+    `@Min/@Max`-ийн ард) + 2 migration (`add_reviews` — схем,
+    `enable_reviews_rls` — RLS). ADR 005-ийн зарчмаар шинэ SECURITY
+    DEFINER функц ЗОХИОГООГҮЙ — `app_current_user_id()`/
+    `app_has_global_scope()`-г л дахин ашиглав, INSERT-ийн EXISTS join
+    хэв маяг `return_requests_insert`-ийн (Phase 3c) ЯГ ижил загварыг
+    дахин ашигласан:
+    `reviews_select` (бүх нэвтэрсэн) / `reviews_insert`
+    (`customerId=app_current_user_id() AND EXISTS(order_items→orders→
+    product_variants join-оор энэ productId-той COMPLETED захиалга)`)
+    / `reviews_update` (зөвхөн өөрийн) / `reviews_delete` (өөрийн ЭСВЭЛ
+    `app_has_global_scope()` — модераци).
+    `src/reviews` модуль: `ReviewService.hasVerifiedPurchase()` (ГАНЦ
+    газар бичигдэж, `create()`-ийн UX-friendly pre-check БОЛОН
+    `ProductService.findOne()`-ийн canReview тооцооллын аль алинд нь
+    дахин ашиглагдана — ADR 005 "ганц газар л шийднэ" зарчим),
+    `getCustomerReviewContext()` ({canReview, myReview}),
+    `findForProduct()` (paginated + Prisma `aggregate` `_avg`-аар
+    averageRating тооцоолно, ДЕНОРМАЛИЦ ХИЙХГҮЙ). Route:
+    `POST/GET /products/:id/reviews` (nested controller,
+    `ProductImageController`-тэй ижил хэв маяг), `PATCH/DELETE
+    /reviews/:id` (typed Prisma `.update()`/`.delete()` — RLS-ийн 0-мөр
+    → Prisma P2025 → 404, custom filter шаардлагагүй), `GET /reviews`
+    (модераци, зөвхөн `SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER` —
+    `audit-log.controller.ts`-ийн "3 глобал-эрхийн дүр" загвар дахин
+    ашигласан). `ProductController.findOne()` (`CouponController.
+    validate()`-ийн "roles-оор customerId тодорхойлох" загвар дахин
+    ашигласан) CUSTOMER-д зориулж `canReview`/`myReview`-г нэгтгэнэ —
+    staff/каталогийн жагсаалт хариунд ЭДГЭЭР ТАЛБАР ОГТ ОРОХГҮЙ
+    (customerId өгөгдөөгүй бол `ReviewService` ОГТ дуудагдахгүй).
+  - **Admin-web:** `/reviews` модераци дэлгэц (AuditLogsPage-ийн ерөнхий
+    Card+шүүлт загвар) — жагсаалт (үнэлгээ ★, бүтээгдэхүүний нэр,
+    сэтгэгдэл, огноо), "Устгах" товч. ⚠️ Category/Product-ийн
+    "isActive toggle, Устгах товч ЗОРИУДАА байхгүй" зарчмаас ЯЛГААТАЙ —
+    энд ЖИНХЭНЭ DELETE (`window.confirm()` баталгаажуулалттай), учир нь
+    энэ бол бизнес объектын амьдралын мөчлөгийн soft-deactivate биш,
+    харин ХАРИЛЦАГЧИЙН БИЧСЭН КОНТЕНТИЙН модераци (`reviews_delete`
+    RLS-ийн 2-р нөхцөл яг ЭНЭ зорилготой).
+  - **Mobile:** `features/reviews/` — `ReviewSummaryBadge` (★4.5 (23
+    сэтгэгдэл), ProductDetailScreen-ийн нэрийн доор), "Сэтгэгдлүүд" хэсэг
+    (эхний 3-ыг товч харуулж, олон бол "Бүгдийг харах" →
+    `ProductReviewsScreen`), `ReviewFormScreen` (`existingReview`
+    параметрээр бичих/засварлах хоёрыг НЭГ дэлгэцэд нэгтгэсэн — 5 одны
+    `StarRatingInput` + тайлбар талбар, `ReturnRequestScreen`-тэй ЯГ
+    ижил `Column([Expanded(ListView), footer])` layout зарчим —
+    CLAUDE.md-ийн "cart Phase"-ийн `Scaffold.bottomNavigationBar`
+    зөрчлийн сургамжийг ЗОРИУДАА дахин баримталсан). `canReview==true`
+    үед л "Үнэлгээ өгөх"/"Үнэлгээгээ засварлах" товч (`myReview` байгаа
+    эсэхээр нэрээ сольдог) харагдана. Тест: 11 шинэ widget/unit тест
+    (`review_form_screen_test.dart`, `product_reviews_screen_test.dart`,
+    `product_detail_screen_test.dart`-д нэмэлт 5) — `flutter analyze` 0
+    алдаа, `flutter test` 104/104.
+  - Backend: `pnpm --filter api test` 44/44 suite (290/290),
+    `pnpm --filter api test:e2e` 19/19 suite (193/193, шинэ
+    `test/reviews.e2e-spec.ts` 18 тест — verified-purchase 403,
+    unique constraint 409, average rating тооцоолол, `reviews_insert`/
+    `reviews_update` RLS policy-г service давхаргыг тойрч шууд SQL-ээр).
+    admin-web: `vitest` 17/17 suite (41/41, шинэ `ReviewsPage.test.tsx`
+    4 тест).
+  - ⚠️ **Android emulator тогтворгүй байдал (энэ ажлын явцад олдсон,
+    кодтой ХОЛБООГҮЙ орчны асуудал, ирээдүйд давтагдвал зориулж
+    тэмдэглэв):** UI баталгаажуулалтын үед `flutter run`-ий `adb install`
+    "Broken pipe" алдаагаар 2 удаа дараалан амжилтгүй болов —
+    `adb shell pm list packages` ч мөн "Broken pipe" өгч, emulator-ийн
+    `system_server`/package service бүхэлдээ хариу өгөхгүй болсныг
+    (хэрэглэгч emulator-ийг гараар унтраасны дараа) илрүүлэв. `adb reboot`
+    (`-avd` snapshot-той) ч засаагүй (`screencap` хүртэл зогсонги
+    болсон) — эцэст нь emulator процессыг бүрэн `taskkill` хийж,
+    `-no-snapshot-load -gpu swiftshader_indirect` (host GPU/Vulkan-ийн
+    оронд software renderer) флагтайгаар цэвэр (cold boot) дахин
+    асаасны дараа л тогтворжсон. **Сургамж:** энэ орчинд Vulkan/host-GPU
+    render нь удаан (>1 цаг) ажилласны/гэнэт унтраасны дараа тогтворгүй
+    болдог шинжтэй тул ижил "Broken pipe"/зогсонги adb алдаа гарвал
+    эхлээд `adb kill-server && adb start-server`-ийг (хурдан, ихэвчлэн
+    хангалтгүй), дараа нь ШУУД `-gpu swiftshader_indirect`-тэй cold
+    boot-ыг (`-no-snapshot-load`) оролдох нь цаг хэмнэнэ.
+  - ⚠️ **UI координат тааруулах — screenshot-ийн дүрсийг нүдээр хэмжихийн
+    оронд `adb shell uiautomator dump` ашигла (энэ ажлын явцад олдсон,
+    ирээдүйд ижил автоматжуулалт хийхэд зориулж тэмдэглэв):**
+    screenshot-ийн дүрс дэх товчны байрлалыг (харагдах 900x2000 →
+    жинхэнэ 1080x2400 масштаб хөрвүүлэлт) нүдээр тааж 3 удаа дараалан
+    буруу товшсоны эцэст `uiautomator dump`-ийн XML-ээс `bounds="[x1,y1]
+    [x2,y2]"`-г ШУУД уншиж төвийг нь тооцоолох нь БҮРЭН нарийвчлалтай,
+    хамаагүй хурдан болохыг тогтоов — цаашид Android emulator дээр
+    тодорхой widget (товч, star icon гэх мэт) товшихдаа screenshot
+    нүдээр хэмжихийн ОРОНД эхлээд `uiautomator dump`-аар bounds олох нь
+    зөв арга. Мөн MSYS/Git Bash-ийн зам хөрвүүлэлт `adb pull`-ийн
+    ЗАЙЛШГҮЙ Windows-хэлбэрийн (`D:/...`) очих замыг устгадаг тул
+    (`MSYS_NO_PATHCONV=1`-тэй хамт ч) заавал `D:/...` (POSIX `/d/...`
+    БИШ) бичих ёстойг тэмдэглэв.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

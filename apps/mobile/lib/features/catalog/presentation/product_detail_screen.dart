@@ -3,14 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shimmer/shimmer.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../../../core/format/currency.dart';
 import '../../cart/presentation/cart_providers.dart';
+import '../../reviews/domain/review.dart';
+import '../../reviews/presentation/review_providers.dart';
+import '../../reviews/presentation/widgets/review_summary_badge.dart';
+import '../../reviews/presentation/widgets/review_tile.dart';
 import '../domain/availability.dart';
 import '../domain/product.dart';
 import '../domain/product_variant.dart';
 import 'catalog_providers.dart';
 import 'widgets/availability_badge.dart';
 import 'widgets/product_image_placeholder.dart';
+
+const _inlineReviewLimit = 3;
 
 /// Бүтээгдэхүүний дэлгэрэнгүй (route: `/products/:id`) — Hero-тэй зурган
 /// gallery, variant сонголт, тооцоолсон availability, "Сагслах" (§7 модуль
@@ -49,7 +57,7 @@ class _ProductDetailScreenState extends ConsumerState<ProductDetailScreen> {
   }
 }
 
-class _ProductDetailBody extends StatefulWidget {
+class _ProductDetailBody extends ConsumerStatefulWidget {
   const _ProductDetailBody({
     required this.product,
     required this.selectedVariantId,
@@ -61,10 +69,11 @@ class _ProductDetailBody extends StatefulWidget {
   final ValueChanged<String> onSelectVariant;
 
   @override
-  State<_ProductDetailBody> createState() => _ProductDetailBodyState();
+  ConsumerState<_ProductDetailBody> createState() =>
+      _ProductDetailBodyState();
 }
 
-class _ProductDetailBodyState extends State<_ProductDetailBody> {
+class _ProductDetailBodyState extends ConsumerState<_ProductDetailBody> {
   final _pageController = PageController();
   int _page = 0;
 
@@ -120,6 +129,8 @@ class _ProductDetailBodyState extends State<_ProductDetailBody> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 4),
+                _ReviewSummaryRow(productId: product.id),
                 const SizedBox(height: 16),
                 if (variant != null) ...[
                   Row(
@@ -188,6 +199,14 @@ class _ProductDetailBodyState extends State<_ProductDetailBody> {
                 ],
                 const SizedBox(height: 32),
                 _AddToCartButton(variant: variant),
+                const SizedBox(height: 24),
+                if (product.canReview == true)
+                  _ReviewActionButton(
+                    productId: product.id,
+                    existingReview: product.myReview,
+                  ),
+                const SizedBox(height: 24),
+                _ReviewsSection(product: product),
               ],
             ),
           ),
@@ -349,6 +368,105 @@ class _AddToCartButtonState extends ConsumerState<_AddToCartButton> {
     if (error == null) {
       Navigator.of(context).pop();
     }
+  }
+}
+
+/// Нэр/үнийн ойролцоо ★4.5 (23 сэтгэгдэл) badge (§7 модуль #11 6) —
+/// `productReviewsProvider`-аас aggregate-ийг уншиж, ачаалж байх/алдааны
+/// үед зүгээр л ХООСОН орон зай (жижиг loading indicator ч биш —
+/// бүтээгдэхүүний үндсэн мэдээллийг блоклохгүй) харуулна.
+class _ReviewSummaryRow extends ConsumerWidget {
+  const _ReviewSummaryRow({required this.productId});
+
+  final String productId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reviewsAsync = ref.watch(productReviewsProvider(productId));
+    return reviewsAsync.when(
+      loading: () => const SizedBox(height: 20),
+      error: (error, _) => const SizedBox.shrink(),
+      data: (data) => ReviewSummaryBadge(
+        averageRating: data.averageRating,
+        totalCount: data.totalCount,
+      ),
+    );
+  }
+}
+
+/// canReview=true үед л харагдана — myReview байгаа эсэхээс хамааран
+/// "Үнэлгээ өгөх" (шинээр) эсвэл "Засварлах" (aль хэдийн бичсэн) гэсэн
+/// нэртэй товч болно.
+class _ReviewActionButton extends StatelessWidget {
+  const _ReviewActionButton({required this.productId, this.existingReview});
+
+  final String productId;
+  final Review? existingReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEdit = existingReview != null;
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const Key('review_action_button'),
+        icon: Icon(isEdit ? Icons.edit_outlined : Icons.star_outline_rounded),
+        label: Text(isEdit ? 'Үнэлгээгээ засварлах' : 'Үнэлгээ өгөх'),
+        onPressed: () => context.push(
+          '/products/$productId/review',
+          extra: existingReview,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Сэтгэгдлүүд" хэсэг — эхний [_inlineReviewLimit] сэтгэгдлийг товч
+/// харуулж, олон бол "Бүгдийг харах" товч.
+class _ReviewsSection extends ConsumerWidget {
+  const _ReviewsSection({required this.product});
+
+  final Product product;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final reviewsAsync = ref.watch(productReviewsProvider(product.id));
+
+    return reviewsAsync.when(
+      loading: () => const SizedBox.shrink(),
+      error: (error, _) => const SizedBox.shrink(),
+      data: (data) {
+        if (data.reviews.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final preview = data.reviews.take(_inlineReviewLimit).toList();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Сэтгэгдлүүд',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Divider(),
+            for (final review in preview) ReviewTile(review: review),
+            if (data.totalCount > preview.length) ...[
+              const SizedBox(height: 4),
+              Center(
+                child: TextButton(
+                  key: const Key('view_all_reviews_button'),
+                  onPressed: () =>
+                      context.push('/products/${product.id}/reviews'),
+                  child: Text('Бүгдийг харах (${data.totalCount})'),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
   }
 }
 

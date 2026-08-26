@@ -20,6 +20,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { ReportModule } from './reports/report.module.js';
 import { ReturnModule } from './returns/return.module.js';
+import { ReviewModule } from './reviews/review.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { StaffModule } from './staff/staff.module.js';
 
@@ -41,6 +42,7 @@ import { StaffModule } from './staff/staff.module.js';
     StaffModule,
     ReturnModule,
     ReportModule,
+    ReviewModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [

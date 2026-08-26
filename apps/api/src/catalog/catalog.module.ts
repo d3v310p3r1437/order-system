@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { RolesGuard } from '../common/roles.guard.js';
+import { ReviewModule } from '../reviews/review.module.js';
 import { SearchModule } from '../search/search.module.js';
 import { StorageModule } from '../storage/storage.module.js';
 import { CategoryController } from './category/category.controller.js';
@@ -16,9 +17,12 @@ import { SearchController } from './search/search.controller.js';
 // ProductVariant CRUD API-г нэг модульд нэгтгэв. Phase 2 Хэсэг A/B: MinIO
 // зураг (StorageModule) БОЛОН Meilisearch хайлт (SearchModule) нэмэгдэв —
 // OrderModule-ийн RealtimeModule/PaymentModule-той ижил зарчмаар зөвхөн
-// хэрэгтэй модулиудыг импортолсон (@Global биш).
+// хэрэгтэй модулиудыг импортолсон (@Global биш). §7 модуль #11:
+// ReviewModule нэмэгдсэн — ProductService.findOne()-ийн canReview/
+// myReview тооцооллыг ReviewService-ээр дахин ашиглана (ADR 005 "ганц
+// газар л шийднэ" зарчим).
 @Module({
-  imports: [StorageModule, SearchModule],
+  imports: [StorageModule, SearchModule, ReviewModule],
   controllers: [
     CategoryController,
     ProductController,
