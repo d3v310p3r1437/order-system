@@ -20,6 +20,9 @@ import '../features/checkout/presentation/payment_screen.dart';
 import '../features/orders/presentation/order_list_screen.dart';
 import '../features/profile/presentation/profile_screen.dart';
 import '../features/returns/presentation/return_request_screen.dart';
+import '../features/reviews/domain/review.dart';
+import '../features/reviews/presentation/product_reviews_screen.dart';
+import '../features/reviews/presentation/review_form_screen.dart';
 import 'home_screen.dart';
 import 'main_shell.dart';
 import 'settings_screen.dart';
@@ -109,6 +112,19 @@ final routerProvider = Provider<GoRouter>((ref) {
         ),
       ),
       GoRoute(path: '/cart', builder: (context, state) => const CartScreen()),
+      GoRoute(
+        path: '/products/:id/reviews',
+        builder: (context, state) => ProductReviewsScreen(
+          productId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/products/:id/review',
+        builder: (context, state) => ReviewFormScreen(
+          productId: state.pathParameters['id']!,
+          existingReview: state.extra as Review?,
+        ),
+      ),
       GoRoute(
         path: '/branch-select',
         builder: (context, state) => const BranchSelectionScreen(),

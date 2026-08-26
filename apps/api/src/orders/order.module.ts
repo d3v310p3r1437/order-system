@@ -5,7 +5,9 @@ import { CouponModule } from '../coupons/coupon.module.js';
 import { NotificationModule } from '../notification/notification.module.js';
 import { PaymentModule } from '../payment/payment.module.js';
 import { RealtimeModule } from '../realtime/realtime.module.js';
+import { ReviewModule } from '../reviews/review.module.js';
 import { RoutingModule } from '../routing/routing.module.js';
+import { StorageModule } from '../storage/storage.module.js';
 import { OrderController } from './order.controller.js';
 import { OrderService } from './order.service.js';
 
@@ -17,6 +19,9 @@ import { OrderService } from './order.service.js';
 // (GET /:id/route), NotificationModule (статус өөрчлөгдөх бүрт
 // SMS/email мэдэгдэл). (2026-08-20) CartModule: checkout item-үүдийг
 // Redis сагснаас уншиж, амжилттай commit хийгдсэний дараа цэвэрлэнэ.
+// (2026-08-26) StorageModule (productImageUrl-д MinioService.getPublicUrl())
+// БОЛОН ReviewModule (myReview-д ReviewService.findManyForCustomer(), §7
+// модуль #11-ийн exports-ыг дахин ашигласан — CouponModule-той ижил зарчим).
 @Module({
   imports: [
     CartModule,
@@ -25,6 +30,8 @@ import { OrderService } from './order.service.js';
     RoutingModule,
     NotificationModule,
     CouponModule,
+    StorageModule,
+    ReviewModule,
   ],
   controllers: [OrderController],
   providers: [OrderService, RolesGuard],

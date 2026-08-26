@@ -11,6 +11,7 @@ import {
   isUniqueConstraintViolation,
 } from '../../common/prisma-errors.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ReviewService } from '../../reviews/review.service.js';
 import { SearchIndexer } from '../../search/search-indexer.service.js';
 import { toProductSearchDocument } from '../../search/product-search-document.js';
 import { MinioService } from '../../storage/minio.service.js';
@@ -42,6 +43,7 @@ export class ProductService {
     private readonly prisma: PrismaService,
     private readonly searchIndexer: SearchIndexer,
     private readonly minio: MinioService,
+    private readonly reviewService: ReviewService,
   ) {}
 
   findAll(categoryId?: string) {
@@ -60,7 +62,7 @@ export class ProductService {
   // { status, leadDays } (CUSTOMER дүр ч аюулгүй дуудна, RLS-д мөргөлдөхгүй,
   // учир нь inventory_items хүснэгтийг шууд бус, зөвхөн SECURITY DEFINER
   // snapshot функцээр л уншина).
-  async findOne(id: string, branchId?: string) {
+  async findOne(id: string, branchId?: string, customerId?: string) {
     const product = await this.prisma.tx.product.findUnique({
       where: { id },
       include: {
@@ -74,7 +76,15 @@ export class ProductService {
         message: 'Бүтээгдэхүүн олдсонгүй',
       });
     }
-    return this.hydrateProduct(product, branchId);
+    const hydrated = await this.hydrateProduct(product, branchId);
+    if (!customerId) {
+      return hydrated;
+    }
+    const reviewContext = await this.reviewService.getCustomerReviewContext(
+      customerId,
+      id,
+    );
+    return { ...hydrated, ...reviewContext };
   }
 
   // §8 Phase 2 Хэсэг B, даалгавар #9: Meilisearch-ээс ирсэн (эрэмбэлэгдсэн)

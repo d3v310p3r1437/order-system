@@ -953,6 +953,50 @@ export interface AuditLogFilter {
 // ⚠️ audit-log.controller.ts-ийн коммент: branchId ХЭЗЭЭ Ч populate
 // хийгддэггүй тул ЗӨВХӨН глобал-эрхийн дүрд (AUDIT_LOG_VIEW_ROLES) л
 // амжилттай хариу буцаана (roles.ts-ийн AUDIT_LOG_VIEW_ROLES-той тохирно).
+// apps/api/src/reviews/review.controller.ts, review-product.controller.ts-тэй
+// тохирно (§7 модуль #11).
+export interface Review {
+  id: string;
+  customerId: string;
+  productId: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// GET /reviews (модераци, зөвхөн REVIEW_MODERATION_ROLES) — бүтээгдэхүүний
+// нэрийг ЯГ backend-ийн include-той (id, name) тохируулав.
+export interface ReviewModerationEntry extends Review {
+  product: { id: string; name: string };
+}
+
+export interface ReviewModerationList {
+  reviews: ReviewModerationEntry[];
+  totalCount: number;
+  page: number;
+  limit: number;
+}
+
+export function getReviewsForModeration(
+  accessToken: string,
+  page = 1,
+): Promise<ReviewModerationList> {
+  return apiFetch<ReviewModerationList>(`/reviews?page=${page}`, accessToken);
+}
+
+// reviews_delete RLS "ӨӨРИЙН ЭСВЭЛ app_has_global_scope()" — энэ дэлгэц
+// зөвхөн модераци (global scope) зорилготой тул ЭНД устгах нь ЯГ л
+// модерацийн үйлдэл.
+export function deleteReview(
+  accessToken: string,
+  id: string,
+): Promise<Review> {
+  return apiFetch<Review>(`/reviews/${id}`, accessToken, {
+    method: "DELETE",
+  });
+}
+
 export function getAuditLogs(
   accessToken: string,
   filter: AuditLogFilter = {},

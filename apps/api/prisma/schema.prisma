@@ -78,6 +78,7 @@ model User {
   returnRequestsReviewed ReturnRequest[]    @relation("ReturnReviewedBy")
   couponsCreated         Coupon[]           @relation("CouponCreatedBy")
   couponRedemptions      CouponRedemption[] @relation("CouponRedeemedBy")
+  reviews                Review[]
 
   @@map("users")
 }
@@ -157,6 +158,7 @@ model Product {
 
   variants ProductVariant[]
   images   ProductImage[]
+  reviews  Review[]
 
   @@index([categoryId])
   @@map("products")
@@ -485,4 +487,34 @@ model CouponRedemption {
   @@unique([couponId, customerId])
   @@index([customerId])
   @@map("coupon_redemptions")
+}
+
+// ─────────────────────────────────────────────────────────
+// Сэтгэгдэл/үнэлгээ (docs/plan.md §7 модуль #11, §6.1 матриц-д тусгайлан
+// мөр байхгүй — даалгаврын шууд заавраар: SELECT бүх нэвтэрсэн
+// хэрэглэгчид, INSERT зөвхөн "verified purchase" (COMPLETED захиалгаар
+// худалдаж авсан) CUSTOMER, UPDATE зөвхөн өөрийн, DELETE өөрийн ЭСВЭЛ
+// app_has_global_scope() (модераци) — enable_reviews_rls migration-ийг үз.
+// rating-ийн 1-5 хязгаарлалт CHECK constraint-аар (defense-in-depth,
+// class-validator @Min/@Max-ийн ард) хамгаалагдана.
+// ─────────────────────────────────────────────────────────
+model Review {
+  id         String   @id @default(uuid())
+  customerId String
+  // Хэрэглэгч устгагдвал (одоогоор ийм endpoint байхгүй ч) сэтгэгдэл
+  // "эзэнгүй" болж чимээгүй үлдэхээс сэргийлж бусад User-холбоотой
+  // хүснэгтүүдтэй (orders, returnRequestsMade) ижил Restrict.
+  customer   User     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  productId  String
+  // ProductImage-тэй адил бүтээгдэхүүний "хамааралтай" (dependent)
+  // өгөгдөл — Product уствал сэтгэгдэл ч хамт устна (Cascade).
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([customerId, productId])
+  @@index([productId])
+  @@map("reviews")
 }

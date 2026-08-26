@@ -4,6 +4,7 @@ import { useOrderEvents } from "@/lib/realtime";
 import {
   AUDIT_LOG_VIEW_ROLES,
   REPORT_VIEW_ROLES,
+  REVIEW_MODERATION_ROLES,
   ROLE_LABELS,
   STAFF_MANAGE_ROLES,
 } from "@/lib/roles";
@@ -18,6 +19,9 @@ const NAV_ITEMS = [
   { to: "/orders", label: "Захиалгууд" },
   { to: "/returns", label: "Буцаалтууд" },
   { to: "/coupons", label: "Купон" },
+  // Category/Product-той адил "бүх нэвтэрсэн" RLS-тэй боловч модераци
+  // (устгах) дэлгэц зөвхөн глобал-эрхийн дүрд зориулагдсан тул нуусан.
+  { to: "/reviews", label: "Сэтгэгдэл", roles: REVIEW_MODERATION_ROLES },
   // SALESPERSON/BRANCH_MANAGER §6.1 матрицад ажилтан удирдах эрхгүй
   // (Тайлантай ижил зарчим) — 403-той хоосон хуудас руу шилжихийн
   // оронд нэвтрэлтийн цэснээс нуусан.

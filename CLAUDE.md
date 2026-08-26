@@ -1791,6 +1791,233 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     (глобал+branchId, салбарын+branchId-гүй хоёул 23514 шиднэ; зөв
     хослол хэвийн ажиллана). Дэлгэрэнгүй: `docs/adr/002`-ийн "Инцидентийн
     эцсийн, БҮТЦИЙН хамгаалалт (2026-08-26)" хэсэг.
+- **(2026-08-26) Сэтгэгдэл/үнэлгээ (§7 модуль #11) дууссан** (backend +
+  admin-web + Mobile): §6.1 матрицад тусгайлан мөр байхгүй тул
+  даалгаврын шууд заавраар код болгов.
+  - **Backend:** `Review` Prisma загвар (customerId/productId FK,
+    `@@unique([customerId, productId])`, rating 1-5 CHECK constraint
+    `reviews_rating_range` — defense-in-depth, class-validator
+    `@Min/@Max`-ийн ард) + 2 migration (`add_reviews` — схем,
+    `enable_reviews_rls` — RLS). ADR 005-ийн зарчмаар шинэ SECURITY
+    DEFINER функц ЗОХИОГООГҮЙ — `app_current_user_id()`/
+    `app_has_global_scope()`-г л дахин ашиглав, INSERT-ийн EXISTS join
+    хэв маяг `return_requests_insert`-ийн (Phase 3c) ЯГ ижил загварыг
+    дахин ашигласан:
+    `reviews_select` (бүх нэвтэрсэн) / `reviews_insert`
+    (`customerId=app_current_user_id() AND EXISTS(order_items→orders→
+    product_variants join-оор энэ productId-той COMPLETED захиалга)`)
+    / `reviews_update` (зөвхөн өөрийн) / `reviews_delete` (өөрийн ЭСВЭЛ
+    `app_has_global_scope()` — модераци).
+    `src/reviews` модуль: `ReviewService.hasVerifiedPurchase()` (ГАНЦ
+    газар бичигдэж, `create()`-ийн UX-friendly pre-check БОЛОН
+    `ProductService.findOne()`-ийн canReview тооцооллын аль алинд нь
+    дахин ашиглагдана — ADR 005 "ганц газар л шийднэ" зарчим),
+    `getCustomerReviewContext()` ({canReview, myReview}),
+    `findForProduct()` (paginated + Prisma `aggregate` `_avg`-аар
+    averageRating тооцоолно, ДЕНОРМАЛИЦ ХИЙХГҮЙ). Route:
+    `POST/GET /products/:id/reviews` (nested controller,
+    `ProductImageController`-тэй ижил хэв маяг), `PATCH/DELETE
+    /reviews/:id` (typed Prisma `.update()`/`.delete()` — RLS-ийн 0-мөр
+    → Prisma P2025 → 404, custom filter шаардлагагүй), `GET /reviews`
+    (модераци, зөвхөн `SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER` —
+    `audit-log.controller.ts`-ийн "3 глобал-эрхийн дүр" загвар дахин
+    ашигласан). `ProductController.findOne()` (`CouponController.
+    validate()`-ийн "roles-оор customerId тодорхойлох" загвар дахин
+    ашигласан) CUSTOMER-д зориулж `canReview`/`myReview`-г нэгтгэнэ —
+    staff/каталогийн жагсаалт хариунд ЭДГЭЭР ТАЛБАР ОГТ ОРОХГҮЙ
+    (customerId өгөгдөөгүй бол `ReviewService` ОГТ дуудагдахгүй).
+  - **Admin-web:** `/reviews` модераци дэлгэц (AuditLogsPage-ийн ерөнхий
+    Card+шүүлт загвар) — жагсаалт (үнэлгээ ★, бүтээгдэхүүний нэр,
+    сэтгэгдэл, огноо), "Устгах" товч. ⚠️ Category/Product-ийн
+    "isActive toggle, Устгах товч ЗОРИУДАА байхгүй" зарчмаас ЯЛГААТАЙ —
+    энд ЖИНХЭНЭ DELETE (`window.confirm()` баталгаажуулалттай), учир нь
+    энэ бол бизнес объектын амьдралын мөчлөгийн soft-deactivate биш,
+    харин ХАРИЛЦАГЧИЙН БИЧСЭН КОНТЕНТИЙН модераци (`reviews_delete`
+    RLS-ийн 2-р нөхцөл яг ЭНЭ зорилготой).
+  - **Mobile:** `features/reviews/` — `ReviewSummaryBadge` (★4.5 (23
+    сэтгэгдэл), ProductDetailScreen-ийн нэрийн доор), "Сэтгэгдлүүд" хэсэг
+    (эхний 3-ыг товч харуулж, олон бол "Бүгдийг харах" →
+    `ProductReviewsScreen`), `ReviewFormScreen` (`existingReview`
+    параметрээр бичих/засварлах хоёрыг НЭГ дэлгэцэд нэгтгэсэн — 5 одны
+    `StarRatingInput` + тайлбар талбар, `ReturnRequestScreen`-тэй ЯГ
+    ижил `Column([Expanded(ListView), footer])` layout зарчим —
+    CLAUDE.md-ийн "cart Phase"-ийн `Scaffold.bottomNavigationBar`
+    зөрчлийн сургамжийг ЗОРИУДАА дахин баримталсан). `canReview==true`
+    үед л "Үнэлгээ өгөх"/"Үнэлгээгээ засварлах" товч (`myReview` байгаа
+    эсэхээр нэрээ сольдог) харагдана. Тест: 11 шинэ widget/unit тест
+    (`review_form_screen_test.dart`, `product_reviews_screen_test.dart`,
+    `product_detail_screen_test.dart`-д нэмэлт 5) — `flutter analyze` 0
+    алдаа, `flutter test` 104/104.
+  - Backend: `pnpm --filter api test` 44/44 suite (290/290),
+    `pnpm --filter api test:e2e` 19/19 suite (193/193, шинэ
+    `test/reviews.e2e-spec.ts` 18 тест — verified-purchase 403,
+    unique constraint 409, average rating тооцоолол, `reviews_insert`/
+    `reviews_update` RLS policy-г service давхаргыг тойрч шууд SQL-ээр).
+    admin-web: `vitest` 17/17 suite (41/41, шинэ `ReviewsPage.test.tsx`
+    4 тест).
+  - ⚠️ **Android emulator тогтворгүй байдал (энэ ажлын явцад олдсон,
+    кодтой ХОЛБООГҮЙ орчны асуудал, ирээдүйд давтагдвал зориулж
+    тэмдэглэв):** UI баталгаажуулалтын үед `flutter run`-ий `adb install`
+    "Broken pipe" алдаагаар 2 удаа дараалан амжилтгүй болов —
+    `adb shell pm list packages` ч мөн "Broken pipe" өгч, emulator-ийн
+    `system_server`/package service бүхэлдээ хариу өгөхгүй болсныг
+    (хэрэглэгч emulator-ийг гараар унтраасны дараа) илрүүлэв. `adb reboot`
+    (`-avd` snapshot-той) ч засаагүй (`screencap` хүртэл зогсонги
+    болсон) — эцэст нь emulator процессыг бүрэн `taskkill` хийж,
+    `-no-snapshot-load -gpu swiftshader_indirect` (host GPU/Vulkan-ийн
+    оронд software renderer) флагтайгаар цэвэр (cold boot) дахин
+    асаасны дараа л тогтворжсон. **Сургамж:** энэ орчинд Vulkan/host-GPU
+    render нь удаан (>1 цаг) ажилласны/гэнэт унтраасны дараа тогтворгүй
+    болдог шинжтэй тул ижил "Broken pipe"/зогсонги adb алдаа гарвал
+    эхлээд `adb kill-server && adb start-server`-ийг (хурдан, ихэвчлэн
+    хангалтгүй), дараа нь ШУУД `-gpu swiftshader_indirect`-тэй cold
+    boot-ыг (`-no-snapshot-load`) оролдох нь цаг хэмнэнэ.
+  - ⚠️ **UI координат тааруулах — screenshot-ийн дүрсийг нүдээр хэмжихийн
+    оронд `adb shell uiautomator dump` ашигла (энэ ажлын явцад олдсон,
+    ирээдүйд ижил автоматжуулалт хийхэд зориулж тэмдэглэв):**
+    screenshot-ийн дүрс дэх товчны байрлалыг (харагдах 900x2000 →
+    жинхэнэ 1080x2400 масштаб хөрвүүлэлт) нүдээр тааж 3 удаа дараалан
+    буруу товшсоны эцэст `uiautomator dump`-ийн XML-ээс `bounds="[x1,y1]
+    [x2,y2]"`-г ШУУД уншиж төвийг нь тооцоолох нь БҮРЭН нарийвчлалтай,
+    хамаагүй хурдан болохыг тогтоов — цаашид Android emulator дээр
+    тодорхой widget (товч, star icon гэх мэт) товшихдаа screenshot
+    нүдээр хэмжихийн ОРОНД эхлээд `uiautomator dump`-аар bounds олох нь
+    зөв арга. Мөн MSYS/Git Bash-ийн зам хөрвүүлэлт `adb pull`-ийн
+    ЗАЙЛШГҮЙ Windows-хэлбэрийн (`D:/...`) очих замыг устгадаг тул
+    (`MSYS_NO_PATHCONV=1`-тэй хамт ч) заавал `D:/...` (POSIX `/d/...`
+    БИШ) бичих ёстойг тэмдэглэв.
+- **(2026-08-26/27) Сэтгэгдэл өгөх урсгалыг каталогоос хайхаас Захиалгууд
+  хуудас руу шилжүүлэх дууссан** (§7 модуль #6/#11-ийн шууд үргэлжлэл,
+  каталог дахь `ProductDetailScreen`/`ReviewFormScreen`-ийн бичих/
+  засварлах боломжийг ЗОРИУДАА ХЭВЭЭР үлдээв — шинэ bottom sheet-ийг
+  тэнд дахин ашиглах боломжтой байсан ч (§7 модуль #11-ийн даалгаврын
+  "аль тохиромжтойг чи шийд" гэсэн зөвшөөрлийн дагуу) бүтэн дэлгэцийн
+  хувилбар аль хэдийн ажиллаж байсан тул хөндөөгүй, зөвхөн ШИНЭ
+  Захиалгын түүхийн замыг нэмэв):
+  - **Backend:** `OrderService.hydrateOrder()` (шинэ private метод,
+    `findAll()`/`findOne()` хоёуланд нь дахин ашигласан) OrderItem
+    бүрд `productImageUrl` (эхний `ProductImage`, `MinioService.
+    getPublicUrl()` — `ProductService.hydrateProduct()`-тэй ЯГ ижил
+    дуудлага) БОЛОН `myReview` (зөвхөн `order.status==='COMPLETED'`
+    үед, бусад статуст ЗОРИУДАА `null`) нэмнэ. `ORDER_ITEM_VARIANT_INCLUDE`-д
+    `variant.product.images` (`take: 1, orderBy: displayOrder`) нэмэгдэв.
+    `ReviewService.findManyForCustomer(customerId, productIds)` (шинэ,
+    export хэвээр) — нэг захиалгын ХЭД ХЭДЭН item-тэй бол ч ГАНЦ batch
+    query-ээр (`productId IN (...)`, `customerId`-аар шүүсэн тул
+    зөвшөөрлийн асуудалгүй, `reviews_select` RLS "бүх нэвтэрсэн" аль
+    хэдийн зөвшөөрдөг) бүх review-г нэг дор татна — item тус бүрд
+    тусдаа дуудахгүй. `OrderModule`-д `StorageModule`/`ReviewModule`
+    (аль хэдийн `ReviewModule`-ийн `exports: [ReviewService]`-ээр
+    бэлтгэгдсэн байсан, `CatalogModule`-той адил зарчмаар) нэмэгдэв.
+    ⚠️ **Build-ийн цоорхой (`nest build`-ээр л илэрсэн, `tsc --noEmit`/
+    unit тестээр анзаарагдаагүй):** `hydrateOrder()`-ийн буцаах
+    `HydratedOrderItem` interface-ийг эхэндээ export хийгээгүй байснаас
+    `OrderController`-ийн public метод (`findAll`/`findOne`/`checkout`/
+    `updateStatus`) TS4053 ("named external module type-ийг export
+    хийхгүйгээр public method-ийн буцаах төрөл болгож болохгүй") алдаа
+    өгсөн — зөвхөн `pnpm --filter api run build` (declaration file
+    үүсгэдэг тул) дээр л илэрдэг, `pnpm test`/`tsc --noEmit` (test
+    файлуудын хувьд аль хэдийн өөр учир шалтгаантай олон алдаа өгдөг
+    байсан тул шинэ алдаа анзаарагдахгүй байсан) дээр илрээгүй байсан.
+    **Сургамж:** service-ийн private хэлхэлтийн буцаах утгын хэлбэрийг
+    нэмэлт/өөрчлөх бүрд `pnpm test`-ээс гадна `pnpm run build`-ийг ч
+    ЗААВАЛ ажиллуулж шалгах хэрэгтэй. Тест: unit (3 шинэ `describe`
+    `order.service.spec.ts`/`review.service.spec.ts`-д, mock structure
+    `variant.product.images`-тэй нийцүүлсэн) + e2e (`test/
+    orders.e2e-spec.ts`-д шинэ `describe` — ProductImage+Review бодит
+    мөр үүсгэж, COMPLETED/идэвхтэй захиалга хоёуланд productImageUrl/
+    myReview зөв ирэхийг, GET /orders (жагсаалт) БОЛОН GET /orders/:id
+    хоёуланд ижил үр дүн ирэхийг баталгаажуулав).
+  - **Mobile:** `OrderListScreen` section-based (Идэвхтэй/Түүх нэг
+    `ListView`-д бүлэглэгдсэн) байдлаа жинхэнэ `TabController`+
+    `TabBarView`-руу шилжүүлэв (`AppBar.bottom: TabBar`,
+    swipe/tap хоёулаа ажиллана). `OrderListCard` (`ConsumerWidget`-ээс
+    `StatelessWidget` хэвээрээ, зөвхөн параметр нэмэгдсэн): эхний
+    барааны `productImageUrl`-ийг `CachedNetworkImage`-ээр (56×56,
+    `ProductImagePlaceholder` fallback) харуулна; COMPLETED захиалгад
+    (`onReviewTap` параметр өгөгдсөн үед л, Идэвхтэй tab-д `null`
+    дамжуулагдана тул тэнд ОГТ харагдахгүй) бараа бүрд `_ItemReviewRow`
+    — `myReview` байвал 5 одыг шууд, байхгүй бол "★ Үнэлэх" текст товч.
+    `QuickReviewBottomSheet` (шинэ, `features/reviews/presentation/
+    widgets/`) — `ReviewFormScreen`-ийн (бүтэн дэлгэц) логиктой ЯГ ижил
+    (verified-purchase эцсийн шалгалт үргэлж backend талд), зөвхөн UI
+    нь `showModalBottomSheet`. ⚠️ **Загварын шийдвэр (coupling
+    зайлсхийх):** `QuickReviewBottomSheet` ЗОРИУДАА `OrderListNotifier`-ийг
+    огт мэдэхгүй — амжилттай хадгалагдсан `Review`-г зөвхөн
+    `Navigator.pop(review)`-оор буцаадаг, `showQuickReviewBottomSheet()`
+    туслах функц үүнийг хүлээж аваад дуудагч талын `onReviewSaved`
+    callback-ыг дуудна (`OrderListScreen._openReview()`-д
+    `orderListProvider.notifier.applyLocalReview()` дуудаж SnackBar
+    харуулна) — ирээдүйд өөр дэлгэцээс (жиш: ProductDetailScreen) дахин
+    ашиглахад ямар ч орон нутгийн state мэдэхгүй цэвэр widget хэвээр
+    үлдэнэ. `OrderListNotifier.applyLocalReview(productId, review)`
+    (шинэ) — `GET /orders`-г ДАХИН дуудахгүйгээр, `state.value`-ийн БҮХ
+    захиалгын (ижил бүтээгдэхүүн олон захиалгад давтагдаж болзошгүй)
+    харгалзах `OrderItemLine.myReview`-г шууд (local, `copyWith()`)
+    шинэчилнэ. `OrderItemLine`/`OrderDetail`-д `copyWith()` нэмэгдэв
+    (`@freezed` ашиглаагүй энгийн класс тул гараар). Тест: widget
+    (`order_list_screen_test.dart`-д 2 шинэ — tab шилжилт+COMPLETED
+    карт харагдах, "Үнэлэх"→bottom sheet→илгээх→UI шинэчлэгдэх (API
+    дахин дуудагдаагүйг `listOrdersCallCount`-аар баталгаажуулсан)),
+    шинэ `quick_review_bottom_sheet_test.dart` (create/update/алдааны
+    зам 3 тест), unit (`order_list_provider_test.dart`-д
+    `applyLocalReview()`-ийн тест).
+  - ✅ **Android emulator дээрх баталгаажуулалт (light+dark, бодит
+    backend+DB, `+97688112233` акаунтаар):** Захиалгууд → Түүх таб →
+    COMPLETED захиалгын карт дээр эхний барааны зураг (MinIO-аас, Coca-
+    Cola-ийн улаан өнгөтэй бодит thumbnail) харагдав → "★ Үнэлэх" дарж
+    bottom sheet нээгдэв → 5 од сонгож Илгээх дарахад SnackBar
+    ("Үнэлгээ илгээгдлээ") + карт дээрх "★ Үнэлэх" ШУУД 5 одоор солигдов
+    (backend лог дээр endpoint бүрийн дуудлагыг тусгайлан бичдэггүй тул
+    оронд нь Postgres-руу шууд орж `reviews` хүснэгтэд шинэ мөр
+    (rating=5) бодитоор бичигдсэнийг баталгаажуулсан) → Тохиргоо →
+    Харанхуй горим сонгож дахин Захиалгууд
+    → Түүх таб (dark mode-д TabBar indicator, badge, зураг бүгд зөв
+    контраст) → 2 дахь (аль хэдийн 2 одтой) захиалгын item дээр дарж
+    ЗАСВАРЛАХ горимын bottom sheet (title "Хадгалах", 2 од+хуучин
+    тайлбар урьдчилан бөглөгдсөн) харагдав.
+  - ⚠️🔴 **Энэ ажлын явцад олдсон, БҮХ Android emulator UI баталгаажуулалтад
+    хамаарах чухал засвар/тодруулга (өмнөх сессийн "uiautomator dump
+    ашигла" зөвлөмжийг ЗАСВАРЛАВ):** энэ session-д `adb shell uiautomator
+    dump` Flutter апп дээр ХООСОН (`text=""` бүх нод) XML буцаасан —
+    учир нь Flutter анхдагчаар (TalkBack/бодит accessibility service
+    идэвхгүй үед) semantics tree-ээ ОГТ populate хийдэггүй тул
+    uiautomator-ийн (Android-ийн native accessibility framework дээр
+    суурилсан) dump зүгээр л Flutter-ийн render хийсэн canvas widget-үүдийг
+    "харахгүй" (зөвхөн Flutter engine-ийн ГАДНА орших native view-үүдийг
+    л). Мөн screenshot-ийг нүдээр хэмжсэн координат (жиш: доод navigation
+    bar-ийн "Захиалгууд" tab) 3-4 удаа дараалан буруу байсан (икон/лэйбл
+    мөрийг бодит байрлалаас өндөр гэж андуурсан). **Бодитоор ажилласан
+    шийдэл:** `System.Drawing` (PowerShell, .NET native, гуравдагч сан
+    суулгах шаардлагагүй)-ээр screenshot-ийн тодорхой хэсгийг (жиш:
+    доод 500px)-ийг тусад нь `crop`-лож, тэр жижиг crop-ыг Read tool-оор
+    ДАХИН харж, дотор нь харьцангуй байрлалаар (%, жишээ нь "товчны
+    төв нь crop-ын 84% доош") нарийвчлан тооцоолох нь тогтвортой
+    ажиллав. **Сургамж:** Flutter (Android emulator, semantics идэвхгүй)
+    орчинд UI автоматжуулалт хийхдээ ЭХЛЭЭД `uiautomator dump`-ыг
+    турших ч (заримдаа native widget-т (жиш: TextField-ийн keyboard)
+    ажиллаж магадгүй), Flutter-ийн өөрийн canvas-аар зурсан widget
+    (товч, tab, icon) дээр ХООСОН dump буцвал ШУУДДАА screenshot crop
+    + харьцангуй байрлал тооцоолох аргад шилжих нь цаг хэмнэнэ (нүдээр
+    үнэмлэхүй пиксель тааж 3-4 удаа алдахаас хамаагүй хурдан).
+  - **(2026-08-27 нэмэлт засвар) QuickReviewBottomSheet-ийн доод
+    зай/сүүдэр сайжруулав:** `OrderListScreen` нь `StatefulShellRoute`-ийн
+    "Захиалгууд" branch дотор байрладаг тул `showModalBottomSheet`-ийг
+    (`Navigator.of(context)`-ийн ХАМГИЙН ОЙР — branch-ийн дотоод, root
+    БИШ) `MainShell`-ийн `Scaffold.body`-ийн дотор л (`bottomNavigationBar`-ын
+    ГАДНА биш) нээдэг тул анхны хувилбарт "Хадгалах"/"Илгээх" товч доод
+    navigation bar-тай бараг шүргэлцдэг байсан. Засвар: `build()`-д
+    `SafeArea(top: false)` нэмж, доод padding-ийг `viewInsets.bottom +
+    16`-аас `+ 20`-руу нэмэгдүүлэв (клавиатур нээгдэх/хаагдахаас
+    үл хамааран ЯГ 20px тодорхой зай); `showModalBottomSheet()`-д
+    `elevation: 12` (M3-ийн анхдагч ~1-ээс хамаагүй тод) +
+    `clipBehavior: Clip.antiAlias` + дугуй булант `shape` нэмж, sheet-ийн
+    дээд ирмэгийн сүүдэр дэвсгэрээс тод "лифт" болж харагдахаар болгов.
+    Android emulator дээр (light+dark) screenshot-ийн тодорхой хэсгийг
+    (`System.Drawing` crop) шалгаж, "Хадгалах" товч ба navigation bar
+    хоорондын зай (~100px, шаардсан 16-24px-ээс хамаагүй илүү) БОЛОН
+    sheet-ийн дээд ирмэгийн тод сүүдэр (дугуй булан + `elevation`-ийн
+    ил харагдах градиент) хоёуланг нь баталгаажуулав.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

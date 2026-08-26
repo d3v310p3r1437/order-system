@@ -8,14 +8,18 @@ import 'package:mobile/features/cart/presentation/cart_providers.dart';
 import 'package:mobile/features/checkout/presentation/checkout_providers.dart';
 import 'package:mobile/features/orders/presentation/order_list_providers.dart';
 import 'package:mobile/features/orders/presentation/order_list_screen.dart';
+import 'package:mobile/features/reviews/domain/review.dart';
+import 'package:mobile/features/reviews/presentation/review_providers.dart';
 
 import '../../../support/fake_cart_repository.dart';
 import '../../../support/fake_checkout_repository.dart';
+import '../../../support/fake_review_repository.dart';
 
 OrderDetail _order({
   required String id,
   required String status,
   String totalAmount = '15000.00',
+  Review? myReview,
 }) {
   return OrderDetail(
     id: id,
@@ -30,18 +34,26 @@ OrderDetail _order({
         unitPriceSnapshot: totalAmount,
         productName: 'Кока-Кола',
         variantName: '0.5Л',
+        productId: 'product-1',
+        productImageUrl: null,
+        myReview: myReview,
       ),
     ],
     deliveryMethod: 'PICKUP',
     createdAt: DateTime(2026, 8, 15).toIso8601String(),
+    completedAt: status == 'COMPLETED'
+        ? DateTime(2026, 8, 16).toIso8601String()
+        : null,
   );
 }
 
 void main() {
   late FakeCheckoutRepository repository;
+  late FakeReviewRepository reviewRepository;
 
   setUp(() {
     repository = FakeCheckoutRepository();
+    reviewRepository = FakeReviewRepository();
   });
 
   Widget wrap() {
@@ -71,6 +83,7 @@ void main() {
         // override хийхгүй бол cartProvider бодит сүлжээ рүү (Dio) хандаж
         // "Timer is still pending" тестийн алдаа өгдөг.
         cartRepositoryProvider.overrideWithValue(FakeCartRepository()),
+        reviewRepositoryProvider.overrideWithValue(reviewRepository),
       ],
       child: MaterialApp.router(routerConfig: router),
     );
@@ -97,7 +110,7 @@ void main() {
   });
 
   testWidgets(
-    'идэвхтэй/түүх бүлэглэгдэж, карт бүрд дугаар/огноо/дүн/статус/барааны нэр харагдана',
+    'Идэвхтэй/Түүх таб хооронд шилжихэд харгалзах захиалгууд харагдана, карт руу дарахад дэлгэрэнгүй рүү шилжинэ',
     (tester) async {
       repository.orders = [
         _order(id: 'order-active', status: 'CONFIRMED'),
@@ -106,24 +119,79 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      expect(find.text('Идэвхтэй захиалгууд'), findsOneWidget);
+      // Анхдагч таб — "Идэвхтэй" — тул зөвхөн CONFIRMED карт харагдана.
+      expect(find.text('Идэвхтэй'), findsOneWidget);
       expect(find.text('Түүх'), findsOneWidget);
       expect(
         find.byKey(const Key('order_list_card_order-active')),
         findsOneWidget,
       );
+      expect(find.text('Баталгаажсан'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('order_list_card_order-active')));
+      await tester.pumpAndSettle();
+      expect(find.text('order-detail-order-active'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Түүх таб руу шилжихэд COMPLETED захиалгын карт+барааны нэр харагдана',
+    (tester) async {
+      repository.orders = [
+        _order(id: 'order-active', status: 'CONFIRMED'),
+        _order(id: 'order-done', status: 'COMPLETED'),
+      ];
+      await tester.pumpWidget(wrap());
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Түүх'));
+      await tester.pumpAndSettle();
+
       expect(
         find.byKey(const Key('order_list_card_order-done')),
         findsOneWidget,
       );
-      expect(find.text('Баталгаажсан'), findsOneWidget);
       expect(find.text('Дууссан'), findsOneWidget);
-      expect(find.text('Кока-Кола 0.5Л ×1'), findsNWidgets(2));
+      expect(find.text('Кока-Кола 0.5Л ×1'), findsOneWidget);
+    },
+  );
 
-      await tester.tap(find.byKey(const Key('order_list_card_order-active')));
+  testWidgets(
+    'Түүх таб дахь COMPLETED захиалгын барааны "Үнэлэх" товч дарахад bottom sheet нээгдэж, амжилттай илгээсний дараа UI дахин API дуудахгүйгээр шинэчлэгдэнэ',
+    (tester) async {
+      repository.orders = [_order(id: 'order-done', status: 'COMPLETED')];
+      reviewRepository.createResult = Review(
+        id: 'r-1',
+        customerId: 'cust-1',
+        productId: 'product-1',
+        rating: 5,
+        comment: 'Гайхалтай',
+        createdAt: DateTime(2026, 8, 26),
+      );
+      await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      expect(find.text('order-detail-order-active'), findsOneWidget);
+      await tester.tap(find.text('Түүх'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Үнэлэх'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('item_review_row_item-order-done')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('quick_review_submit_button')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('star_input_5')));
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('quick_review_submit_button')));
+      await tester.pumpAndSettle();
+
+      expect(reviewRepository.createCalls, hasLength(1));
+      expect(reviewRepository.createCalls.first.productId, 'product-1');
+      expect(reviewRepository.createCalls.first.rating, 5);
+      expect(find.text('Үнэлгээ илгээгдлээ'), findsOneWidget);
+      // API-г дахин дуудахгүйгээр (listOrdersCallCount өөрчлөгдөөгүй)
+      // карт дээрх "Үнэлэх" товч одоор солигдсон байх ёстой.
+      expect(repository.listOrdersCallCount, 1);
+      expect(find.text('Үнэлэх'), findsNothing);
     },
   );
 

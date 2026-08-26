@@ -4,19 +4,67 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/cart_app_bar_action.dart';
 import '../../checkout/domain/order_detail.dart';
+import '../../reviews/domain/review.dart';
+import '../../reviews/presentation/widgets/quick_review_bottom_sheet.dart';
 import 'order_list_providers.dart';
 import 'widgets/order_list_card.dart';
 
 const _activeStatuses = {'CREATED', 'CONFIRMED', 'PREPARING', 'READY'};
 
 /// Захиалгын түүхийн дэлгэц (Захиалгууд tab, docs/plan.md §7 модуль #6) —
-/// идэвхтэй захиалгууд дээд талд тусад нь бүлэглэгдэнэ, tap хийхэд
-/// `OrderTrackingScreen` рүү шилжинэ.
-class OrderListScreen extends ConsumerWidget {
+/// (2026-08-26) хуучин section-based (Идэвхтэй/Түүх нэг ListView дотор
+/// бүлэглэгдсэн) байдлыг жинхэнэ `TabController`+`TabBarView` (swipe
+/// хийдэг 2 таб) болгож дахин зохион байгуулав — §7 модуль #6-ийн
+/// "Захиалгын түүх → Сэтгэгдэл" даалгаврын дагуу. Түүх таб дахь COMPLETED
+/// захиалгын карт бүрийн бараа мөрөнд "★ Үнэлэх"/одны тоо харуулж,
+/// `QuickReviewBottomSheet`-ийг нээнэ.
+class OrderListScreen extends ConsumerStatefulWidget {
   const OrderListScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<OrderListScreen> createState() => _OrderListScreenState();
+}
+
+class _OrderListScreenState extends ConsumerState<OrderListScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openReview(OrderItemLine item) async {
+    final productId = item.productId;
+    if (productId == null) {
+      return;
+    }
+    final wasEdit = item.myReview != null;
+    await showQuickReviewBottomSheet(
+      context: context,
+      productId: productId,
+      productName: item.displayName,
+      productImageUrl: item.productImageUrl,
+      existingReview: item.myReview,
+      onReviewSaved: (Review review) {
+        ref.read(orderListProvider.notifier).applyLocalReview(productId, review);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              wasEdit ? 'Үнэлгээ шинэчлэгдлээ' : 'Үнэлгээ илгээгдлээ',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final ordersAsync = ref.watch(orderListProvider);
     final notifier = ref.read(orderListProvider.notifier);
 
@@ -24,6 +72,10 @@ class OrderListScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Захиалгууд'),
         actions: const [CartAppBarAction()],
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [Tab(text: 'Идэвхтэй'), Tab(text: 'Түүх')],
+        ),
       ),
       body: ordersAsync.when(
         loading: () => const _OrderListSkeleton(),
@@ -39,55 +91,86 @@ class OrderListScreen extends ConsumerWidget {
               .where((o) => !_activeStatuses.contains(o.status))
               .toList();
 
-          return RefreshIndicator(
-            onRefresh: notifier.refresh,
-            child: ListView(
-              key: const Key('order_list'),
-              padding: const EdgeInsets.all(16),
-              physics: const AlwaysScrollableScrollPhysics(),
-              children: [
-                if (active.isNotEmpty) ...[
-                  _SectionHeader('Идэвхтэй захиалгууд'),
-                  const SizedBox(height: 8),
-                  for (final order in active) _buildCard(context, order),
-                  const SizedBox(height: 16),
-                ],
-                if (history.isNotEmpty) ...[
-                  _SectionHeader('Түүх'),
-                  const SizedBox(height: 8),
-                  for (final order in history) _buildCard(context, order),
-                ],
-              ],
-            ),
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _OrderListTab(
+                key: const Key('active_orders_tab'),
+                orders: active,
+                emptyText: 'Идэвхтэй захиалга алга байна',
+                onRefresh: notifier.refresh,
+                onReviewTap: null,
+              ),
+              _OrderListTab(
+                key: const Key('history_orders_tab'),
+                orders: history,
+                emptyText: 'Захиалгын түүх хараахан алга',
+                onRefresh: notifier.refresh,
+                onReviewTap: _openReview,
+              ),
+            ],
           );
         },
       ),
     );
   }
-
-  Widget _buildCard(BuildContext context, OrderDetail order) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: OrderListCard(
-        order: order,
-        onTap: () => context.push('/orders/${order.id}'),
-      ),
-    );
-  }
 }
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader(this.title);
+class _OrderListTab extends StatelessWidget {
+  const _OrderListTab({
+    super.key,
+    required this.orders,
+    required this.emptyText,
+    required this.onRefresh,
+    required this.onReviewTap,
+  });
 
-  final String title;
+  final List<OrderDetail> orders;
+  final String emptyText;
+  final Future<void> Function() onRefresh;
+  final ValueChanged<OrderItemLine>? onReviewTap;
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(
-        context,
-      ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+    if (orders.isEmpty) {
+      final theme = Theme.of(context);
+      return RefreshIndicator(
+        onRefresh: onRefresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.5,
+            child: Center(
+              child: Text(
+                emptyText,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: orders.length,
+        itemBuilder: (context, index) {
+          final order = orders[index];
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OrderListCard(
+              order: order,
+              onTap: () => context.push('/orders/${order.id}'),
+              onReviewTap: onReviewTap,
+            ),
+          );
+        },
+      ),
     );
   }
 }

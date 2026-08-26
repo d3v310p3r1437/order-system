@@ -57,19 +57,30 @@ function buildMinioMock() {
   };
 }
 
+function buildReviewServiceMock() {
+  return {
+    getCustomerReviewContext: jest
+      .fn()
+      .mockResolvedValue({ canReview: false, myReview: null }),
+  };
+}
+
 function newService(
   prisma: unknown,
   searchIndexer = buildSearchIndexerMock(),
   minio = buildMinioMock(),
+  reviewService = buildReviewServiceMock(),
 ) {
   return {
     service: new ProductService(
       prisma as ConstructorParameters<typeof ProductService>[0],
       searchIndexer as ConstructorParameters<typeof ProductService>[1],
       minio as ConstructorParameters<typeof ProductService>[2],
+      reviewService as ConstructorParameters<typeof ProductService>[3],
     ),
     searchIndexer,
     minio,
+    reviewService,
   };
 }
 
@@ -172,6 +183,53 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
       expect.objectContaining({ id: 'p-1', categoryName: 'Цамц' }),
       expect.objectContaining({ id: 'p-2', categoryName: 'Өмд' }),
     ]);
+  });
+});
+
+describe('ProductService — сэтгэгдэл/үнэлгээ нэгтгэл (§7 модуль #11)', () => {
+  it('customerId өгөгдөөгүй бол ReviewService огт дуудагдахгүй, canReview/myReview хариунд ороогүй', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.productFindUnique.mockResolvedValue({
+      id: 'p-1',
+      name: 'A',
+      variants: [],
+      images: [],
+    });
+    const { service, reviewService } = newService(prisma);
+
+    const result = await service.findOne('p-1');
+
+    expect(reviewService.getCustomerReviewContext).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('canReview');
+    expect(result).not.toHaveProperty('myReview');
+  });
+
+  it('customerId өгөгдвөл ReviewService.getCustomerReviewContext()-ийн үр дүнг хариунд нэгтгэнэ', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.productFindUnique.mockResolvedValue({
+      id: 'p-1',
+      name: 'A',
+      variants: [],
+      images: [],
+    });
+    const { service, reviewService } = newService(prisma);
+    reviewService.getCustomerReviewContext.mockResolvedValue({
+      canReview: true,
+      myReview: { id: 'r-1', rating: 5 },
+    });
+
+    const result = await service.findOne('p-1', undefined, 'cust-1');
+
+    expect(reviewService.getCustomerReviewContext).toHaveBeenCalledWith(
+      'cust-1',
+      'p-1',
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        canReview: true,
+        myReview: { id: 'r-1', rating: 5 },
+      }),
+    );
   });
 });
 
