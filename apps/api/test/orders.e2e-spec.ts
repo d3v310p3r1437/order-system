@@ -529,4 +529,151 @@ describe('Orders (e2e)', () => {
     const res = await request(app.getHttpServer()).get('/orders').expect(401);
     expect((res.body as ErrorBody).error.code).toBe('UNAUTHENTICATED');
   });
+
+  // (2026-08-26) §7 модуль #6-ийн "Захиалгын түүх → Сэтгэгдэл" даалгавар:
+  // OrderService.hydrateOrder()-ийн productImageUrl/myReview талбаруудыг
+  // бодит Postgres+MinioService.getPublicUrl()-тэй турших.
+  describe('productImageUrl/myReview нэгтгэл (§7 модуль #6, #11)', () => {
+    interface HydratedItemBody {
+      productImageUrl: string | null;
+      myReview: { id: string; rating: number; comment: string | null } | null;
+      variant: { product: { id: string } };
+    }
+    interface HydratedOrderBody extends OrderBody {
+      items: HydratedItemBody[];
+    }
+
+    let reviewProductId: string;
+    let reviewVariantId: string;
+    let imageObjectKey: string;
+    let completedOrderId: string;
+    let activeOrderId: string;
+
+    beforeAll(async () => {
+      const unique = Date.now();
+      const category = await superuserPrisma.category.create({
+        data: {
+          name: `Сэтгэгдлийн ангилал ${unique}`,
+          slug: `setgegdel-angilal-${unique}`,
+        },
+      });
+      const product = await superuserPrisma.product.create({
+        data: {
+          name: 'Сэтгэгдэлтэй бүтээгдэхүүн',
+          slug: `setgegdeltei-buteegdehuun-${unique}`,
+          categoryId: category.id,
+        },
+      });
+      reviewProductId = product.id;
+
+      imageObjectKey = `products/${product.id}/${unique}.jpg`;
+      await superuserPrisma.productImage.create({
+        data: { productId: product.id, objectKey: imageObjectKey },
+      });
+
+      const variant = await superuserPrisma.productVariant.create({
+        data: {
+          productId: product.id,
+          name: 'Стандарт',
+          sku: `setgegdel-sku-${unique}`,
+          basePrice: 10000,
+        },
+      });
+      reviewVariantId = variant.id;
+      await superuserPrisma.inventoryItem.create({
+        data: { variantId: variant.id, branchId: branchA.id, quantity: 10 },
+      });
+
+      // COMPLETED захиалга — myReview/productImageUrl хоёуланг нь турших.
+      await setCartItem(app, customerToken, reviewVariantId, 1);
+      const completedRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ branchId: branchA.id })
+        .expect(201);
+      completedOrderId = (completedRes.body as OrderBody).id;
+      // RlsMiddleware-ийн бодит state machine (CONFIRMED→...→COMPLETED)-ийг
+      // энд ДАВТАЖ турших шаардлагагүй (аль хэдийн дээрх "Захиалгын
+      // статусын шилжилт" describe-д бүрэн шалгагдсан) — зөвхөн
+      // hydrateOrder()-ийн COMPLETED салааг турших зорилготой тул
+      // superuserPrisma-аар шууд COMPLETED болгоно.
+      await superuserPrisma.order.update({
+        where: { id: completedOrderId },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+
+      // Идэвхтэй (CREATED) захиалга — myReview ЗААВАЛ null байх ёстойг
+      // харьцуулах зорилготой.
+      await setCartItem(app, customerToken, reviewVariantId, 1);
+      const activeRes = await request(app.getHttpServer())
+        .post('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ branchId: branchA.id })
+        .expect(201);
+      activeOrderId = (activeRes.body as OrderBody).id;
+    });
+
+    it('COMPLETED захиалгын OrderItem дээр зурган URL зөв ирнэ, myReview (үнэлгээ өгөөгүй) null', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/orders/${completedOrderId}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      const body = res.body as HydratedOrderBody;
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0].productImageUrl).toContain(imageObjectKey);
+      expect(body.items[0].myReview).toBeNull();
+    });
+
+    it('идэвхтэй (CREATED) захиалгад productImageUrl ирнэ ч myReview ХЭЗЭЭ Ч тооцоологдохгүй (null)', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/orders/${activeOrderId}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      const body = res.body as HydratedOrderBody;
+      expect(body.items[0].productImageUrl).toContain(imageObjectKey);
+      expect(body.items[0].myReview).toBeNull();
+    });
+
+    it('COMPLETED захиалгад сэтгэгдэл үлдээсний дараа GET /orders (жагсаалт) БОЛОН GET /orders/:id хоёуланд myReview зөв ирнэ', async () => {
+      const reviewRes = await request(app.getHttpServer())
+        .post(`/products/${reviewProductId}/reviews`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ rating: 5, comment: 'Маш сайн бараа' })
+        .expect(201);
+      const reviewId = (reviewRes.body as { id: string }).id;
+
+      const detailRes = await waitFor(async () => {
+        const res = await request(app.getHttpServer())
+          .get(`/orders/${completedOrderId}`)
+          .set('Authorization', `Bearer ${customerToken}`)
+          .expect(200);
+        const body = res.body as HydratedOrderBody;
+        return body.items[0].myReview ? body : null;
+      });
+      expect(detailRes.items[0].myReview).toMatchObject({
+        id: reviewId,
+        rating: 5,
+        comment: 'Маш сайн бараа',
+      });
+
+      // Идэвхтэй (CREATED) захиалгад ижил бүтээгдэхүүн байсан ч
+      // (status !== COMPLETED тул) myReview хэвээр null.
+      const activeDetailRes = await request(app.getHttpServer())
+        .get(`/orders/${activeOrderId}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      expect((activeDetailRes.body as HydratedOrderBody).items[0].myReview).toBeNull();
+
+      const listRes = await request(app.getHttpServer())
+        .get('/orders')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .expect(200);
+      const listBody = listRes.body as HydratedOrderBody[];
+      const completedInList = listBody.find((o) => o.id === completedOrderId);
+      expect(completedInList?.items[0].myReview).toMatchObject({
+        id: reviewId,
+        rating: 5,
+      });
+    });
+  });
 });

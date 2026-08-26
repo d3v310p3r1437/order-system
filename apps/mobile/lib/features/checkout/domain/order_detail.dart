@@ -1,3 +1,6 @@
+import '../../../core/network/api_base_url.dart';
+import '../../reviews/domain/review.dart';
+
 /// `apps/api/src/orders/order.service.ts`-ийн `OrderItem` — эцсийн (захиалга
 /// үүсэх мөчийн) үнийн snapshot, ХЭЗЭЭ Ч дараа нь өөрчлөгдөхгүй.
 /// ⚠️ `id` нь `OrderItem.id` (Захиалгын түүх/Буцаалт хүсэх дэлгэцэд
@@ -5,6 +8,11 @@
 /// БҮҮ андуур). `productName`/`variantName` нь backend-ийн
 /// `order.service.ts`-ийн `ORDER_ITEM_VARIANT_INCLUDE`-ээс ирнэ, устсан
 /// вариант/бүтээгдэхүүнтэй захиалгад null байж болно.
+/// ⚠️ (2026-08-26) `productId`/`productImageUrl`/`myReview` нэмэгдэв —
+/// `OrderService.hydrateOrder()`-ийн (§7 модуль #6-ийн "Захиалгын
+/// түүх → Сэтгэгдэл" даалгавар) тооцоолсон талбарууд. `myReview`
+/// зөвхөн `OrderDetail.status == 'COMPLETED'` үед л ирнэ (бусад үед
+/// backend ЗОРИУДАА null буцаадаг).
 class OrderItemLine {
   const OrderItemLine({
     required this.id,
@@ -13,11 +21,15 @@ class OrderItemLine {
     required this.unitPriceSnapshot,
     this.productName,
     this.variantName,
+    this.productId,
+    this.productImageUrl,
+    this.myReview,
   });
 
   factory OrderItemLine.fromJson(Map<String, dynamic> json) {
     final variant = json['variant'] as Map<String, dynamic>?;
     final product = variant?['product'] as Map<String, dynamic>?;
+    final myReviewJson = json['myReview'] as Map<String, dynamic>?;
     return OrderItemLine(
       id: json['id'] as String,
       variantId: json['variantId'] as String,
@@ -25,6 +37,11 @@ class OrderItemLine {
       unitPriceSnapshot: json['unitPriceSnapshot'] as String,
       productName: product?['name'] as String?,
       variantName: variant?['name'] as String?,
+      productId: product?['id'] as String?,
+      productImageUrl: json['productImageUrl'] != null
+          ? resolveMediaUrl(json['productImageUrl'] as String)
+          : null,
+      myReview: myReviewJson != null ? Review.fromJson(myReviewJson) : null,
     );
   }
 
@@ -34,6 +51,26 @@ class OrderItemLine {
   final String unitPriceSnapshot;
   final String? productName;
   final String? variantName;
+  final String? productId;
+  final String? productImageUrl;
+  final Review? myReview;
+
+  /// (2026-08-26) `QuickReviewBottomSheet`-ээс амжилттай илгээсний дараа
+  /// `OrderListNotifier.applyLocalReview()`-д ашиглагдана — дахин API
+  /// дуудахгүйгээр `myReview`-г шинэчлэхийн тулд.
+  OrderItemLine copyWith({Review? myReview}) {
+    return OrderItemLine(
+      id: id,
+      variantId: variantId,
+      quantity: quantity,
+      unitPriceSnapshot: unitPriceSnapshot,
+      productName: productName,
+      variantName: variantName,
+      productId: productId,
+      productImageUrl: productImageUrl,
+      myReview: myReview ?? this.myReview,
+    );
+  }
 
   /// "Ariel угаалгын нунтаг 3кг" маягийн харуулах нэр — productName
   /// байхгүй бол (устсан бүтээгдэхүүн) variantId-ийн товч хэлбэрийг
@@ -122,5 +159,24 @@ class OrderDetail {
     }
     final elapsed = DateTime.now().difference(DateTime.parse(completedAt!));
     return elapsed <= const Duration(days: 7);
+  }
+
+  /// (2026-08-26) `OrderListNotifier.applyLocalReview()`-д ашиглагдана —
+  /// зөвхөн `items`-ийг сольж, бусад талбарыг хэвээр үлдээнэ.
+  OrderDetail copyWith({List<OrderItemLine>? items}) {
+    return OrderDetail(
+      id: id,
+      status: status,
+      totalAmount: totalAmount,
+      branchId: branchId,
+      items: items ?? this.items,
+      deliveryMethod: deliveryMethod,
+      createdAt: createdAt,
+      deliveryAddress: deliveryAddress,
+      deliveryLatitude: deliveryLatitude,
+      deliveryLongitude: deliveryLongitude,
+      paidAt: paidAt,
+      completedAt: completedAt,
+    );
   }
 }

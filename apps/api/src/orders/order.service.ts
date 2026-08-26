@@ -7,7 +7,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type OrderStatus, type RoleName } from '@prisma/client';
+import { Prisma, type OrderStatus, type Review, type RoleName } from '@prisma/client';
 import { CartService, type CartItemRecord } from '../cart/cart.service.js';
 import { resolveEffectivePrice } from '../catalog/inventory-effective.util.js';
 import {
@@ -25,11 +25,13 @@ import {
 } from '../payment/payment-provider.interface.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OrderEventsPublisher } from '../realtime/order-events.publisher.js';
+import { ReviewService } from '../reviews/review.service.js';
 import {
   ROUTING_PROVIDER,
   type RouteResult,
   type RoutingProvider,
 } from '../routing/routing-provider.interface.js';
+import { MinioService } from '../storage/minio.service.js';
 import type { CheckoutOrderDto } from './dto/checkout-order.dto.js';
 import type { UpdateOrderStatusDto } from './dto/update-order-status.dto.js';
 import {
@@ -67,9 +69,35 @@ const CART_EMPTY = {
 // нэмэв — Product/ProductVariant аль аль нь `*_select` RLS-ээр бүх
 // нэвтэрсэн хэрэглэгчид (CUSTOMER-ийг оролцуулаад) нээлттэй тул шинэ
 // SECURITY DEFINER функц/RLS өөрчлөлт ШААРДАГГҮЙ (ADR 005).
+// (2026-08-26) `product.images` (эхний мөр л, `take: 1`) нэмэгдэв —
+// Захиалгын түүхийн карт дээр барааны зураг харуулах шаардлагатай
+// болсон (§7 модуль #6-ийн Захиалгын түүхийг сэтгэгдэлтэй нэгтгэх
+// даалгавар), `ProductService.hydrateProduct()`-ийн ЯГ ижил
+// `MinioService.getPublicUrl()` дуудлагыг `hydrateOrder()`-д дахин
+// ашигласан (ADR 005 "ганц газар л шийднэ" зарчим).
 const ORDER_ITEM_VARIANT_INCLUDE = {
-  variant: { include: { product: true } },
+  variant: {
+    include: {
+      product: {
+        include: { images: { orderBy: { displayOrder: 'asc' }, take: 1 } },
+      },
+    },
+  },
 } as const;
+
+type OrderItemWithVariant = Prisma.OrderItemGetPayload<{
+  include: typeof ORDER_ITEM_VARIANT_INCLUDE;
+}>;
+
+// (2026-08-26) hydrateOrder()-ийн буцаах хэлбэр — OrderItem-ийн бодит
+// баганан дээр нэмэлт (тооцоолсон) productImageUrl/myReview талбар
+// залгасан. `Review`-г ХЭЗЭЭ Ч бусад захиалгын түүхэн бичлэгтэй адил
+// денормалиц хийлгэдэггүй (`ReviewService.findManyForCustomer()`-ийг
+// ЗАВСАРГҮЙ, order бүрд шинээр дуудна).
+export interface HydratedOrderItem extends OrderItemWithVariant {
+  productImageUrl: string | null;
+  myReview: Review | null;
+}
 
 // PATCH /orders/:id/status-ыг дуудаж болох "staff" дүрс (§6.1 матриц:
 // OWNER-д зөвхөн R байдаг тул орохгүй). Эдгээрээс өөр (зөвхөн CUSTOMER)
@@ -114,16 +142,19 @@ export class OrderService {
     private readonly cartService: CartService,
     private readonly requestContext: RequestContextService,
     private readonly couponService: CouponService,
+    private readonly minio: MinioService,
+    private readonly reviewService: ReviewService,
   ) {}
 
-  findAll(filter: { status?: OrderStatus; branchId?: string }) {
+  async findAll(filter: { status?: OrderStatus; branchId?: string }) {
     // RLS (orders_select) нь дүрд харагдахгүй мөрийг өөрөө шүүж хасна —
     // энд дамжуулсан filter зөвхөн тодруулга.
-    return this.prisma.tx.order.findMany({
+    const orders = await this.prisma.tx.order.findMany({
       where: { status: filter.status, branchId: filter.branchId },
       orderBy: { createdAt: 'desc' },
       include: { items: { include: ORDER_ITEM_VARIANT_INCLUDE } },
     });
+    return Promise.all(orders.map((order) => this.hydrateOrder(order)));
   }
 
   async findOne(id: string) {
@@ -134,7 +165,47 @@ export class OrderService {
     if (!order) {
       throw new NotFoundException(ORDER_NOT_FOUND);
     }
-    return order;
+    return this.hydrateOrder(order);
+  }
+
+  // (2026-08-26) §7 модуль #6-ийн "Захиалгын түүх → Сэтгэгдэл" даалгавар:
+  // OrderItem бүрд productImageUrl (эхний ProductImage, nullable) БОЛОН
+  // myReview (Review хайна, "верификаци" шалгах шаардлагагүй — COMPLETED
+  // захиалгад байгаа нь аль хэдийн баталгаа) нэмнэ. Зөвхөн
+  // status===COMPLETED үед л myReview-г тооцоолно (бусад статуст null —
+  // идэвхтэй захиалгад "үнэлэх" боломж утгагүй тул findOne()-ийн
+  // findAll()-той адил нэг л hydrateOrder()-оор дамжина, логик
+  // давхардуулаагүй).
+  private async hydrateOrder<
+    T extends {
+      status: OrderStatus;
+      customerId: string;
+      items: OrderItemWithVariant[];
+    },
+  >(order: T): Promise<Omit<T, 'items'> & { items: HydratedOrderItem[] }> {
+    let reviewsByProduct = new Map<string, Review>();
+    if (order.status === 'COMPLETED' && order.items.length > 0) {
+      const productIds = [
+        ...new Set(order.items.map((item) => item.variant.productId)),
+      ];
+      reviewsByProduct = await this.reviewService.findManyForCustomer(
+        order.customerId,
+        productIds,
+      );
+    }
+
+    const items: HydratedOrderItem[] = order.items.map((item) => {
+      const firstImage = item.variant.product.images[0];
+      return {
+        ...item,
+        productImageUrl: firstImage
+          ? this.minio.getPublicUrl(firstImage.objectKey)
+          : null,
+        myReview: reviewsByProduct.get(item.variant.productId) ?? null,
+      };
+    });
+
+    return { ...order, items };
   }
 
   // docs/plan.md §8 Phase 4, Хэсэг A #5: DELIVERY захиалгын салбараас

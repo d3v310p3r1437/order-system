@@ -1886,6 +1886,120 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     ЗАЙЛШГҮЙ Windows-хэлбэрийн (`D:/...`) очих замыг устгадаг тул
     (`MSYS_NO_PATHCONV=1`-тэй хамт ч) заавал `D:/...` (POSIX `/d/...`
     БИШ) бичих ёстойг тэмдэглэв.
+- **(2026-08-26/27) Сэтгэгдэл өгөх урсгалыг каталогоос хайхаас Захиалгууд
+  хуудас руу шилжүүлэх дууссан** (§7 модуль #6/#11-ийн шууд үргэлжлэл,
+  каталог дахь `ProductDetailScreen`/`ReviewFormScreen`-ийн бичих/
+  засварлах боломжийг ЗОРИУДАА ХЭВЭЭР үлдээв — шинэ bottom sheet-ийг
+  тэнд дахин ашиглах боломжтой байсан ч (§7 модуль #11-ийн даалгаврын
+  "аль тохиромжтойг чи шийд" гэсэн зөвшөөрлийн дагуу) бүтэн дэлгэцийн
+  хувилбар аль хэдийн ажиллаж байсан тул хөндөөгүй, зөвхөн ШИНЭ
+  Захиалгын түүхийн замыг нэмэв):
+  - **Backend:** `OrderService.hydrateOrder()` (шинэ private метод,
+    `findAll()`/`findOne()` хоёуланд нь дахин ашигласан) OrderItem
+    бүрд `productImageUrl` (эхний `ProductImage`, `MinioService.
+    getPublicUrl()` — `ProductService.hydrateProduct()`-тэй ЯГ ижил
+    дуудлага) БОЛОН `myReview` (зөвхөн `order.status==='COMPLETED'`
+    үед, бусад статуст ЗОРИУДАА `null`) нэмнэ. `ORDER_ITEM_VARIANT_INCLUDE`-д
+    `variant.product.images` (`take: 1, orderBy: displayOrder`) нэмэгдэв.
+    `ReviewService.findManyForCustomer(customerId, productIds)` (шинэ,
+    export хэвээр) — нэг захиалгын ХЭД ХЭДЭН item-тэй бол ч ГАНЦ batch
+    query-ээр (`productId IN (...)`, `customerId`-аар шүүсэн тул
+    зөвшөөрлийн асуудалгүй, `reviews_select` RLS "бүх нэвтэрсэн" аль
+    хэдийн зөвшөөрдөг) бүх review-г нэг дор татна — item тус бүрд
+    тусдаа дуудахгүй. `OrderModule`-д `StorageModule`/`ReviewModule`
+    (аль хэдийн `ReviewModule`-ийн `exports: [ReviewService]`-ээр
+    бэлтгэгдсэн байсан, `CatalogModule`-той адил зарчмаар) нэмэгдэв.
+    ⚠️ **Build-ийн цоорхой (`nest build`-ээр л илэрсэн, `tsc --noEmit`/
+    unit тестээр анзаарагдаагүй):** `hydrateOrder()`-ийн буцаах
+    `HydratedOrderItem` interface-ийг эхэндээ export хийгээгүй байснаас
+    `OrderController`-ийн public метод (`findAll`/`findOne`/`checkout`/
+    `updateStatus`) TS4053 ("named external module type-ийг export
+    хийхгүйгээр public method-ийн буцаах төрөл болгож болохгүй") алдаа
+    өгсөн — зөвхөн `pnpm --filter api run build` (declaration file
+    үүсгэдэг тул) дээр л илэрдэг, `pnpm test`/`tsc --noEmit` (test
+    файлуудын хувьд аль хэдийн өөр учир шалтгаантай олон алдаа өгдөг
+    байсан тул шинэ алдаа анзаарагдахгүй байсан) дээр илрээгүй байсан.
+    **Сургамж:** service-ийн private хэлхэлтийн буцаах утгын хэлбэрийг
+    нэмэлт/өөрчлөх бүрд `pnpm test`-ээс гадна `pnpm run build`-ийг ч
+    ЗААВАЛ ажиллуулж шалгах хэрэгтэй. Тест: unit (3 шинэ `describe`
+    `order.service.spec.ts`/`review.service.spec.ts`-д, mock structure
+    `variant.product.images`-тэй нийцүүлсэн) + e2e (`test/
+    orders.e2e-spec.ts`-д шинэ `describe` — ProductImage+Review бодит
+    мөр үүсгэж, COMPLETED/идэвхтэй захиалга хоёуланд productImageUrl/
+    myReview зөв ирэхийг, GET /orders (жагсаалт) БОЛОН GET /orders/:id
+    хоёуланд ижил үр дүн ирэхийг баталгаажуулав).
+  - **Mobile:** `OrderListScreen` section-based (Идэвхтэй/Түүх нэг
+    `ListView`-д бүлэглэгдсэн) байдлаа жинхэнэ `TabController`+
+    `TabBarView`-руу шилжүүлэв (`AppBar.bottom: TabBar`,
+    swipe/tap хоёулаа ажиллана). `OrderListCard` (`ConsumerWidget`-ээс
+    `StatelessWidget` хэвээрээ, зөвхөн параметр нэмэгдсэн): эхний
+    барааны `productImageUrl`-ийг `CachedNetworkImage`-ээр (56×56,
+    `ProductImagePlaceholder` fallback) харуулна; COMPLETED захиалгад
+    (`onReviewTap` параметр өгөгдсөн үед л, Идэвхтэй tab-д `null`
+    дамжуулагдана тул тэнд ОГТ харагдахгүй) бараа бүрд `_ItemReviewRow`
+    — `myReview` байвал 5 одыг шууд, байхгүй бол "★ Үнэлэх" текст товч.
+    `QuickReviewBottomSheet` (шинэ, `features/reviews/presentation/
+    widgets/`) — `ReviewFormScreen`-ийн (бүтэн дэлгэц) логиктой ЯГ ижил
+    (verified-purchase эцсийн шалгалт үргэлж backend талд), зөвхөн UI
+    нь `showModalBottomSheet`. ⚠️ **Загварын шийдвэр (coupling
+    зайлсхийх):** `QuickReviewBottomSheet` ЗОРИУДАА `OrderListNotifier`-ийг
+    огт мэдэхгүй — амжилттай хадгалагдсан `Review`-г зөвхөн
+    `Navigator.pop(review)`-оор буцаадаг, `showQuickReviewBottomSheet()`
+    туслах функц үүнийг хүлээж аваад дуудагч талын `onReviewSaved`
+    callback-ыг дуудна (`OrderListScreen._openReview()`-д
+    `orderListProvider.notifier.applyLocalReview()` дуудаж SnackBar
+    харуулна) — ирээдүйд өөр дэлгэцээс (жиш: ProductDetailScreen) дахин
+    ашиглахад ямар ч орон нутгийн state мэдэхгүй цэвэр widget хэвээр
+    үлдэнэ. `OrderListNotifier.applyLocalReview(productId, review)`
+    (шинэ) — `GET /orders`-г ДАХИН дуудахгүйгээр, `state.value`-ийн БҮХ
+    захиалгын (ижил бүтээгдэхүүн олон захиалгад давтагдаж болзошгүй)
+    харгалзах `OrderItemLine.myReview`-г шууд (local, `copyWith()`)
+    шинэчилнэ. `OrderItemLine`/`OrderDetail`-д `copyWith()` нэмэгдэв
+    (`@freezed` ашиглаагүй энгийн класс тул гараар). Тест: widget
+    (`order_list_screen_test.dart`-д 2 шинэ — tab шилжилт+COMPLETED
+    карт харагдах, "Үнэлэх"→bottom sheet→илгээх→UI шинэчлэгдэх (API
+    дахин дуудагдаагүйг `listOrdersCallCount`-аар баталгаажуулсан)),
+    шинэ `quick_review_bottom_sheet_test.dart` (create/update/алдааны
+    зам 3 тест), unit (`order_list_provider_test.dart`-д
+    `applyLocalReview()`-ийн тест).
+  - ✅ **Android emulator дээрх баталгаажуулалт (light+dark, бодит
+    backend+DB, `+97688112233` акаунтаар):** Захиалгууд → Түүх таб →
+    COMPLETED захиалгын карт дээр эхний барааны зураг (MinIO-аас, Coca-
+    Cola-ийн улаан өнгөтэй бодит thumbnail) харагдав → "★ Үнэлэх" дарж
+    bottom sheet нээгдэв → 5 од сонгож Илгээх дарахад SnackBar
+    ("Үнэлгээ илгээгдлээ") + карт дээрх "★ Үнэлэх" ШУУД 5 одоор солигдов
+    (backend лог дээр endpoint бүрийн дуудлагыг тусгайлан бичдэггүй тул
+    оронд нь Postgres-руу шууд орж `reviews` хүснэгтэд шинэ мөр
+    (rating=5) бодитоор бичигдсэнийг баталгаажуулсан) → Тохиргоо →
+    Харанхуй горим сонгож дахин Захиалгууд
+    → Түүх таб (dark mode-д TabBar indicator, badge, зураг бүгд зөв
+    контраст) → 2 дахь (аль хэдийн 2 одтой) захиалгын item дээр дарж
+    ЗАСВАРЛАХ горимын bottom sheet (title "Хадгалах", 2 од+хуучин
+    тайлбар урьдчилан бөглөгдсөн) харагдав.
+  - ⚠️🔴 **Энэ ажлын явцад олдсон, БҮХ Android emulator UI баталгаажуулалтад
+    хамаарах чухал засвар/тодруулга (өмнөх сессийн "uiautomator dump
+    ашигла" зөвлөмжийг ЗАСВАРЛАВ):** энэ session-д `adb shell uiautomator
+    dump` Flutter апп дээр ХООСОН (`text=""` бүх нод) XML буцаасан —
+    учир нь Flutter анхдагчаар (TalkBack/бодит accessibility service
+    идэвхгүй үед) semantics tree-ээ ОГТ populate хийдэггүй тул
+    uiautomator-ийн (Android-ийн native accessibility framework дээр
+    суурилсан) dump зүгээр л Flutter-ийн render хийсэн canvas widget-үүдийг
+    "харахгүй" (зөвхөн Flutter engine-ийн ГАДНА орших native view-үүдийг
+    л). Мөн screenshot-ийг нүдээр хэмжсэн координат (жиш: доод navigation
+    bar-ийн "Захиалгууд" tab) 3-4 удаа дараалан буруу байсан (икон/лэйбл
+    мөрийг бодит байрлалаас өндөр гэж андуурсан). **Бодитоор ажилласан
+    шийдэл:** `System.Drawing` (PowerShell, .NET native, гуравдагч сан
+    суулгах шаардлагагүй)-ээр screenshot-ийн тодорхой хэсгийг (жиш:
+    доод 500px)-ийг тусад нь `crop`-лож, тэр жижиг crop-ыг Read tool-оор
+    ДАХИН харж, дотор нь харьцангуй байрлалаар (%, жишээ нь "товчны
+    төв нь crop-ын 84% доош") нарийвчлан тооцоолох нь тогтвортой
+    ажиллав. **Сургамж:** Flutter (Android emulator, semantics идэвхгүй)
+    орчинд UI автоматжуулалт хийхдээ ЭХЛЭЭД `uiautomator dump`-ыг
+    турших ч (заримдаа native widget-т (жиш: TextField-ийн keyboard)
+    ажиллаж магадгүй), Flutter-ийн өөрийн canvas-аар зурсан widget
+    (товч, tab, icon) дээр ХООСОН dump буцвал ШУУДДАА screenshot crop
+    + харьцангуй байрлал тооцоолох аргад шилжих нь цаг хэмнэнэ (нүдээр
+    үнэмлэхүй пиксель тааж 3-4 удаа алдахаас хамаагүй хурдан).
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

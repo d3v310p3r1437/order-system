@@ -99,6 +99,16 @@ function buildCouponServiceMock() {
   };
 }
 
+function buildMinioServiceMock() {
+  return {
+    getPublicUrl: jest.fn((objectKey: string) => `https://minio.local/bucket/${objectKey}`),
+  };
+}
+
+function buildReviewServiceMock() {
+  return { findManyForCustomer: jest.fn().mockResolvedValue(new Map()) };
+}
+
 function buildRequestContextMock(userId: string | null = null) {
   // Бодит RequestContextService.onCommit()-той адил: тест дотор ШУУД
   // (синхрон) дуудагдана — RlsMiddleware-ийн бодит "COMMIT-ийн дараа"
@@ -120,6 +130,8 @@ function newService(
   cartService = buildCartServiceMock(),
   requestContext = buildRequestContextMock(),
   couponService = buildCouponServiceMock(),
+  minioService = buildMinioServiceMock(),
+  reviewService = buildReviewServiceMock(),
 ) {
   return new OrderService(
     prisma as ConstructorParameters<typeof OrderService>[0],
@@ -130,6 +142,8 @@ function newService(
     cartService as ConstructorParameters<typeof OrderService>[5],
     requestContext as ConstructorParameters<typeof OrderService>[6],
     couponService as ConstructorParameters<typeof OrderService>[7],
+    minioService as ConstructorParameters<typeof OrderService>[8],
+    reviewService as ConstructorParameters<typeof OrderService>[9],
   );
 }
 
@@ -200,7 +214,13 @@ describe('OrderService.updateStatus', () => {
         status: 'CREATED',
         customerId: 'cust-1',
         branchId: 'b-1',
-        items: [{ variantId: 'v-1', quantity: 2 }],
+        items: [
+          {
+            variantId: 'v-1',
+            quantity: 2,
+            variant: { productId: 'p-1', product: { images: [] } },
+          },
+        ],
       })
       .mockResolvedValueOnce({
         id: 'o-1',
@@ -243,7 +263,13 @@ describe('OrderService.updateStatus', () => {
         status: 'READY',
         customerId: 'cust-1',
         branchId: 'b-1',
-        items: [{ variantId: 'v-1', quantity: 2 }],
+        items: [
+          {
+            variantId: 'v-1',
+            quantity: 2,
+            variant: { productId: 'p-1', product: { images: [] } },
+          },
+        ],
       })
       .mockResolvedValueOnce({
         id: 'o-1',
@@ -530,5 +556,115 @@ describe('OrderService.getRoute', () => {
 
     await expect(service.getRoute('o-1')).rejects.toThrow(BadRequestException);
     expect(routingProvider.getRoute).not.toHaveBeenCalled();
+  });
+});
+
+// (2026-08-26) §7 модуль #6-ийн "Захиалгын түүх → Сэтгэгдэл" даалгавар:
+// OrderService.hydrateOrder() (findOne()/findAll() хоёуланд дахин
+// ашиглагдана) productImageUrl/myReview-г зөв тооцоолж байгааг шалгана.
+describe('OrderService hydration (productImageUrl / myReview)', () => {
+  function orderWithItem(
+    status: string,
+    overrides: Record<string, unknown> = {},
+  ) {
+    return {
+      id: 'o-1',
+      status,
+      customerId: 'cust-1',
+      branchId: 'b-1',
+      items: [
+        {
+          id: 'oi-1',
+          variantId: 'v-1',
+          quantity: 1,
+          variant: {
+            productId: 'p-1',
+            product: { images: [{ objectKey: 'products/p-1/a.jpg' }] },
+          },
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it('COMPLETED захиалгад ReviewService.findManyForCustomer-аас олдсон review-г myReview-д залгана, productImageUrl зөв тооцоологдоно', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(orderWithItem('COMPLETED'));
+    const review = { id: 'r-1', productId: 'p-1', rating: 5 };
+    const reviewService = buildReviewServiceMock();
+    reviewService.findManyForCustomer.mockResolvedValue(
+      new Map([['p-1', review]]),
+    );
+    const minioService = buildMinioServiceMock();
+
+    const service = newService(
+      prisma,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      minioService,
+      reviewService,
+    );
+    const order = await service.findOne('o-1');
+
+    expect(reviewService.findManyForCustomer).toHaveBeenCalledWith('cust-1', [
+      'p-1',
+    ]);
+    expect(minioService.getPublicUrl).toHaveBeenCalledWith(
+      'products/p-1/a.jpg',
+    );
+    expect(order.items[0].myReview).toEqual(review);
+    expect(order.items[0].productImageUrl).toBe(
+      'https://minio.local/bucket/products/p-1/a.jpg',
+    );
+    expect(mocks.orderFindUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('идэвхтэй (COMPLETED биш) захиалгад myReview үргэлж null, ReviewService огт дуудагдахгүй', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(orderWithItem('CONFIRMED'));
+    const reviewService = buildReviewServiceMock();
+
+    const service = newService(
+      prisma,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reviewService,
+    );
+    const order = await service.findOne('o-1');
+
+    expect(reviewService.findManyForCustomer).not.toHaveBeenCalled();
+    expect(order.items[0].myReview).toBeNull();
+  });
+
+  it('зурагтгүй бүтээгдэхүүнд productImageUrl null', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.orderFindUnique.mockResolvedValue(
+      orderWithItem('CREATED', {
+        items: [
+          {
+            id: 'oi-1',
+            variantId: 'v-1',
+            quantity: 1,
+            variant: { productId: 'p-1', product: { images: [] } },
+          },
+        ],
+      }),
+    );
+
+    const service = newService(prisma);
+    const order = await service.findOne('o-1');
+
+    expect(order.items[0].productImageUrl).toBeNull();
   });
 });

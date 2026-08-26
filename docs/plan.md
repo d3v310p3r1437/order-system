@@ -767,6 +767,20 @@ SET LOCAL app.accessible_branches = $3;
       модераци дэлгэц. Mobile: rating badge + сэтгэгдлийн жагсаалт +
       бичих/засварлах дэлгэц. Дэлгэрэнгүй: CLAUDE.md-ийн "Одоогийн Phase"
       хэсэг.
+- [x] **(2026-08-26/27) Сэтгэгдэл өгөх урсгалыг Захиалгууд хуудас руу
+      шилжүүлэх** (§7 модуль #6/#11-ийн үргэлжлэл, каталогоос хайх
+      урсгалыг ХЭВЭЭР үлдээж, Захиалгын түүхээс шууд үнэлэх шинэ замыг
+      нэмэв): `GET /orders`/`GET /orders/:id` хариунд OrderItem бүрд
+      `productImageUrl`/`myReview` (зөвхөн COMPLETED захиалгад)
+      нэмэгдэв (`OrderService.hydrateOrder()`,
+      `ReviewService.findManyForCustomer()` batch query). Mobile:
+      `OrderListScreen` жинхэнэ `TabController`+`TabBarView` (Идэвхтэй/
+      Түүх) болов, карт дээр эхний барааны зураг +
+      COMPLETED захиалгын бараа бүрд "★ Үнэлэх"/одны тоо мөр,
+      `QuickReviewBottomSheet` (шинэ, дахин ашиглаж болохоор) →
+      амжилттай илгээвэл `OrderListNotifier.applyLocalReview()`-оор
+      дахин API дуудахгүйгээр UI-г шууд шинэчилнэ. Дэлгэрэнгүй:
+      CLAUDE.md-ийн "Одоогийн Phase" хэсэг.
 - [ ] Харилцагчийн үйлчилгээний тасалбар
 - [x] Аудит лог **UI** (админ самбарт хэн юу хийснийг харах хуудас) — §7 модуль #15-ыг эндээс дуусгана
       (2026-08-26, `super.admin@order-system.mn`-ийн DB мөр дутуу байсан

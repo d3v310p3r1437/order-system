@@ -228,3 +228,35 @@ describe('ReviewService — update()/remove() (RLS-ийн 0-мөр → 404 хө�
     });
   });
 });
+
+// (2026-08-26) OrderService.hydrateOrder()-оос дуудагдана — Захиалгын
+// түүхийн дэлгэцэд OrderItem бүрд myReview batch (productId-аар нэг
+// query) хэлбэрээр нэгтгэхэд ашиглагдана.
+describe('ReviewService.findManyForCustomer', () => {
+  it('productId-аар Map үүсгэж буцаана', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    mocks.reviewFindMany.mockResolvedValue([
+      { id: 'r-1', productId: 'p-1', rating: 5 },
+      { id: 'r-2', productId: 'p-2', rating: 3 },
+    ]);
+    const service = newService(prisma);
+
+    const result = await service.findManyForCustomer('cust-1', ['p-1', 'p-2']);
+
+    expect(mocks.reviewFindMany).toHaveBeenCalledWith({
+      where: { customerId: 'cust-1', productId: { in: ['p-1', 'p-2'] } },
+    });
+    expect(result.get('p-1')).toMatchObject({ id: 'r-1' });
+    expect(result.get('p-2')).toMatchObject({ id: 'r-2' });
+  });
+
+  it('productIds хоосон бол query дуудахгүй, хоосон Map буцаана', async () => {
+    const { prisma, mocks } = buildPrismaMock();
+    const service = newService(prisma);
+
+    const result = await service.findManyForCustomer('cust-1', []);
+
+    expect(mocks.reviewFindMany).not.toHaveBeenCalled();
+    expect(result.size).toBe(0);
+  });
+});

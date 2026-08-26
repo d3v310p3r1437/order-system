@@ -76,6 +76,25 @@ export class ReviewService {
     return { canReview, myReview };
   }
 
+  // (2026-08-26) OrderService.hydrateOrder()-оос дуудагдана — Захиалгын
+  // түүх/Захиалгын дэлгэрэнгүй дэлгэцэд OrderItem бүрд "аль хэдийн
+  // үнэлсэн эсэх"-ийг НЭГ batch query-ээр (productId бүрд тусад нь биш)
+  // тодорхойлохын тулд. reviews_select RLS "бүх нэвтэрсэн" тул зөвшөөрлийн
+  // асуудалгүй — энд зөвхөн `customerId`-аар шүүсэн тул үр дүн ХЭЗЭЭ Ч
+  // өөр хэрэглэгчийн review-г буцаахгүй.
+  async findManyForCustomer(
+    customerId: string,
+    productIds: string[],
+  ): Promise<Map<string, Review>> {
+    if (productIds.length === 0) {
+      return new Map();
+    }
+    const reviews = await this.prisma.tx.review.findMany({
+      where: { customerId, productId: { in: productIds } },
+    });
+    return new Map(reviews.map((review) => [review.productId, review]));
+  }
+
   // GET /products/:id/reviews: aggregate query-ээр дундаж үнэлгээг
   // тооцоолно (денормалиц хийхгүй — даалгаврын шууд заавар).
   async findForProduct(productId: string, query: ReviewQueryDto) {
