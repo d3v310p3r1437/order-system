@@ -14,6 +14,8 @@ import { ReturnsPage } from "@/pages/ReturnsPage";
 import { ReturnDetailPage } from "@/pages/ReturnDetailPage";
 import { ReportsPage } from "@/pages/ReportsPage";
 import { CouponsPage } from "@/pages/CouponsPage";
+import { StaffPage } from "@/pages/StaffPage";
+import { AuditLogsPage } from "@/pages/AuditLogsPage";
 
 function App() {
   // §ADR 004: access token-г зөвхөн in-memory React state-д хадгална
@@ -61,6 +63,8 @@ function App() {
           <Route path="/returns" element={<ReturnsPage />} />
           <Route path="/returns/:id" element={<ReturnDetailPage />} />
           <Route path="/coupons" element={<CouponsPage />} />
+          <Route path="/staff" element={<StaffPage />} />
+          <Route path="/audit-logs" element={<AuditLogsPage />} />
           <Route path="/reports" element={<ReportsPage />} />
         </Route>
 

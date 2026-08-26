@@ -90,6 +90,21 @@ export const COUPON_UPDATE_ROLES = [
   "ALL_BRANCH_MANAGER",
 ];
 
+// ↔ apps/api/src/staff/staff.controller.ts (STAFF_MANAGE_ROLES) —
+// BRANCH_MANAGER ЗОРИУДАА ороогүй (ажилтан удирдах эрхгүй, migration
+// add_staff_management_functions-ийн app_can_manage_staff() коммент).
+export const STAFF_MANAGE_ROLES = [
+  "SUPER_ADMIN",
+  "ALL_BRANCH_MANAGER",
+  "BRANCH_ADMIN",
+];
+
+// ↔ apps/api/src/audit/audit-log.controller.ts (AUDIT_LOG_VIEW_ROLES) —
+// зөвхөн глобал-эрхийн 3 дүр, учир нь AuditInterceptor branchId-г ХЭЗЭЭ Ч
+// populate хийдэггүй тул branch-scoped дүрд ямар ч тохиолдолд хоосон
+// жагсаалт л харагдах байсан (audit-log.controller.ts-ийн коммент).
+export const AUDIT_LOG_VIEW_ROLES = ["SUPER_ADMIN", "OWNER", "ALL_BRANCH_MANAGER"];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

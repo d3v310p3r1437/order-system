@@ -1637,6 +1637,160 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
   алдаа зөвхөн `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo
   харьцуулалт, дээрх адил ХОЛБООГҮЙ). admin-web: `vitest` 13/13 suite
   (29/29), `tsc -b`/`oxlint`/`vite build` цэвэр.
+- **(2026-08-25/26) super.admin-ийн Postgres users мөр дутуу байсан
+  инцидент → оношилгоо + засвар + сэргийлэлт (Ажилтны удирдлага, Аудит
+  лог UI, JWT decode аюулгүй байдлын аудит) дууссан**:
+  - **Инцидент диагноз/засвар:** `super.admin@order-system.mn`-ээр
+    admin-web-д нэвтэрхэд "Эрх оноогдоогүй" гарч байсныг 3 давхаргаар
+    (Keycloak `local_user_id` attribute → Postgres `users` мөр → `audit_logs`)
+    дараалан шалгаж, `users` мөр (зөвхөн `user_branch_roles` биш) бүхэлдээ
+    байхгүй байсныг олов. **Язгуур шалтгаан цэвэрлэлтийн script (`cleanup-debris.ts`)
+    БИШ** гэдгийг батлав (script `users`/`user_branch_roles`-д огт хүрдэггүй,
+    `User` модель схемийн root тул cascade-delete зам байхгүй) — харин
+    `infra/keycloak/setup-realm.sh`-ийн 3 алхамт ГАР журмаас 1/3-р алхам
+    (Postgres тал) хийгдээгүй, зөвхөн Keycloak тал л тохируулагдсан дутуу
+    гар тохиргоо байв. Дутуу 2 мөрийг superuser холболтоор нөхөж, `curl`
+    (login→/auth/me→roles) БОЛОН Playwright (admin-web дээр бодитоор
+    нэвтэрч Агуулах/Захиалгууд/Буцаалтууд 3 дэлгэц) хоёуланд нь
+    баталгаажуулав. Дэлгэрэнгүй (schema/audit_logs-ийн нотолгоо,
+    засварын SQL): `docs/adr/002-jwt-identity-only-authorization-from-db.md`-ийн
+    "Инцидент (2026-08-25)" хэсэг.
+  - **Хэсэг A (JWT decode аюулгүй байдлын аудит, шаардсан):** `decodeJwt`
+    (verify-гүй, `jose`) ашигладаг 3 газрыг бүгдийг нь (`grep`) шалгаж,
+    **ГУРВУУЛАНГ НЬ АЮУЛГҮЙ** гэж баталгаажуулав: (1)
+    `token-verifier.service.ts`-ийн `decodeJwt(rawToken).iss` нь КЛИЕНТЭЭС
+    ирсэн Authorization header дээр ажилладаг цорын ганц газар боловч,
+    зөвхөн HS256/RS256 аль замаар баталгаажуулахаа сонгох "чиглүүлэлт"
+    зорилготой — бодит `localUserId` ХЭЗЭЭ Ч ЭНЭ decode-оос биш, дараагийн
+    `jwtVerify()` (гарын үсэг + issuer бүрэн шалгасан) payload-аас л ирдэг;
+    (2) `auth-staff.controller.ts`/`auth-customer.controller.ts`-ийн
+    `recordIdFromIssuedToken()` хоёул `@Audit()`-ийн `recordId`-д зориулж
+    зөвхөн **backend ӨӨРӨӨ дөнгөж гаргасан (клиентээс огт ирээгүй) response
+    body**-ийн `accessToken`-г л decode хийдэг (audit.interceptor.ts-ийн
+    `concatMap(async (responseBody) => ...)`-аар баталгаажуулсан — 2-р
+    параметр нь ХАРИУ, хүсэлт биш). **Ноцтой асуудал олдоогүй, шинэ засвар
+    шаардлагагүй гэдгийг тодорхой баталгаажуулав.**
+  - **Хэсэг B (Ажилтны удирдлага, backlog-ийн "Staff/ажилтны удирдлагын
+    UI" даалгавар):** migration `add_staff_management_functions` — шинэ
+    `app_can_manage_staff(branchId)` (BRANCH_MANAGER-ыг ЗОРИУДАА ХАСНА,
+    `app_can_manage_branch()`-аас өөр учир §6.1 матриц/даалгаврын заавар
+    "ажилтан удирдах эрх зөвхөн SUPER_ADMIN/ALL_BRANCH_MANAGER/тухайн
+    салбарын BRANCH_ADMIN") + `app_create_staff_member()`/
+    `app_update_staff_member()` SECURITY DEFINER функц (ADR 005 WRITE
+    ангилал — `users_insert`/`ubr_insert` одоо байгаа RLS аль аль нь энэ
+    endpoint-ийн шаардлагад тохирохгүй байсан: эхнийх нь branch-scoped
+    дуудагчид өөр хэрэглэгчийн мөр огт insert хийх зөвшөөрдөггүй, хоёр
+    дахь нь BRANCH_MANAGER-ыг ч зөвшөөрдөг тул хэт өргөн). `src/staff`
+    (`KeycloakAdminService`, `StaffService`, `StaffController`) —
+    `POST /staff` нь `infra/keycloak/setup-realm.sh`-ийн 3 гар алхмыг
+    (яг ЭНЭ инцидентийг дахин үүсгэхээс сэргийлэх зорилготой) НЭГ АТОМИК
+    код зам болгож нэгтгэв: Keycloak хэрэглэгч олдвол дахин ашиглаж,
+    олдоогүй бол шинээр үүсгээд `local_user_id` attribute + түр (random,
+    `temporary=false` — ROPC required-action дэмждэггүй тул) нууц үг
+    тохируулаад, ТҮҮНИЙ ДАРАА Postgres талыг (`users`+`user_branch_roles`
+    ХАМТ) SQL функцээр бичнэ; Postgres тал REJECT (`FORBIDDEN` буцаах
+    ЭСВЭЛ email давхардлын алдаа) хийвэл, **ЗӨВХӨН ЭНЭ дуудлагаар ШИНЭЭР
+    үүссэн** Keycloak хэрэглэгчийг rollback (устгах)-аар цэвэрлэнэ (олдож
+    ДАХИН АШИГЛАСАН хуучин Keycloak хэрэглэгчийг хэзээ ч устгахгүй).
+    ⚠️ **Шинэ escalation зам олдож, урьдчилан хаасан:** `RolesGuard`/
+    `resolveUserRoleNames()` `role`-ийг ЗӨВХӨН НЭРЭЭР шалгадаг,
+    `branchId`-тай хамт шалгадаггүй (`app_has_global_scope()`-ийн
+    "branchId IS NULL AND role IN (...)"-ээс ЯЛГААТАЙ) гэдгийг олов —
+    хэрэв branch-scoped (BRANCH_ADMIN) дуудагчид `role='SUPER_ADMIN'`
+    (branchId-той ч) оноох боломж олговол, тэр хэрэглэгч ЖИНХЭНЭ
+    `app_has_global_scope()`-аар хамгаалагдсан зүйлд хандахгүй ч, ЗӨВХӨН
+    `@Roles('SUPER_ADMIN')`-ээр хамгаалагдсан (нэмэлт RLS-гүй) ямар ч
+    endpoint-ыг дуудах боломжтой болно байсан — `app_create_staff_member()`/
+    `app_update_staff_member()` аль алинд нь branch-scoped дуудагчийг
+    глобал нэртэй role (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER) оноохоос
+    ЗААВАЛ хориглодог болгож хаав, `roles.guard.ts`-д ирээдүйд ижил
+    endpoint зохиогчдод зориулсан ⚠️⚠️ коммент нэмэв. `GET /staff` (`role`/
+    `branchId`-аар шүүх), `PATCH /staff/:id` (дүр/салбар сольж, isActive
+    idэвхжүүлэх/идэвхгүй болгох — Category/Product-той ижил "Устгах
+    товчгүй" зарчим). Admin-web: `/staff` дэлгэц (жагсаалт+Нэмэх/Засах
+    dialog), `temporaryPassword`-ийг ЗӨВХӨН НЭГ Л УДАА (dialog хаагдтал)
+    харуулна — хаана ч (Postgres/Keycloak) хадгалагдахгүй. Тест: unit
+    (`staff.service.spec.ts`, `keycloak-admin.service.spec.ts` — HTTP mock)
+    + **e2e (`test/staff.e2e-spec.ts`, 10 тест, БОДИТ Keycloak+Postgres-той:
+    амжилттай атомик үүсгэлт, BRANCH_ADMIN cross-branch/escalation оролдлого
+    ХОЁУЛАНГ нь 403+Keycloak rollback-аар баталгаажуулсан, Postgres email
+    давхардлын rollback, RolesGuard gate, GET/PATCH)**.
+    ⚠️ **prisma-errors.ts-ийн шинэ нээлт:** `$queryRaw`-аар дамжуулсан
+    unique constraint violation Prisma-д typed `.create()`-ийн P2002 БИШ,
+    `isCheckConstraintViolation()`-ийн раw-query gotcha-тай ЯГ ижил
+    зарчмаар P2010 (`message`-даа л "23505" агуулсан) шидэх нь e2e тестээр
+    батлагдсан — `isUniqueConstraintViolation()`-ыг хоёуланг нь шалгах
+    болгож өргөтгөв (backward-compatible, P2002 хэвээр шалгасаар).
+  - **Хэсэг C (Аудит лог UI):** `src/audit` (`AuditLogController`) — шинэ
+    `GET /audit-logs` (`tableName`/`action`/`recordId`/`userId`/`from`/`to`/
+    `limit` filter), шинэ RLS/SECURITY DEFINER функц ШААРДААГҮЙ (`audit_select`
+    policy-г л дахин ашигласан). ⚠️ **§6.1 матрицын "Аудит лог" мөрийн
+    "BRANCH_ADMIN R (өөрийн)" анхны төлөвлөгөө ОДООГООР бүрэн хэрэгжих
+    боломжгүй гэдгийг олов** — `AuditInterceptor.writeAuditLog()`
+    `branchId` баганыг ХЭЗЭЭ Ч populate хийдэггүй (INSERT-д үргэлж `null`)
+    тул `audit_select`-ийн "branchId IS NOT NULL AND app_can_manage_branch()"
+    нөхцөл ямар ч мөрд хэзээ ч биелэхгүй — иймд endpoint-ыг ЗОРИУДАА зөвхөн
+    3 глобал-эрхийн дүрд (`@Roles('SUPER_ADMIN','OWNER','ALL_BRANCH_MANAGER')`)
+    хязгаарлав (branch-scoped дүрд зөвшөөрвөл ЗӨВХӨН хоосон жагсаалт харагдах
+    байсан тул тодорхой 403 өгөх нь илүү зөв). Admin-web: `/audit-logs`
+    дэлгэц (ReportsPage-ийн ерөнхий Card+шүүлт загвар, chart/export
+    зохиогоогүй). Тест: e2e (`test/audit-log.e2e-spec.ts`, 4 тест) +
+    admin-web smoke (`AuditLogsPage.test.tsx`).
+  - Backend: `pnpm --filter api test` 43/43 suite (276/276),
+    `pnpm --filter api test:e2e` **CI дээр 18/18 suite (175/175), 100%
+    ногоон** (`gh run view --json jobs`-ээр PR #23-ийн бодит CI логоос
+    баталгаажуулсан). ⚠️ **Засвар (2026-08-26, анх буруу бичсэн):** энэ
+    бичлэгийн анхны хувилбарт "17/18 suite (174/175) — ганц алдаа
+    `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo, flaky" гэж
+    буруу бичсэн байсан — энэ нь ЛОКАЛ `pnpm --filter api test:e2e`
+    ажиллуулгын үр дүн байсныг CI-ийн үр дүн мэт андуурсан алдаа
+    (тайлангийн алдаа, CI/кодын алдаа биш). Бодит шалтгаан: локал
+    `apps/api/.env`-д `ROUTING_PROVIDER=osrm` (баримт бичгийн `docs/adr/007`-ийн
+    заасан анхдагч `mock`-аас гажсан, өмнөх ямар нэг сешнд гар аргаар
+    тавьсан) тохируулагдсан байсан тул `delivery-routing.e2e-spec.ts`-ийн
+    `toEqual([[branch.lng,branch.lat],[106.93,47.925]])` гэсэн (2 цэгтэй,
+    mock provider-т зориулсан) шалгалт бодит OSRM-ийн олон цэгт замын
+    геометртэй **ЗААВАЛ (flaky биш, 100% детерминистаар)** зөрчилддөг —
+    "заримдаа унадаг" биш, `ROUTING_PROVIDER=osrm` идэвхтэй бол ХЭЗЭЭ Ч
+    амжилттай болохгүй. `ROUTING_PROVIDER=mock`-оор 20 удаа дараалан
+    ажиллуулж 20/20 (200/200 тест) амжилттай болохыг тусад нь баталгаажуулсан.
+    ⚠️⚠️ **Сануулга (ирээдүйд ижил төстэй "flaky" гэж яаравчлан бичихээс
+    сэргийлэх):** `test/delivery-routing.e2e-spec.ts`-ийг ЛОКАЛ дээр
+    ажиллуулахын өмнө `apps/api/.env`-ийн `ROUTING_PROVIDER` утга
+    заавал `mock` эсэхийг шалга (`docs/adr/007`-ийн баримтжуулсан
+    анхдагч, `.github/workflows/ci.yml`-ийн `ROUTING_PROVIDER: mock`-той
+    таарна) — `osrm` бол ЭНЭ ТЕСТ детерминистаар (CI-той хамааралгүй,
+    зөвхөн локал орчны тохиргооноос болж) унана, "flaky" гэж бүү дүгнэ.
+    admin-web: `vitest` 15/15 suite (34/34), `tsc -b`/`oxlint`/`vite build`
+    цэвэр. `feature/coupon-system` (аль хэдийн main-руу merge хийгдсэн
+    хуучин branch) дээр биш, шинэ `feature/staff-management-and-security-hardening`
+    (`origin/main`-аас) branch дээр хийгдэв.
+  - **(backlog, шинээр нэмэгдсэн)** `AuditInterceptor.writeAuditLog()`-д
+    `branchId`-г бөглөх (§6.1 матрицын "BRANCH_ADMIN R (өөрийн)" бүрэн
+    хэрэгжүүлэх, `docs/plan.md` Phase 6-ийн checklist-д тэмдэглэв); staff
+    удирдлагын dialog нэг ажилтны ГАНЦ (role, branchId) хосыг л удирдана
+    (олон дүртэй ажилтныг бүрэн удирдах UI биш, MVP хэмжээнд зориудаар
+    хязгаарласан); шинэ ажилтны түр нууц үгийг Keycloak
+    `required action`-аар (ROPC биш browser-based auth урсгал нэмэгдвэл)
+    сольж баталгаажуулах урсгал болгох боломж (одоогоор ROPC-ийн
+    хязгаарлалтаас болж дэмжигдэхгүй).
+  - **(2026-08-26 нэмэлт) Инцидентийн эцсийн БҮТЦИЙН хамгаалалт:**
+    `user_branch_roles`-д `chk_global_role_no_branch` CHECK constraint
+    нэмэв (migration `20260826070000_add_global_role_branch_check_constraint`)
+    — "role∈{SUPER_ADMIN,OWNER,ALL_BRANCH_MANAGER} ⇔ branchId IS NULL"
+    хослолыг код замаас (application/SECURITY DEFINER функц/RolesGuard)
+    ҮЛ ХАМААРАН DB түвшинд бүрмөсөн хориглоно — `RolesGuard`-ийн role-ийг
+    branchId-гүйгээр нэрээр нь л шалгадаг сул талыг (дээр дурдсан) ямар ч
+    ирээдүйн код зам ашиглаж чадахгүй болгосон "сүүлчийн шугам". Migration-оос
+    өмнө одоо байгаа өгөгдөл (1078 мөр) зөрчихгүй эсэхийг шалгаж
+    баталгаажуулсан, гараар зөрчсөн INSERT оролдож 23514 алдаа шидэхийг
+    psql-ээр батлав. `test/staff.e2e-spec.ts`-д 3 давхаргын тест нэмэв:
+    PATCH-ийн HTTP escalation, SQL функцийн (DTO тойрсон) escalation,
+    БОЛОН **service/SECURITY DEFINER функц АЛЬ АЛИНЫГ Ч тойрсон, шууд
+    superuser raw INSERT-ээр constraint-ийг ӨӨРИЙГ нь** шалгасан 3 тест
+    (глобал+branchId, салбарын+branchId-гүй хоёул 23514 шиднэ; зөв
+    хослол хэвийн ажиллана). Дэлгэрэнгүй: `docs/adr/002`-ийн "Инцидентийн
+    эцсийн, БҮТЦИЙН хамгаалалт (2026-08-26)" хэсэг.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

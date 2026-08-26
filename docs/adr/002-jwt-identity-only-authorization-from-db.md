@@ -92,3 +92,172 @@ const ubrRows = await tx.userBranchRole.findMany({ where: { userId } });
   бүтээгдэхүүний шаардлага гарвал Redis эсвэл DB-д хадгалж revoke хийх
   боломжтой болгоно (энэ бол зөвхөн Phase 1 spike-ийн хамрах хүрээнээс
   гадуурх бүтээгдэхүүний шийдвэр тул энд шийдээгүй болгож үлдээв).
+
+## Инцидент (2026-08-25): `local_user_id` DB-д тохирох мөргүй байсан —
+цэвэрлэлтийн script БИШ, дутуу гар тохиргоо байсныг нотолсон
+
+**Шинж тэмдэг:** `super.admin@order-system.mn`-ээр admin-web-д нэвтрэхэд
+токен зөв ирсэн ч "Эрх оноогдоогүй" гарч, Агуулах/Захиалгууд/Буцаалтууд
+бүгд "Танд хандах эрхтэй салбар алга" гэдэг байв.
+
+**Оношилгоо (3 давхарга дараалан шалгав):**
+1. Keycloak дээр (`kcadm get users -q email=...`) `local_user_id` custom
+   attribute бодитоор байсан (`26a7d6af-6562-4ff8-8c82-44b3671b4694`).
+2. Тэр UUID-аар Postgres-ийн `users` хүснэгтээс (superuser `DATABASE_URL`,
+   RLS bypass) хайхад **0 мөр** — email-ээр хайхад ч 0 мөр. Мөр ерөнхийдөө
+   БАЙХГҮЙ байсан (зөвхөн `user_branch_roles` мөр дутсан асуудал БИШ).
+3. `audit_logs`-аас яг энэ `recordId`-тай 3 `staff.login` мөр (2026-08-19,
+   2026-08-21×2) олдсон нь эхэндээ "мөр байсан, дараа устсан" гэсэн
+   таамаглал төрүүлсэн ч, `auth-staff.controller.ts`-ийн
+   `recordIdFromIssuedToken()`-ийг уншихад **`@Audit`-ийн `recordId` нь
+   Keycloak-ийн ЗӨВ ШАЛГАСАН биш, зөвхөн шинээр гарсан JWT-г `decodeJwt`-ээр
+   (баталгаажуулалтгүйгээр) уншсан утга** болохыг олов — өөрөөр хэлбэл
+   `/auth/staff/login` нь Postgres-д ОГТ ХАНДДАГГҮЙ (зөвхөн Keycloak ROPC
+   grant), тул "staff.login амжилттай" гэдэг нь DB-д тухайн хэрэглэгч
+   байгааг ЯМАР Ч байдлаар нотлохгүй. Энэ нээлт 2-р алхмын дүгнэлтийг
+   (мөр угаасаа байгаагүй) баталсан, эсрэгээр биш.
+
+**Язгуур шалтгаан:** `infra/keycloak/setup-realm.sh`-ийн коммент дэх
+3 алхамт гар тохиргооны журам ("1. Postgres-д users мөр үүсгэ → 2.
+Keycloak дээр `local_user_id` attribute тавь → 3. `user_branch_roles`
+мөр нэмэ") **1 болон 3-р алхам огт хийгдээгүй**, зөвхөн 2-р алхам
+(Keycloak тал) хийгдсэн байсан — өөрөөр хэлбэл анхнаасаа дутуу
+тохируулсан, дараа нь "устсан" биш. Үүнийг баталгаажуулахын тулд:
+- `schema.prisma`-ийн `User` модель бол схемийн root (ямар ч гадаад
+  түлхүүрээр өөр хүснэгт рүү заадаггүй) тул **ямар ч cascade delete
+  зам `users` мөрийг устгаж чадахгүй** — зөвхөн `users` нь ӨӨРӨӨ бусад
+  олон хүснэгтийн parent.
+- `apps/api/prisma/cleanup-debris.ts`-г бүтэн уншиж баталгаажуулахад
+  энэ script **`users`/`user_branch_roles` хүснэгтэд ЗУРААС Ч хүрдэггүй**
+  (зөвхөн `Branch.name`/`Category.slug`/`Product.slug`-ийн 10+ оронтой
+  debris pattern, мөн debris Branch-д хамаарах `Order`/`ReturnRequest`/
+  `CouponRedemption`). `git log --diff-filter=D` -ээр аль хэдийн устсан
+  `cleanup-branch-debris.ts`-ийг ч шалгаж, мөн адил зөвхөн Branch-д л
+  хүрдэг байсныг баталгаажуулсан.
+- `src/` доторх ямар ч endpoint `users` мөр устгадаггүй (delete endpoint
+  байхгүй).
+
+Иймд **§"Хэзээ ч дараах зүйлийг бүү хий" маягийн cleanup script-ийн
+WHERE нөхцөл чангатгах шаардлагагүй** гэдгийг тодорхой дүгнэв — эдгээр
+script анхнаасаа зөв хамрах хүрээтэй (blast radius) байсан.
+
+**Засвар:** алдагдсан 2 мөрийг superuser холболтоор (cleanup script-үүдтэй
+ижил зарчим) шууд нөхөн оруулав:
+```sql
+INSERT INTO users (id, email, "authProvider", "fullName", "isActive", "createdAt", "updatedAt")
+VALUES ('26a7d6af-6562-4ff8-8c82-44b3671b4694', 'super.admin@order-system.mn', 'KEYCLOAK', 'Super Admin', true, now(), now());
+
+INSERT INTO user_branch_roles (id, "userId", "branchId", role, "createdAt")
+VALUES (gen_random_uuid(), '26a7d6af-6562-4ff8-8c82-44b3671b4694', NULL, 'SUPER_ADMIN', now());
+```
+Баталгаажуулалт: (1) `curl`-аар бодит `POST /auth/staff/login` →
+`GET /auth/me` дуудаж `roles: [{role: "SUPER_ADMIN", branchId: null}]`
+зөв ирснийг, `GET /orders`/`GET /returns`/`GET /reports/sales-summary`
+бүгд бодит өгөгдөл (алдаа биш) буцааж байгааг батлав; (2) Playwright-аар
+admin-web дээр бодитоор нэвтэрч (ADR 004-ийн зарчмын дагуу `page.goto()`
+БИШ, SPA дотоод nav линк дараад) "Дүр: Супер админ" + Агуулах/Захиалгууд/
+Буцаалтууд 3 дэлгэц бүгд "Танд хандах эрхтэй салбар алга" МЕССЕЖГҮЙгээр
+ачаалж байгааг screenshot-оор баталгаажуулсан.
+
+**Чухал систем-дизайны сул тал (олдсон, ЗАСААГҮЙ — цаашдын ажил):**
+JWT-ийн `local_user_id` claim Postgres-д тохирох мөргүй болсон үед
+(жиш: энэ инцидент шиг дутуу тохиргоо, эсвэл ирээдүйд ямар нэг зам
+`users` мөрийг устгавал) систем **ЯМАР Ч алдаа шиддэггүй** —
+`TokenVerifierService.verify()` зөвхөн JWT-ийн гарын үсэг зөв эсэхийг
+шалгаад `localUserId`-г буцаадаг, дараа нь RLS-ээр хамгаалагдсан
+`user_branch_roles` query зүгээр л 0 мөр буцаадаг тул `/auth/me` хоосон
+`roles: []` буцааж, admin-web үүнийг "Эрх оноогдоогүй" гэсэн ЕРӨНХИЙ
+(distinguish хийдэггүй) мессеж болгож харуулдаг — жинхэнэ "энэ ажилтанд
+эрх өгөөгүй" гэдэгтэй ялгаагүй харагддаг тул оношлоход цаг их зарцуулдаг
+(энэ инцидентэд Keycloak→Postgres→audit_logs 3 давхарга бүрийг гараар
+шалгах шаардлагатай болсон). **Санал болгож буй сайжруулалт (backlog,
+хэрэгжүүлээгүй):** `TokenVerifierService.verifyKeycloakToken()`
+(эсвэл `RlsMiddleware`) дотор `localUserId`-аар `users` мөр байгаа
+эсэхийг (superuser/app_has_global_scope шалгалтгүйгээр, зөвхөн
+existence) шалгаж, байхгүй бол тодорхой `ORPHANED_IDENTITY`
+(эсвэл ижил төстэй) алдааны код бүхий 401/403 шидвэл админ (болон
+дэмжлэгийн баг) шууд "энэ Keycloak хэрэглэгч DB-тэй холбогдоогүй байна"
+гэдгийг мэдэх боломжтой болно.
+
+## Инцидентийн эцсийн, БҮТЦИЙН (structural) хамгаалалт (2026-08-26):
+`user_branch_roles`-ийн CHECK constraint
+
+Дээрх инцидентийн (2026-08-25) шууд үргэлжлэл болгон бий болгосон
+"Ажилтны удирдлагын UI" (`POST/PATCH /staff`, `app_create_staff_member()`/
+`app_update_staff_member()` SECURITY DEFINER функц, migration
+`20260825090000_add_staff_management_functions`) зохиох явцад **шинэ,
+холбоотой escalation зам** олдсон: `RolesGuard`/`resolveUserRoleNames()`
+(`src/common/roles.guard.ts`, `src/common/user-roles.ts`) `user_branch_roles.role`-ийг
+**ЗӨВХӨН НЭРЭЭР нь** шалгадаг, `branchId`-той ХАМТ шалгадаггүй —
+`app_has_global_scope()`-ийн "branchId IS NULL AND role IN (...)" нөхцөлтэй
+ЯЛГААТАЙ. Өөрөөр хэлбэл, хэрэв `user_branch_roles`-д `role='SUPER_ADMIN'`
+(эсвэл `OWNER`/`ALL_BRANCH_MANAGER`) АГЛУУ `branchId` NULL БИШ (нэг
+салбартай "хавсарсан") мөр аль нэг замаар (одоо байгаа/ирээдүйн endpoint,
+гар SQL, debug script) бий болвол, тэр хэрэглэгч `app_has_global_scope()`-аар
+хамгаалагдсан ЖИНХЭНЭ глобал зүйлд (RLS/SECURITY DEFINER функц) хандахгүй
+ч, зөвхөн `@Roles('SUPER_ADMIN')`-ээр (нэмэлт RLS-гүй) хамгаалагдсан
+ямар ч endpoint-ыг дуудах боломжтой болно.
+
+`app_create_staff_member()`/`app_update_staff_member()` СЕРВЭР ФУНКЦ
+өөрсдийн дуудлагын замд энэ хослолыг ЗААВАЛ хориглодог (branch-scoped
+дуудагч глобал нэртэй role оноож чадахгүй) — гэвч энэ бол зөвхөн ТҮҮНИЙ
+Л дуудлагын замын хамгаалалт. **Код зам (application layer) хэдий чинээ
+олон бол, "мартаж/буруу бичсэн шинэ endpoint" эсвэл "гар SQL debug
+script" нэг ч удаа зөрчих магадлал тэгээс их байсаар байна** — яг л энэ
+даалгаврын язгуур инцидент ("гар тохиргооны 1 алхам мартагдсан") нотолсон
+шиг.
+
+**Шийдвэр:** код замаас (application, SECURITY DEFINER функц,
+`RolesGuard`) ЯМАР Ч байдлаар ҮЛ ХАМААРАН, DB-ийн `user_branch_roles`
+хүснэгт ӨӨРӨӨ логикийн хувьд боломжгүй хослолыг БҮРМӨСӨН татгалздаг
+CHECK constraint нэмэв (migration
+`20260826070000_add_global_role_branch_check_constraint`):
+
+```sql
+ALTER TABLE user_branch_roles
+  ADD CONSTRAINT chk_global_role_no_branch CHECK (
+    (role IN ('SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER') AND "branchId" IS NULL)
+    OR
+    (role NOT IN ('SUPER_ADMIN', 'OWNER', 'ALL_BRANCH_MANAGER') AND "branchId" IS NOT NULL)
+  );
+```
+
+Энэ бол **ADR 002-ийн инцидентийн язгуур сургамжийг шууд хэрэгжүүлсэн
+эцсийн давхарга**: "гар/дутуу код зам логикийн алдаа гаргаж болно, харин
+DB constraint үүнийг физикээр боломжгүй болгодог" — яг л RLS (§6.3)-ийг
+"мөр-түвшний сүүлчийн хамгаалалт" гэж баримталдагтай ижил зарчмаар, энэ
+CHECK constraint нь "role/branchId хослолын сүүлчийн хамгаалалт" болно.
+
+**Баталгаажуулалт:**
+- Migration-оос ӨМНӨ dev DB-ийн бүх 1078 (тухайн үеийн) `user_branch_roles`
+  мөр (359 SUPER_ADMIN + 7 OWNER + 7 ALL_BRANCH_MANAGER, бүгд `branchId`
+  NULL; 44 BRANCH_ADMIN + 474 BRANCH_MANAGER + 187 SALESPERSON, бүгд
+  `branchId` NOT NULL) шинэ дүрмийг АЛЬ ХЭДИЙН зөрчихгүй байгааг шууд SQL
+  `GROUP BY`-аар баталгаажуулж, ЗӨВХӨН ТЭГЭЭД `ALTER TABLE ADD CONSTRAINT`
+  ажиллуулсан (`migrate deploy` ямар ч алдаагүй амжилттай хэрэгжсэн нь
+  үүнийг давхар нотлов).
+- Гараар `INSERT ... VALUES (..., 'some-branch-id', 'SUPER_ADMIN', ...)`
+  оролдож, `ERROR: new row for relation "user_branch_roles" violates
+  check constraint "chk_global_role_no_branch"` алдаа шидэхийг шууд
+  psql-ээр баталгаажуулав.
+- `test/staff.e2e-spec.ts`-д **3 давхаргаар** автомат тест нэмэв: (1)
+  `app_update_staff_member()`-г ӨӨРИЙГ нь (DTO/HTTP-г БҮРЭН тойрсон, шууд
+  SQL) branchId-той ХАМТ глобал role дамжуулж дуудахад ч FORBIDDEN
+  буцаадаг (SECURITY DEFINER функцийн өөрийн дотоод хамгаалалт); (2) шинэ
+  `describe('user_branch_roles CHECK constraint ...')` блок — **service/
+  SECURITY DEFINER функц АЛЬ АЛИНЫГ Ч ОГТ дуудалгүй**, зөвхөн superuser
+  холболтоор (RLS-ээс ч тусгаарлаж) шууд raw INSERT хийж, constraint
+  зөрчигдсөн (`chk_global_role_no_branch`, Postgres 23514) хоёр чиглэл
+  (глобал role+branchId-той, салбарын role+branchId-гүй) аль алиныг нь
+  татгалзаж байгааг, мөн зөв хослол (`OWNER`+branchId NULL) хэвийн
+  амжилттай INSERT хийгддэгийг батлав; (3) HTTP давхаргад (PATCH
+  `/staff/:id`-ээр BRANCH_ADMIN SUPER_ADMIN болгохыг оролдох) 403 +
+  DB-д бодит өөрчлөлт ороогүйг баталгаажуулав.
+
+⚠️ **Цаашдын анхаарал:** ирээдүйд `RoleName` enum-д шинэ "глобал" утга
+(жиш: бүх салбарыг хамарсан шинэ дүр) нэмэгдвэл, ЭНЭ CHECK constraint-ийг
+(мөн `app_has_global_scope()`-ийн `role IN (...)` жагсаалт, `app_can_manage_staff()`,
+`GLOBAL_ROLES` — `staff.service.ts`) **бүгдийг ХАМТ** шинэчлэх ёстой,
+эс бөгөөс шинэ дүр CHECK constraint-аар татгалзагдана (аюулгүй, "gap"
+БИШ) эсвэл (constraint шинэчлэгдээгүй ч тухайн дүрийг `NOT IN`-ийн
+жагсаалтад автоматаар "салбарын" гэж тооцно) буруу ангилагдана.

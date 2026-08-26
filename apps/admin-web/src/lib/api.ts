@@ -842,3 +842,129 @@ export function updateCoupon(
     body: JSON.stringify(dto),
   });
 }
+
+export type StaffRoleName =
+  | "SUPER_ADMIN"
+  | "OWNER"
+  | "ALL_BRANCH_MANAGER"
+  | "BRANCH_ADMIN"
+  | "BRANCH_MANAGER"
+  | "SALESPERSON";
+
+export interface StaffRoleAssignment {
+  role: StaffRoleName;
+  branchId: string | null;
+  branchName: string | null;
+}
+
+// apps/api/src/staff/staff.service.ts-ийн StaffListItem-тэй тохирно.
+export interface StaffMember {
+  id: string;
+  email: string | null;
+  fullName: string | null;
+  isActive: boolean;
+  createdAt: string;
+  roles: StaffRoleAssignment[];
+}
+
+export interface CreateStaffInput {
+  email: string;
+  fullName: string;
+  role: StaffRoleName;
+  branchId?: string;
+}
+
+// docs/adr/002-ийн "Инцидент (2026-08-25)"-ийг сэргээхгүй байх зорилготой
+// атомик (Keycloak+Postgres) endpoint-ийн хариу — temporaryPassword ЗӨВХӨН
+// ЭНД, НЭГ Л УДАА ирнэ (StaffDialog.tsx-д харуулж, дараа нь хэзээ ч дахин
+// сэргээж авах боломжгүй тухай анхааруулга харуулна).
+export interface CreateStaffResult extends StaffMember {
+  role: StaffRoleName;
+  branchId: string | null;
+  temporaryPassword: string;
+}
+
+export interface UpdateStaffInput {
+  oldBranchId?: string | null;
+  role?: StaffRoleName;
+  branchId?: string;
+  isActive?: boolean;
+}
+
+// RLS (users_select/ubr_select) хэн ямар ажилтныг харахыг шийднэ —
+// admin-web талд дахин шүүлт хийхгүй.
+export function getStaff(
+  accessToken: string,
+  filter: { role?: StaffRoleName; branchId?: string } = {},
+): Promise<StaffMember[]> {
+  const params = new URLSearchParams();
+  if (filter.role) params.set("role", filter.role);
+  if (filter.branchId) params.set("branchId", filter.branchId);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<StaffMember[]>(`/staff${qs}`, accessToken);
+}
+
+export function createStaff(
+  accessToken: string,
+  dto: CreateStaffInput,
+): Promise<CreateStaffResult> {
+  return apiFetch<CreateStaffResult>("/staff", accessToken, {
+    method: "POST",
+    body: JSON.stringify(dto),
+  });
+}
+
+export function updateStaff(
+  accessToken: string,
+  id: string,
+  dto: UpdateStaffInput,
+): Promise<{ id: string }> {
+  return apiFetch<{ id: string }>(`/staff/${id}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(dto),
+  });
+}
+
+// apps/api/src/audit/audit-log.controller.ts-тэй тохирно. beforeData/
+// afterData-ийн бодит бүтэц mutation бүрээр өөр (@Audit()-ийн tableName-аас
+// хамаарна) тул зориудаар `unknown`.
+export interface AuditLogEntry {
+  id: string;
+  userId: string | null;
+  action: string;
+  tableName: string;
+  recordId: string;
+  beforeData: unknown;
+  afterData: unknown;
+  branchId: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogFilter {
+  tableName?: string;
+  action?: string;
+  recordId?: string;
+  userId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+// ⚠️ audit-log.controller.ts-ийн коммент: branchId ХЭЗЭЭ Ч populate
+// хийгддэггүй тул ЗӨВХӨН глобал-эрхийн дүрд (AUDIT_LOG_VIEW_ROLES) л
+// амжилттай хариу буцаана (roles.ts-ийн AUDIT_LOG_VIEW_ROLES-той тохирно).
+export function getAuditLogs(
+  accessToken: string,
+  filter: AuditLogFilter = {},
+): Promise<AuditLogEntry[]> {
+  const params = new URLSearchParams();
+  if (filter.tableName) params.set("tableName", filter.tableName);
+  if (filter.action) params.set("action", filter.action);
+  if (filter.recordId) params.set("recordId", filter.recordId);
+  if (filter.userId) params.set("userId", filter.userId);
+  if (filter.from) params.set("from", filter.from);
+  if (filter.to) params.set("to", filter.to);
+  if (filter.limit) params.set("limit", String(filter.limit));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<AuditLogEntry[]>(`/audit-logs${qs}`, accessToken);
+}
