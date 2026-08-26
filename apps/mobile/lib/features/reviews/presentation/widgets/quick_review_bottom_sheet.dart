@@ -82,9 +82,8 @@ class _QuickReviewBottomSheetState
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     } finally {
       if (mounted) {
         setState(() => _submitting = false);
@@ -95,83 +94,99 @@ class _QuickReviewBottomSheetState
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: widget.productImageUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: widget.productImageUrl!,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, _, _) =>
-                              const ProductImagePlaceholder(iconSize: 18),
-                        )
-                      : const ProductImagePlaceholder(iconSize: 18),
+    // ⚠️ (2026-08-27) `OrderListScreen` (энэ sheet-ийг нээдэг цорын ганц
+    // дуудагч тал) `StatefulShellRoute`-ийн "Захиалгууд" branch дотор
+    // байрладаг тул `showModalBottomSheet` (Navigator.of(context)-ийн
+    // ХАМГИЙН ОЙР — branch-ийн дотоод, root биш) sheet-ийг `MainShell`-ийн
+    // `Scaffold.body`-ийн дотор л (`bottomNavigationBar`-ын ГАДНА биш)
+    // нээдэг тул физик дэлгэцийн доод ирмэг рүү бус, доод navigation
+    // bar-ын дээд ирмэг рүү л суудаг. Иймд `SafeArea(bottom: true)`
+    // энд голчлон КЛАВИАТУР нээгдэх/хаагдах үед МЭДЭГДЭХҮЙЦ зай өгөхийн
+    // тулд бус, ирээдүйд ЭНЭ sheet-ийг navigation bar-гүй бүтэн дэлгэцээс
+    // (жиш: ProductDetailScreen) дуудвал ч мөн адил зөв ажиллуулах
+    // (gesture home indicator/notch-той төхөөрөмжид) хамгаалалт зорилготой.
+    // Товч БОЛОН доод хил (клавиатур эсвэл navigation bar аль алиных нь)
+    // хооронд ЗААВАЛ 20px тодорхой зай (SafeArea-гийн ДЭЭР нэмэлт) үлдээнэ.
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: widget.productImageUrl != null
+                        ? CachedNetworkImage(
+                            imageUrl: widget.productImageUrl!,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, _, _) =>
+                                const ProductImagePlaceholder(iconSize: 18),
+                          )
+                        : const ProductImagePlaceholder(iconSize: 18),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  widget.productName,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.productName,
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text('Хэдэн од өгөх вэ?', style: theme.textTheme.labelMedium),
+            Center(
+              child: StarRatingInput(
+                rating: _rating,
+                onChanged: (value) => setState(() => _rating = value),
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text('Хэдэн од өгөх вэ?', style: theme.textTheme.labelMedium),
-          Center(
-            child: StarRatingInput(
-              rating: _rating,
-              onChanged: (value) => setState(() => _rating = value),
             ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            key: const Key('quick_review_comment_field'),
-            controller: _commentController,
-            minLines: 2,
-            maxLines: 4,
-            maxLength: 2000,
-            decoration: const InputDecoration(
-              hintText: 'Тайлбар (заавал биш)...',
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('quick_review_comment_field'),
+              controller: _commentController,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                hintText: 'Тайлбар (заавал биш)...',
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              key: const Key('quick_review_submit_button'),
-              onPressed: (_rating == 0 || _submitting) ? null : _submit,
-              child: _submitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(_isEdit ? 'Хадгалах' : 'Илгээх'),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                key: const Key('quick_review_submit_button'),
+                onPressed: (_rating == 0 || _submitting) ? null : _submit,
+                child: _submitting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(_isEdit ? 'Хадгалах' : 'Илгээх'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -188,9 +203,22 @@ Future<void> showQuickReviewBottomSheet({
   Review? existingReview,
   required ValueChanged<Review> onReviewSaved,
 }) async {
+  // ⚠️ (2026-08-27) Энэ sheet-ийг доод navigation bar-тай tab-аас
+  // (OrderListScreen) нээдэг тул анхдагч M3 `elevation` (~1, маш сул
+  // сүүдэртэй) дор доод navigation bar-аас арай тод ялгарахгүй байсан —
+  // `elevation`-ийг тодорхой өндөр утгаар (12) заавал өгч, sheet-ийн
+  // сүүдэр (доод хилийн ойролцоо хамгийн ил харагдах хэсэг) илүү тод
+  // болгов. `clipBehavior: Clip.antiAlias` — дугуй булан + өндөр
+  // elevation хосолсон үед агуулга (жиш: зурган карт) буланг давхарлан
+  // гарахаас сэргийлнэ.
   final review = await showModalBottomSheet<Review>(
     context: context,
     isScrollControlled: true,
+    elevation: 12,
+    clipBehavior: Clip.antiAlias,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
     builder: (_) => QuickReviewBottomSheet(
       productId: productId,
       productName: productName,
