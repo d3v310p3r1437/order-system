@@ -1737,8 +1737,30 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     зохиогоогүй). Тест: e2e (`test/audit-log.e2e-spec.ts`, 4 тест) +
     admin-web smoke (`AuditLogsPage.test.tsx`).
   - Backend: `pnpm --filter api test` 43/43 suite (276/276),
-    `pnpm --filter api test:e2e` 17/18 suite (174/175 — ганц алдаа хэвээр
-    зөвхөн `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo, ХОЛБООГҮЙ).
+    `pnpm --filter api test:e2e` **CI дээр 18/18 suite (175/175), 100%
+    ногоон** (`gh run view --json jobs`-ээр PR #23-ийн бодит CI логоос
+    баталгаажуулсан). ⚠️ **Засвар (2026-08-26, анх буруу бичсэн):** энэ
+    бичлэгийн анхны хувилбарт "17/18 suite (174/175) — ганц алдаа
+    `delivery-routing.e2e-spec.ts`-ийн амьд OSRM demo, flaky" гэж
+    буруу бичсэн байсан — энэ нь ЛОКАЛ `pnpm --filter api test:e2e`
+    ажиллуулгын үр дүн байсныг CI-ийн үр дүн мэт андуурсан алдаа
+    (тайлангийн алдаа, CI/кодын алдаа биш). Бодит шалтгаан: локал
+    `apps/api/.env`-д `ROUTING_PROVIDER=osrm` (баримт бичгийн `docs/adr/007`-ийн
+    заасан анхдагч `mock`-аас гажсан, өмнөх ямар нэг сешнд гар аргаар
+    тавьсан) тохируулагдсан байсан тул `delivery-routing.e2e-spec.ts`-ийн
+    `toEqual([[branch.lng,branch.lat],[106.93,47.925]])` гэсэн (2 цэгтэй,
+    mock provider-т зориулсан) шалгалт бодит OSRM-ийн олон цэгт замын
+    геометртэй **ЗААВАЛ (flaky биш, 100% детерминистаар)** зөрчилддөг —
+    "заримдаа унадаг" биш, `ROUTING_PROVIDER=osrm` идэвхтэй бол ХЭЗЭЭ Ч
+    амжилттай болохгүй. `ROUTING_PROVIDER=mock`-оор 20 удаа дараалан
+    ажиллуулж 20/20 (200/200 тест) амжилттай болохыг тусад нь баталгаажуулсан.
+    ⚠️⚠️ **Сануулга (ирээдүйд ижил төстэй "flaky" гэж яаравчлан бичихээс
+    сэргийлэх):** `test/delivery-routing.e2e-spec.ts`-ийг ЛОКАЛ дээр
+    ажиллуулахын өмнө `apps/api/.env`-ийн `ROUTING_PROVIDER` утга
+    заавал `mock` эсэхийг шалга (`docs/adr/007`-ийн баримтжуулсан
+    анхдагч, `.github/workflows/ci.yml`-ийн `ROUTING_PROVIDER: mock`-той
+    таарна) — `osrm` бол ЭНЭ ТЕСТ детерминистаар (CI-той хамааралгүй,
+    зөвхөн локал орчны тохиргооноос болж) унана, "flaky" гэж бүү дүгнэ.
     admin-web: `vitest` 15/15 suite (34/34), `tsc -b`/`oxlint`/`vite build`
     цэвэр. `feature/coupon-system` (аль хэдийн main-руу merge хийгдсэн
     хуучин branch) дээр биш, шинэ `feature/staff-management-and-security-hardening`
