@@ -11,6 +11,10 @@ export interface StaffSession {
 interface AuthContextValue {
   accessToken: string;
   email: string;
+  // §7 модуль #13 (SupportTicketDetailPage): чатны мессежийг "өөрийн"/
+  // "бусдын" гэж ялгахад хэрэгтэй болсон тул GET /auth/me-ийн userId-г
+  // нэмж дамжуулав (MeResponse-д аль хэдийн байсан талбар).
+  userId: string | null;
   roles: MeRole[];
   roleNames: string[];
   hasRole: (allowedRoles: readonly string[]) => boolean;
@@ -49,6 +53,7 @@ export function AuthProvider({ session, onLogout, children }: AuthProviderProps)
   const value: AuthContextValue = {
     accessToken: session.accessToken,
     email: session.email,
+    userId: meQuery.data?.userId ?? null,
     roles,
     roleNames,
     hasRole: (allowedRoles) => hasAnyRole(roleNames, allowedRoles),

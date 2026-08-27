@@ -997,6 +997,86 @@ export function deleteReview(
   });
 }
 
+// apps/api/src/support/support-ticket.controller.ts-тэй (§7 модуль #13)
+// тохирно.
+export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED";
+export type SupportTicketCategory =
+  | "ORDER_ISSUE"
+  | "PAYMENT_ISSUE"
+  | "DELIVERY_ISSUE"
+  | "PRODUCT_QUESTION"
+  | "ACCOUNT_ISSUE"
+  | "OTHER";
+
+export interface SupportMessage {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  customerId: string;
+  orderId: string | null;
+  subject: string;
+  category: SupportTicketCategory;
+  status: SupportTicketStatus;
+  createdAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+}
+
+export interface SupportTicketDetail extends SupportTicket {
+  messages: SupportMessage[];
+}
+
+// RLS (support_tickets_select) хэн ямар мөрийг харахыг шийднэ (харилцагч:
+// өөрийнх, staff: харах эрхтэй бүгд) — status/category filter зөвхөн тодруулга.
+export function getSupportTickets(
+  accessToken: string,
+  filter: { status?: SupportTicketStatus; category?: SupportTicketCategory } = {},
+): Promise<SupportTicket[]> {
+  const params = new URLSearchParams();
+  if (filter.status) params.set("status", filter.status);
+  if (filter.category) params.set("category", filter.category);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return apiFetch<SupportTicket[]>(`/support-tickets${qs}`, accessToken);
+}
+
+export function getSupportTicket(
+  accessToken: string,
+  id: string,
+): Promise<SupportTicketDetail> {
+  return apiFetch<SupportTicketDetail>(`/support-tickets/${id}`, accessToken);
+}
+
+// staff-only (apps/api/src/support/support-ticket.controller.ts-ийн
+// STATUS_UPDATE_ROLES — OWNER/CUSTOMER орохгүй).
+export function updateSupportTicketStatus(
+  accessToken: string,
+  id: string,
+  status: SupportTicketStatus,
+): Promise<SupportTicket> {
+  return apiFetch<SupportTicket>(`/support-tickets/${id}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export function addSupportTicketMessage(
+  accessToken: string,
+  ticketId: string,
+  body: string,
+): Promise<SupportMessage> {
+  return apiFetch<SupportMessage>(
+    `/support-tickets/${ticketId}/messages`,
+    accessToken,
+    { method: "POST", body: JSON.stringify({ body }) },
+  );
+}
+
 export function getAuditLogs(
   accessToken: string,
   filter: AuditLogFilter = {},

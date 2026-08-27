@@ -76,4 +76,30 @@ describe('OrderEventsPublisher', () => {
     registeredCallback();
     expect(emitReturnStatusChanged).toHaveBeenCalledWith(payload);
   });
+
+  it('publishSupportMessageCreated() мөн адил onCommit()-оор хойшлуулна', () => {
+    const emitSupportMessageCreated = jest.fn();
+    const gateway = { emitSupportMessageCreated };
+    const onCommit = jest.fn<void, [() => void]>();
+    const requestContext = { onCommit };
+
+    const publisher = new OrderEventsPublisher(
+      gateway as never,
+      requestContext as never,
+    );
+    const payload = {
+      ticketId: 't-1',
+      messageId: 'm-1',
+      senderId: 'u-1',
+      body: 'Сайн байна уу',
+      createdAt: new Date().toISOString(),
+    };
+
+    publisher.publishSupportMessageCreated(payload);
+
+    expect(emitSupportMessageCreated).not.toHaveBeenCalled();
+    const registeredCallback = onCommit.mock.calls[0][0];
+    registeredCallback();
+    expect(emitSupportMessageCreated).toHaveBeenCalledWith(payload);
+  });
 });

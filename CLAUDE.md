@@ -183,6 +183,9 @@ Redis сагснаас уншиж, Mobile-ийн DeliveryMethod→Address→Revi
 CUSTOMER тал) дууссан** (доор "(2026-08-21) Захиалгын түүх..." бичлэгийг
 үз). **Урамшуулал/купон (§7 модуль #10, Phase 6) дууссан** (backend +
 admin-web + Mobile — доор "(2026-08-21) Урамшуулал/купон" бичлэгийг үз).
+**Харилцагчийн үйлчилгээ (тасалбар, §7 модуль #13) дууссан** (backend +
+admin-web + Mobile, текст-зөвхөн MVP + бодит цагийн чат — доор
+"(2026-08-27) Харилцагчийн үйлчилгээ" бичлэгийг үз).
 Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
 Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
 хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
@@ -2000,6 +2003,28 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     (товч, tab, icon) дээр ХООСОН dump буцвал ШУУДДАА screenshot crop
     + харьцангуй байрлал тооцоолох аргад шилжих нь цаг хэмнэнэ (нүдээр
     үнэмлэхүй пиксель тааж 3-4 удаа алдахаас хамаагүй хурдан).
+  - ⚠️ **(2026-08-27, Харилцагчийн үйлчилгээ Phase-д нээгдсэн) Дээрх
+    "uiautomator dump ХООСОН буцаана" дүгнэлт ЭНЭ Phase-д БУРУУ болохыг
+    (ижил апп, ижил emulator орчинд) бодитоор давтан турших үед олов —
+    `adb shell uiautomator dump` нь `ListTile`/`NavigationBar`/
+    `OutlinedButton.icon`/`TextFormField` зэрэг Material widget-үүдийн
+    `content-desc`/`text`/`bounds`-ыг БҮРЭН, тодорхой (жиш: "Профайл
+    Tab 4 of 4" bounds="[810,2127][1080,2337]") буцаасан — үнэмлэхүй
+    нарийвчлалтай (screenshot нүдээр хэмжихээс хамаагүй найдвартай) tap
+    координат олоход ашигласан. **Яагаад өмнөх дүгнэлт буруу байсныг
+    тодорхой тогтоогоогүй** (Flutter/Android SDK хувилбар шинэчлэгдсэн
+    эсэх, эсвэл өмнөх session-ий тухайн үеийн тодорхой дэлгэц/төлөв
+    өөр байсан эсэх — аль нь ч батлагдаагүй). **Шинэ зөвлөмж (өмнөхийг
+    орлуулна):** цаашид ижил orчинд (энэ project, Android emulator)
+    UI автоматжуулалт хийхдээ ЭХЛЭЭД `uiautomator dump`-ыг ЗААВАЛ турш
+    (screenshot crop-оос ХАМААГҮЙ хурдан бөгөөд нарийвчлалтай) — зөвхөн
+    БОДИТООР хоосон/ашиггүй dump буцвал л screenshot crop аргад шилж.
+    Мөн: dump-ийг зөв уншихдаа нүдээр screenshot дээрх зай хэмжиж
+    координат тооцоолохоос ЗАЙЛСХИЙ (энэ Phase-д хэдэн удаа яг ийм
+    аргаар буруу tap хийсэн — жиш: доод navigation bar-ыг y≈1740 гэж
+    таамагласан ч bounds нь бодитоор y=2127-2337 байсан, ~500px-ийн
+    зөрүү) — dump-ийн `bounds="[x1,y1][x2,y2]"`-г ШУУД ашиглаж төвийг
+    нь тооцоол ((x1+x2)/2, (y1+y2)/2).
   - **(2026-08-27 нэмэлт засвар) QuickReviewBottomSheet-ийн доод
     зай/сүүдэр сайжруулав:** `OrderListScreen` нь `StatefulShellRoute`-ийн
     "Захиалгууд" branch дотор байрладаг тул `showModalBottomSheet`-ийг
@@ -2018,6 +2043,145 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     хоорондын зай (~100px, шаардсан 16-24px-ээс хамаагүй илүү) БОЛОН
     sheet-ийн дээд ирмэгийн тод сүүдэр (дугуй булан + `elevation`-ийн
     ил харагдах градиент) хоёуланг нь баталгаажуулав.
+- **(2026-08-27) Харилцагчийн үйлчилгээ (тасалбар, §7 модуль #13) дууссан**
+  (backend + admin-web + Mobile) — текст-зөвхөн MVP, бодит цагийн чат.
+  §6.1 матрицад тусгайлан мөр байхгүй тул даалгаврын шууд зааврыг код
+  болгов, `feature/support-tickets` branch дээр (`origin/main`-аас).
+  - **Backend:** `SupportTicket` (customerId, orderId nullable,
+    subject, category enum, status enum default OPEN, resolvedAt/
+    closedAt) + `SupportMessage` (ticketId, senderId, body) Prisma
+    загвар + 2 migration (схем, RLS). ADR 005-ийн зарчмаар шинэ SECURITY
+    DEFINER функц ЗОХИОГООГҮЙ — `app_current_user_id()`/
+    `app_has_global_scope()`/`app_can_manage_branch()`-г л дахин
+    ашиглав, SALESPERSON-ийн inline EXISTS шалгалт
+    `return_requests_select`-ийн (Phase 3c) ЯГ ижил загвар.
+    ⚠️ **Чухал ялгаа (UPDATE-ийн global scope шалгалт):** OWNER-д
+    "зөвхөн R бүх" (UPDATE-д ОРОХГҮЙ) тул `support_tickets_update`
+    policy-д `app_has_global_scope()` (SUPER_ADMIN/OWNER/
+    ALL_BRANCH_MANAGER-г адилхан хамардаг) ашиглаж БОЛОХГҮЙ —
+    coupons_insert/delete-тэй (Phase 6) ЯГ ижил шалтгаанаар inline
+    `role IN ('SUPER_ADMIN','ALL_BRANCH_MANAGER') AND branchId IS NULL`
+    ашигласан. `support_messages_insert`-ийн WITH CHECK: CUSTOMER
+    ЗӨВХӨН `ticket.status != 'CLOSED'` үед л бичнэ (staff-д ийм
+    хязгаарлалт байхгүй, task-ийн шууд заавар). `src/support` модуль:
+    `POST/GET /support-tickets`, `GET /support-tickets/:id`
+    (мессежүүдтэй хамт), `POST /support-tickets/:ticketId/messages`,
+    `PATCH /support-tickets/:id` (staff-only статус шилжилт,
+    `support-ticket-state-machine.ts` — OPEN→{IN_PROGRESS,RESOLVED,
+    CLOSED}, IN_PROGRESS→{RESOLVED,CLOSED}, RESOLVED→{CLOSED,
+    IN_PROGRESS} (дахин нээх), CLOSED нь эцсийн). ⚠️ **Route param
+    заль:** `POST .../:ticketId/messages`-ийн param-ыг ЗОРИУДАА `:id`
+    БИШ `:ticketId` гэж нэрлэв (`ProductImageController`-ийн
+    `:productId`-тэй ижил зарчим) — `AuditInterceptor`-ийн анхдагч
+    `req.params.id` fallback ЭНД тасалбарын id-г (шинэ мессежийн ӨӨРИЙН
+    id-ийн оронд) recordId болгож санамсаргүй авчихгүй байх зорилготой.
+    WebSocket: шинэ gateway ЗОХИОГООГҮЙ — `OrderEventsGateway`-д
+    (`/ws/orders` namespace) `subscribe:ticket`/`support.message.created`
+    нэмж (`ticket:${id}` room, branchRoom ЗОРИУДАА ХАМРААГҮЙ — ерөнхий
+    orderId=null тасалбарт "аль салбар" гэдэг ойлголт байхгүй),
+    `OrderEventsPublisher`-ийн ижил `onCommit()`-гэйт загвараар нийтэлнэ.
+  - **Admin-web:** "Тусламжийн төв" (`/support` жагсаалт+шүүлт,
+    `/support/:id` чат UI — өөрийн/бусдын мессежийг өнгөөр ялгаж,
+    статус шилжих товч), `AuthContextValue`-д `userId` нэмэв (GET
+    /auth/me-д аль хэдийн байсан талбар, зөвхөн энэ Phase-д анх
+    хэрэглэгдэв — чатны "өөрийн мессеж" тодорхойлоход). `useSupportTicketEvents()`
+    (realtime.ts, шинэ ТУСДАА socket холболт — `useOrderEvents()`-ийн
+    staff-ийн автомат branchRoom-оор дамжихгүй тул тусдаа
+    `subscribe:ticket` шаардлагатай). Staff CLOSED тасалбарт ч мессеж
+    бичиж болно (зөвхөн CUSTOMER-д хязгаарлалттай, backend-тэй нийцнэ).
+  - **Mobile:** `features/support/` — Профайл tab-д "Тусламжийн төв" мөр
+    → `SupportTicketListScreen` (жагсаалт, skeleton/empty/error 3
+    төлөв) → `NewTicketScreen` (гарчиг/ангилал dropdown/эхний мессеж,
+    2 дараалсан дуудлага: `POST /support-tickets` → амжилттай бол
+    `POST .../messages`) → `SupportTicketDetailScreen` (чат,
+    `OrderTrackingScreen`-тэй ЯГ ижил "screen өөрөө WS client
+    lifecycle-аа удирддаг" зарчим — `OrderEventsClient`-д
+    `subscribeToTicket()` нэмэв, Riverpod provider ЗОРИУДАА
+    бичээгүй). "Өөрийн" мессежийг `senderId==ticket.customerId`-аар
+    (JWT/auth state-ээс userId унших ШААРДЛАГАГҮЙ — Mobile ЗӨВХӨН
+    харилцагчид зориулагдсан тул энэ харьцуулалт хангалттай) ялгана.
+    CLOSED тасалбарт композер идэвхгүй болж "Хаагдсан тасалбарт мессеж
+    бичих боломжгүй" гэсэн тайлбар харагдана. `OrderTrackingScreen`-д
+    "Тусламж хүсэх" товч (АЛЬ Ч захиалгын төлөвт харагдана — буцаалтын
+    "зөвхөн COMPLETED"-ээс ЯЛГААТАЙ, учир нь харилцагч хүлээж байх
+    үедээ ч тусламж хэрэгтэй байж болно) `/support/new`-руу
+    `orderId`+`category=ORDER_ISSUE`-г `extra` (Map) дамжуулна.
+    ⚠️ **Dart 3.8 lint заль:** `if (orderId != null) 'orderId': orderId`
+    маягийн collection literal дотрох nullable утгатай conditional
+    entry `use_null_aware_elements` lint-ийг өдөөдөг (`flutter analyze`
+    ЭНЭ орчинд info-г ч fatal (`exit 1`) гэж үздэг) — гэвч Dart-ийн
+    null-aware `?`-маркер ЗӨВХӨН КИЛ-ийн nullability-д зориулагдсан
+    (VALUE nullable үед key рүү `?` тавибал "key can't be null" алдаа
+    өгдөг), тул value-conditional entry-д ямар ч зөв `?`-syntax олдсонгүй
+    — imperative `final data = {...}; if (x != null) data['k'] = x;`
+    хэлбэрт шилжүүлж лint-ийг бүрмөсөн зайлсхийсэн (зөвхөн ЭНЭ нэг
+    тохиолдол, ерөнхий дүрэм биш — цаашид ижил lint таарвал эхлээд
+    key/value аль нь nullable болохыг ялгаж үз).
+  - ✅ **Android emulator (light+dark) БОЛОН бодит backend+WebSocket-оор
+    бүрэн урсгал баталгаажуулав:** `+97688112233` (dev test customer,
+    `[[dev-test-customer-account]]`) акаунтаар нэвтэрч → Профайл →
+    Тусламжийн төв (хоосон) → "+" → Latin текстээр (Cyrillic
+    `adb shell input text` дэмждэггүй тул) тасалбар үүсгэв → чат
+    дэлгэц дээр ӨӨРИЙН мессеж (indigo, баруун тал) харагдав → **staff
+    эрхээр (`super.admin@order-system.mn`-ийн ЖИНХЭНЭ Postgres id-аар
+    HS256 "customer-auth" загварын тест JWT mint хийж (e2e тестийн
+    `mintAccessToken()`-тэй ЯГ ижил арга — `TokenVerifierService`
+    identity-г зөвхөн `iss`-ээр ялгадаг тул authProvider=KEYCLOAK
+    хэрэглэгчид ч мөн адил ажиллана), `curl`-аар шууд `POST
+    /support-tickets/:id/messages` дуудаж (admin-web-ийн яг адилхан
+    HTTP action) staff хариу бичихэд**, Flutter апп ХИЙХГҮЙ ДАХИН
+    ачаалалгүйгээр (зөвхөн WebSocket) staff-ийн мессежийг ЗҮҮН талд
+    шууд харуулав → staff PATCH-аар CLOSED болгоход тасалбарын
+    жагсаалт+дэлгэрэнгүй дээр "Хаагдсан" badge (улаан) харагдаж,
+    композер "Хаагдсан тасалбарт мессеж бичих боломжгүй" болж идэвхгүй
+    болсныг баталгаажуулав (§7 модуль #13, 6б-ийн шаардлагатай тест UI
+    түвшинд давхар нотлогдов) → OrderTrackingScreen дээр "Тусламж
+    хүсэх" товч дарахад `NewTicketScreen`-д "Захиалга №...-тай
+    холбоотой" chip + ангилал автоматаар "Захиалгын асуудал" болж
+    урьдчилан бөглөгдсөнийг баталгаажуулав → Тохиргоо → Харанхуй горим
+    сонгож дээрх бүх дэлгэцийг (жагсаалт badge, чат bubble, идэвхгүй
+    композер) dark mode-д screenshot-оор давтан баталгаажуулав.
+    **Admin-web-ийн React рендер (Playwright-гүйгээр)** зөвхөн
+    vitest smoke тест (`SupportPage.test.tsx`, 3 тест;
+    `SupportTicketDetailPage.test.tsx`, 5 тест — `socket.io-client`
+    mock хийсэн, `Layout.test.tsx`-тэй ижил загвар) + build/lint-ээр
+    баталгаажсан — бодит browser-т (Playwright ad hoc суулгах цаг
+    хэмнэх үүднээс) ОРООГҮЙ, харин backend+WebSocket+Mobile-ийн бодит
+    интеграцийг дээрх `curl`-аар (admin-web-ийн ашигладаг ЯГ ЗАМ
+    endpoint-ийг шууд дуудсан) баталгаажуулсан нь эрсдэлийг хангалттай
+    бууруулсан гэж үзсэн.
+  - Тест: backend unit (`support-ticket-state-machine.spec.ts` 100%,
+    `support-ticket.service.spec.ts`, `order-events.gateway.spec.ts`/
+    `order-events.publisher.spec.ts`-д нэмэлт) + e2e
+    (`test/support.e2e-spec.ts`, 25 тест — RBAC дүр тус бүрээр (SUPER_ADMIN/
+    OWNER/BRANCH_ADMIN×2 салбар/SALESPERSON/CUSTOMER×2), **ЗААВАЛ
+    шаардлагатай (а) branch staff зөвхөн өөрийн салбарын orderId-той
+    тасалбарыг харна (HTTP + service давхаргыг тойрсон raw SQL хоёуланд
+    нь), (б) CLOSED тасалбарт CUSTOMER мессеж нэмэхийг оролдвол
+    татгалзана (HTTP 403 + raw SQL RLS INSERT rejection хоёуланд нь)**,
+    WebSocket `support.message.created` бодит TCP socket-оор). Mobile:
+    unit+widget (`support_ticket_list_screen_test.dart` 4,
+    `new_ticket_screen_test.dart` 4 — `FakeSupportRepository`,
+    `Dio`/HTTP давхарга бүрэн тойрсон; `SupportTicketDetailScreen`
+    OrderTrackingScreen-тэй ижил шалтгаанаар (бодит socket холболт)
+    widget тестгүй, Android emulator дээр л баталгаажуулсан).
+    Backend: `pnpm --filter api test` 46/46 suite (323/323),
+    `pnpm --filter api test:e2e` 19/19 suite (211/211, зөвхөн
+    `delivery-routing.e2e-spec.ts` локал `ROUTING_PROVIDER=osrm`
+    орчны тохиргооноос болж алгассан — өмнөх Phase-үүдийн "flaky биш,
+    орчны тохиргоо" тэмдэглэлтэй нийцнэ). admin-web: `vitest` 18/18
+    suite (46/46), `tsc -b`/`oxlint`/`vite build` цэвэр. Mobile:
+    `flutter analyze` 0 алдаа, `flutter test` 118 тест бүгд ногоон.
+  - **(яаралтай бус, тэмдэглэл)** `cleanup-branch-debris.ts`-ийн ЯГ ижил
+    "тогтмол давтамжтай гараар цэвэрлэдэг" зарчмыг `SupportTicket`/
+    `SupportMessage`-д ч ЗОРИУДААР ХЭРЭГЖҮҮЛЭЭГҮЙ (`cleanup-debris.ts`
+    скриптэд нэмээгүй) — `ReturnRequest`-тэй адил зарчмаар эдгээр нь
+    "хамааралтай" (dependent) өгөгдөл (`orderId` SetNull тул debris
+    Order устгагдвал тасалбар өөрөө хэвээр үлдэнэ) бөгөөд эзгүй
+    (orphaned) debris хуримтлал бага хэмжээний тул (нэг session бүрд
+    цөөхөн тасалбар) шаардлагагүй гэж үзсэн; хэрэв ирээдүйд их хэмжээгээр
+    (мянгаараа) хуримтлагдвал `[[dev-test-customer-account]]`-ийн
+    Order debris-тэй адилхан зарчмаар цэвэрлэх шаардлагатай болно.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

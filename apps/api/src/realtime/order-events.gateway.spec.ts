@@ -6,11 +6,13 @@ function buildDeps() {
 
   const branchFindMany = jest.fn().mockResolvedValue([]);
   const orderFindUnique = jest.fn().mockResolvedValue(null);
+  const supportTicketFindUnique = jest.fn().mockResolvedValue(null);
   const userBranchRoleFindMany = jest.fn().mockResolvedValue([]);
   const userFindUnique = jest.fn().mockResolvedValue(null);
   const fakeTx = {
     branch: { findMany: branchFindMany },
     order: { findUnique: orderFindUnique },
+    supportTicket: { findUnique: supportTicketFindUnique },
     userBranchRole: { findMany: userBranchRoleFindMany },
     user: { findUnique: userFindUnique },
   };
@@ -30,6 +32,7 @@ function buildDeps() {
       verify,
       branchFindMany,
       orderFindUnique,
+      supportTicketFindUnique,
       userBranchRoleFindMany,
       userFindUnique,
       runRequestTransaction,
@@ -176,6 +179,57 @@ describe('OrderEventsGateway.handleSubscribeOrder', () => {
     await gateway.handleSubscribeOrder(socket as never, 'o-other');
 
     expect(socket.join).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderEventsGateway.handleSubscribeTicket', () => {
+  it('RLS-ээр SupportTicket харагдвал ticket room-д нэгдэнэ', async () => {
+    const deps = buildDeps();
+    deps.mocks.supportTicketFindUnique.mockResolvedValue({ id: 't-1' });
+    const gateway = newGateway(deps);
+    const socket = buildSocket();
+    socket.data = { userId: 'cust-1', roles: ['CUSTOMER'] };
+
+    await gateway.handleSubscribeTicket(socket as never, 't-1');
+
+    expect(socket.join).toHaveBeenCalledWith('ticket:t-1');
+  });
+
+  it('RLS-ээр SupportTicket харагдахгүй бол (өөр хэрэглэгчийн тасалбар) room-д нэгддэггүй', async () => {
+    const deps = buildDeps();
+    deps.mocks.supportTicketFindUnique.mockResolvedValue(null);
+    const gateway = newGateway(deps);
+    const socket = buildSocket();
+    socket.data = { userId: 'cust-1', roles: ['CUSTOMER'] };
+
+    await gateway.handleSubscribeTicket(socket as never, 't-other');
+
+    expect(socket.join).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderEventsGateway.emitSupportMessageCreated', () => {
+  it('ticket:${ticketId} room руу event нийтэлнэ (branchRoom ХАМРААГҮЙ)', () => {
+    const deps = buildDeps();
+    const gateway = newGateway(deps);
+    const emit = jest.fn();
+    const to1 = jest.fn().mockReturnValue({ emit });
+    (gateway as unknown as { server: unknown }).server = { to: to1 };
+
+    gateway.emitSupportMessageCreated({
+      ticketId: 't-1',
+      messageId: 'm-1',
+      senderId: 'u-1',
+      body: 'Сайн байна уу',
+      createdAt: '2026-08-27T00:00:00.000Z',
+    });
+
+    expect(to1).toHaveBeenCalledWith('ticket:t-1');
+    expect(to1).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith(
+      'support.message.created',
+      expect.objectContaining({ ticketId: 't-1', body: 'Сайн байна уу' }),
+    );
   });
 });
 

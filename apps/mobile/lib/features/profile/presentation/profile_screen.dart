@@ -57,6 +57,14 @@ class ProfileScreen extends ConsumerWidget {
           const SizedBox(height: 24),
           const Divider(height: 1),
           ListTile(
+            key: const Key('profile_support_tile'),
+            leading: const Icon(Icons.support_agent_outlined),
+            title: const Text('Тусламжийн төв'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/support'),
+          ),
+          const Divider(height: 1),
+          ListTile(
             key: const Key('profile_settings_tile'),
             leading: const Icon(Icons.settings_outlined),
             title: const Text('Тохиргоо'),

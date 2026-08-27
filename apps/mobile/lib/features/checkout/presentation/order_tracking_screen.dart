@@ -149,9 +149,37 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                 const SizedBox(height: 16),
                 _ReturnSection(order: order),
               ],
+              const SizedBox(height: 16),
+              _SupportSection(orderId: order.id),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// §7 модуль #13, 11: захиалгын АЛЬ Ч төлөвт (COMPLETED-ээс ХЯЗГААРЛАГДАХГҮЙ
+/// — буцаалтаас ЯЛГААТАЙ, харилцагч захиалга хүлээж байх үедээ ч тусламж
+/// хэрэгтэй байж болно) харагдана. `/support/new` рүү orderId+
+/// category=ORDER_ISSUE-г урьдчилан бөглөж дамжуулна.
+class _SupportSection extends StatelessWidget {
+  const _SupportSection({required this.orderId});
+
+  final String orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        key: const Key('request_support_button'),
+        onPressed: () => context.push(
+          '/support/new',
+          extra: {'orderId': orderId, 'category': 'ORDER_ISSUE'},
+        ),
+        icon: const Icon(Icons.support_agent_outlined),
+        label: const Text('Тусламж хүсэх'),
       ),
     );
   }

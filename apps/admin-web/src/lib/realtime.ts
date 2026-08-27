@@ -35,6 +35,14 @@ export interface ReturnStatusChangedEvent {
   status: ReturnStatus;
 }
 
+export interface SupportMessageCreatedEvent {
+  ticketId: string;
+  messageId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+}
+
 // docs/plan.md §8 Phase 3b, Хэсэг A #4: apps/api/src/realtime/order-events.gateway.ts-тэй
 // холбогдож, PATCH /orders/:id/status амжилттай ажиллах бүрт "Захиалгууд"
 // (`/orders`, `/orders/:id`) дэлгэцийн TanStack Query cache-ийг автоматаар
@@ -85,4 +93,50 @@ export function useOrderEvents(accessToken: string | null): void {
       socket.disconnect();
     };
   }, [accessToken, queryClient]);
+}
+
+// §7 модуль #13: `support.message.created` event зөвхөн `ticket:${id}`
+// room-д нийтлэгддэг (branchRoom ХАМРААГҮЙ — ерөнхий, orderId=null
+// тасалбарт "аль салбар" гэдэг ойлголт байхгүй тул, order-events.gateway.ts-ийг
+// үз), тиймээс `useOrderEvents()`-ийн staff-ийн автомат branch room-оор
+// дамжихгүй — SupportTicketDetailPage нээгдэх мөчид ТУСДАА socket холболт
+// нээж, `subscribe:ticket`-ээр тодорхой ticketId хүсэлт болгоно (Mobile-ийн
+// OrderTrackingScreen-ий "screen бүр өөрийн WS client lifecycle-аа
+// удирддаг" зарчимтай адил).
+export function useSupportTicketEvents(
+  accessToken: string | null,
+  ticketId: string | null,
+): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!accessToken || !ticketId) {
+      return;
+    }
+
+    const socket: Socket = io(`${API_URL}/ws/orders`, {
+      auth: { token: accessToken },
+      transports: ["websocket"],
+    });
+
+    socket.on("connect", () => {
+      socket.emit("subscribe:ticket", ticketId);
+    });
+
+    socket.on(
+      "support.message.created",
+      (payload: SupportMessageCreatedEvent) => {
+        if (payload.ticketId !== ticketId) {
+          return;
+        }
+        void queryClient.invalidateQueries({
+          queryKey: ["support-ticket", ticketId],
+        });
+      },
+    );
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [accessToken, ticketId, queryClient]);
 }
