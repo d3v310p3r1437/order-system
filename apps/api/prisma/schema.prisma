@@ -79,6 +79,8 @@ model User {
   couponsCreated         Coupon[]           @relation("CouponCreatedBy")
   couponRedemptions      CouponRedemption[] @relation("CouponRedeemedBy")
   reviews                Review[]
+  supportTicketsCreated  SupportTicket[]    @relation("SupportTicketsCreated")
+  supportMessagesSent    SupportMessage[]   @relation("SupportMessagesSent")
 
   @@map("users")
 }
@@ -314,6 +316,7 @@ model Order {
 
   items            OrderItem[]
   couponRedemption CouponRedemption?
+  supportTickets   SupportTicket[]
 
   @@index([customerId])
   @@index([branchId])
@@ -517,4 +520,79 @@ model Review {
   @@unique([customerId, productId])
   @@index([productId])
   @@map("reviews")
+}
+
+// ─────────────────────────────────────────────────────────
+// Харилцагчийн үйлчилгээ (docs/plan.md §7 модуль #13) — текст-зөвхөн MVP,
+// бодит цагийн чат. §6.1 матрицад тусгайлан мөр байхгүй тул даалгаврын
+// шууд зааврыг код болгов, доорх enable_support_tickets_rls migration-ийг үз.
+// ─────────────────────────────────────────────────────────
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketCategory {
+  ORDER_ISSUE
+  PAYMENT_ISSUE
+  DELIVERY_ISSUE
+  PRODUCT_QUESTION
+  ACCOUNT_ISSUE
+  OTHER
+}
+
+model SupportTicket {
+  id         String @id @default(uuid())
+  customerId String
+  customer   User   @relation("SupportTicketsCreated", fields: [customerId], references: [id], onDelete: Restrict)
+
+  // Заавал биш — тодорхой захиалгатай холбоотой тасалбар (жиш: Mobile-ийн
+  // OrderTrackingScreen "Тусламж хүсэх" товч) БОЛОН ерөнхий асуулт
+  // (orderId=null) хоёуланг дэмжинэ. staff-ийн харах/статус шинэчлэх эрх
+  // (RLS) ЗӨВХӨН orderId IS NOT NULL үед л (тухайн Order-ийн салбараар)
+  // олгогдоно — ерөнхий тасалбарыг зөвхөн global-scope дүр (SUPER_ADMIN/
+  // ALL_BRANCH_MANAGER, OWNER-д зөвхөн R) харна (доорх
+  // enable_support_tickets_rls migration-ийг үз). Order.orderId нь
+  // nullable (заавал биш холбоос) тул Order устгагдвал (одоогоор ийм
+  // endpoint байхгүй ч) тасалбар "эзэнгүй" болохгүй, зөвхөн холбоос нь
+  // цэвэрлэгдэнэ (SetNull) — тасалбар өөрөө хэвээр үлдэнэ.
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  subject  String                @db.VarChar(200)
+  category SupportTicketCategory
+  status   SupportTicketStatus   @default(OPEN)
+
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  closedAt   DateTime?
+
+  messages SupportMessage[]
+
+  @@index([customerId])
+  @@index([orderId])
+  @@map("support_tickets")
+}
+
+// Хэрэглэгч (харилцагч эсвэл staff) бичсэн мессеж бүр — SupportTicket-ийн
+// "хамааралтай" (dependent) өгөгдөл (ProductImage/Review-той адил
+// зарчмаар Cascade), order_items/audit_logs-тэй адил өөрчлөгдөшгүй
+// түүхэн бичлэг тул DELETE policy ЗОРИУДАА байхгүй.
+model SupportMessage {
+  id       String        @id @default(uuid())
+  ticketId String
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  senderId String
+  sender   User   @relation("SupportMessagesSent", fields: [senderId], references: [id], onDelete: Restrict)
+
+  body String @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("support_messages")
 }

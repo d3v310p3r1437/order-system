@@ -5,6 +5,7 @@ import type {
   OrderPaymentConfirmedPayload,
   OrderStatusChangedPayload,
   ReturnStatusChangedPayload,
+  SupportMessageCreatedPayload,
 } from './order-events.types.js';
 
 // OrderService-ийн ганц холбоос энэ модультай — `OrderEventsGateway`
@@ -42,6 +43,12 @@ export class OrderEventsPublisher {
   publishReturnStatusChanged(payload: ReturnStatusChangedPayload): void {
     this.requestContext.onCommit(() => {
       this.gateway.emitReturnStatusChanged(payload);
+    });
+  }
+
+  publishSupportMessageCreated(payload: SupportMessageCreatedPayload): void {
+    this.requestContext.onCommit(() => {
+      this.gateway.emitSupportMessageCreated(payload);
     });
   }
 }

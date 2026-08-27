@@ -114,6 +114,17 @@ export const REVIEW_MODERATION_ROLES = [
   "ALL_BRANCH_MANAGER",
 ];
 
+// ↔ apps/api/src/support/support-ticket.controller.ts (STATUS_UPDATE_ROLES)
+// — §7 модуль #13-ийн даалгаврын шууд заавар "staff-only": OWNER (зөвхөн
+// R бүх) БОЛОН CUSTOMER орохгүй, support_tickets_update RLS-тэй тохирно.
+export const SUPPORT_TICKET_STATUS_UPDATE_ROLES = [
+  "SUPER_ADMIN",
+  "ALL_BRANCH_MANAGER",
+  "BRANCH_ADMIN",
+  "BRANCH_MANAGER",
+  "SALESPERSON",
+];
+
 export const ROLE_LABELS: Record<string, string> = {
   SUPER_ADMIN: "Супер админ",
   OWNER: "Дэлгүүрийн эзэн",

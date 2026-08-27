@@ -23,6 +23,9 @@ import '../features/returns/presentation/return_request_screen.dart';
 import '../features/reviews/domain/review.dart';
 import '../features/reviews/presentation/product_reviews_screen.dart';
 import '../features/reviews/presentation/review_form_screen.dart';
+import '../features/support/presentation/new_ticket_screen.dart';
+import '../features/support/presentation/support_ticket_detail_screen.dart';
+import '../features/support/presentation/support_ticket_list_screen.dart';
 import 'home_screen.dart';
 import 'main_shell.dart';
 import 'settings_screen.dart';
@@ -162,6 +165,28 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/orders/:id',
         builder: (context, state) =>
             OrderTrackingScreen(orderId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/support',
+        builder: (context, state) => const SupportTicketListScreen(),
+      ),
+      GoRoute(
+        path: '/support/new',
+        // OrderTrackingScreen-ий "Тусламж хүсэх" товч (§7 модуль #13, 11)
+        // orderId+category=ORDER_ISSUE-г `extra`-аар урьдчилан дамжуулна.
+        builder: (context, state) {
+          final extra = state.extra as Map<String, String>?;
+          return NewTicketScreen(
+            initialOrderId: extra?['orderId'],
+            initialCategory: extra?['category'],
+          );
+        },
+      ),
+      GoRoute(
+        path: '/support/:id',
+        builder: (context, state) => SupportTicketDetailScreen(
+          ticketId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );

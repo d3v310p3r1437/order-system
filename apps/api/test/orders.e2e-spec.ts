@@ -662,7 +662,9 @@ describe('Orders (e2e)', () => {
         .get(`/orders/${activeOrderId}`)
         .set('Authorization', `Bearer ${customerToken}`)
         .expect(200);
-      expect((activeDetailRes.body as HydratedOrderBody).items[0].myReview).toBeNull();
+      expect(
+        (activeDetailRes.body as HydratedOrderBody).items[0].myReview,
+      ).toBeNull();
 
       const listRes = await request(app.getHttpServer())
         .get('/orders')

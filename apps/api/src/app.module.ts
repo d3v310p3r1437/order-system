@@ -23,6 +23,7 @@ import { ReturnModule } from './returns/return.module.js';
 import { ReviewModule } from './reviews/review.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { StaffModule } from './staff/staff.module.js';
+import { SupportModule } from './support/support.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { StaffModule } from './staff/staff.module.js';
     ReturnModule,
     ReportModule,
     ReviewModule,
+    SupportModule,
   ],
   controllers: [AppController, DebugController, HealthController],
   providers: [

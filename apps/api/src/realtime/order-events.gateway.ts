@@ -18,11 +18,14 @@ import {
   ORDER_PAYMENT_CONFIRMED_EVENT,
   ORDER_STATUS_CHANGED_EVENT,
   RETURN_STATUS_CHANGED_EVENT,
+  SUPPORT_MESSAGE_CREATED_EVENT,
   branchRoom,
   orderRoom,
+  ticketRoom,
   type OrderPaymentConfirmedPayload,
   type OrderStatusChangedPayload,
   type ReturnStatusChangedPayload,
+  type SupportMessageCreatedPayload,
 } from './order-events.types.js';
 
 interface SocketData {
@@ -166,6 +169,25 @@ export class OrderEventsGateway
     }
   }
 
+  // §7 модуль #13: Flutter SupportTicketDetailScreen тасалбарынхаа чатыг
+  // нээх мөчид дуудна. `support_tickets_select` RLS-тэй ижил "харагдах
+  // эсэх" шалгалтыг (шинэ SECURITY DEFINER функцгүйгээр) дамжуулна —
+  // `verifyOrderAccess`-тэй ЯГ ижил загвар.
+  @SubscribeMessage('subscribe:ticket')
+  async handleSubscribeTicket(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() ticketId: unknown,
+  ): Promise<void> {
+    const data = client.data as SocketData | undefined;
+    if (!data?.userId || typeof ticketId !== 'string' || !ticketId) {
+      return;
+    }
+    const canView = await this.verifyTicketAccess(data.userId, ticketId);
+    if (canView) {
+      await client.join(ticketRoom(ticketId));
+    }
+  }
+
   // OrderEventsPublisher-ээс (зөвхөн RLS transaction амжилттай commit
   // хийгдсэний дараа, docs/plan.md Хэсэг A #2) дуудагдана.
   emitOrderStatusChanged(payload: OrderStatusChangedPayload): void {
@@ -192,6 +214,17 @@ export class OrderEventsGateway
       .to(orderRoom(payload.orderId))
       .to(branchRoom(payload.branchId))
       .emit(RETURN_STATUS_CHANGED_EVENT, payload);
+  }
+
+  // SupportTicketService.addMessage()-ээс (зөвхөн RLS transaction
+  // амжилттай commit хийгдсэний дараа) дуудагдана — §7 модуль #13.
+  // branchRoom ЗОРИУДАА ХАМРААГҮЙ (Order/Return-аас ЯЛГААТАЙ): тасалбар
+  // ерөнхий (orderId=null) байж болно, тухайн үед "аль салбар" гэдэг
+  // ойлголт байхгүй тул зөвхөн ticketRoom-оор л хязгаарлав.
+  emitSupportMessageCreated(payload: SupportMessageCreatedPayload): void {
+    this.server
+      .to(ticketRoom(payload.ticketId))
+      .emit(SUPPORT_MESSAGE_CREATED_EVENT, payload);
   }
 
   private extractToken(client: Socket): string | null {
@@ -226,5 +259,20 @@ export class OrderEventsGateway
       tx.order.findUnique({ where: { id: orderId }, select: { id: true } }),
     );
     return order !== null;
+  }
+
+  // `support_tickets_select` RLS-ийг л дамжуулна (verifyOrderAccess-тэй
+  // ижил зарчим) — шинэ SECURITY DEFINER функц шаардлагагүй.
+  private async verifyTicketAccess(
+    userId: string,
+    ticketId: string,
+  ): Promise<boolean> {
+    const ticket = await this.prisma.runRequestTransaction(userId, (tx) =>
+      tx.supportTicket.findUnique({
+        where: { id: ticketId },
+        select: { id: true },
+      }),
+    );
+    return ticket !== null;
   }
 }

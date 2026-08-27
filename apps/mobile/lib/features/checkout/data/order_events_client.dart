@@ -36,6 +36,13 @@ class OrderEventsClient {
     _socket?.emit('subscribe:order', orderId);
   }
 
+  /// §7 модуль #13: `support_tickets_select` RLS-ээр (харилцагч: өөрийнх)
+  /// харагдвал л сервэр тал `ticket:${ticketId}` room-д нэгдүүлнэ —
+  /// `subscribeToOrder`-тэй ЯГ ижил зарчим.
+  void subscribeToTicket(String ticketId) {
+    _socket?.emit('subscribe:ticket', ticketId);
+  }
+
   void dispose() {
     _socket?.dispose();
     _socket = null;

@@ -7,7 +7,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, type OrderStatus, type Review, type RoleName } from '@prisma/client';
+import {
+  Prisma,
+  type OrderStatus,
+  type Review,
+  type RoleName,
+} from '@prisma/client';
 import { CartService, type CartItemRecord } from '../cart/cart.service.js';
 import { resolveEffectivePrice } from '../catalog/inventory-effective.util.js';
 import {

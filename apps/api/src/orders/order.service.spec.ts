@@ -101,7 +101,9 @@ function buildCouponServiceMock() {
 
 function buildMinioServiceMock() {
   return {
-    getPublicUrl: jest.fn((objectKey: string) => `https://minio.local/bucket/${objectKey}`),
+    getPublicUrl: jest.fn(
+      (objectKey: string) => `https://minio.local/bucket/${objectKey}`,
+    ),
   };
 }
 

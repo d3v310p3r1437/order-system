@@ -37,10 +37,29 @@ export interface ReturnStatusChangedPayload {
 
 export const RETURN_STATUS_CHANGED_EVENT = 'return.status_changed';
 
+// §7 модуль #13 (Харилцагчийн үйлчилгээ): SupportMessage амжилттай
+// нэмэгдэх бүрт нийтлэгдэнэ (ticketRoom-д, доор) — Order/Return-ийн
+// branchRoom-той ЯЛГААТАЙ, тасалбар staff-ийн ерөнхий (orderId=null)
+// хувилбарт "аль салбар" гэдэг ойлголт байдаггүй тул зөвхөн ticketRoom-оор
+// хязгаарлав.
+export interface SupportMessageCreatedPayload {
+  ticketId: string;
+  messageId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+}
+
+export const SUPPORT_MESSAGE_CREATED_EVENT = 'support.message.created';
+
 export function orderRoom(orderId: string): string {
   return `order:${orderId}`;
 }
 
 export function branchRoom(branchId: string): string {
   return `branch:${branchId}`;
+}
+
+export function ticketRoom(ticketId: string): string {
+  return `ticket:${ticketId}`;
 }

@@ -19,6 +19,11 @@ const NAV_ITEMS = [
   { to: "/orders", label: "Захиалгууд" },
   { to: "/returns", label: "Буцаалтууд" },
   { to: "/coupons", label: "Купон" },
+  // support_tickets_select RLS-ийн дагуу ЯМАР Ч staff дүр (branch-scoped ч
+  // гэсэн, өөрийн салбарын orderId-той тасалбар харна) наад зах нь ЗАРИМ
+  // тасалбар харах эрхтэй тул (Захиалгууд/Буцаалтуудтай адил) роль-оор
+  // нуухгүй.
+  { to: "/support", label: "Тусламжийн төв" },
   // Category/Product-той адил "бүх нэвтэрсэн" RLS-тэй боловч модераци
   // (устгах) дэлгэц зөвхөн глобал-эрхийн дүрд зориулагдсан тул нуусан.
   { to: "/reviews", label: "Сэтгэгдэл", roles: REVIEW_MODERATION_ROLES },

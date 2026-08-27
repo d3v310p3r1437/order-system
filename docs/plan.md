@@ -781,7 +781,23 @@ SET LOCAL app.accessible_branches = $3;
       амжилттай илгээвэл `OrderListNotifier.applyLocalReview()`-оор
       дахин API дуудахгүйгээр UI-г шууд шинэчилнэ. Дэлгэрэнгүй:
       CLAUDE.md-ийн "Одоогийн Phase" хэсэг.
-- [ ] Харилцагчийн үйлчилгээний тасалбар
+- [x] Харилцагчийн үйлчилгээний тасалбар (2026-08-27, §7 модуль #13) —
+      текст-зөвхөн MVP, бодит цагийн чат. `SupportTicket`/`SupportMessage`
+      Prisma загвар + 2 migration (схем, RLS — §6.1 матрицад тусгайлан
+      мөр байхгүй тул даалгаврын шууд зааврыг код болгов: SUPER_ADMIN/
+      ALL_BRANCH_MANAGER бүх, OWNER зөвхөн R бүх, BRANCH_ADMIN/
+      BRANCH_MANAGER/SALESPERSON зөвхөн ӨӨРИЙН салбарын orderId-той
+      тасалбар, CUSTOMER CR зөвхөн өөрийнх). `src/support` модуль —
+      `POST/GET /support-tickets`, `GET /support-tickets/:id`
+      (мессежүүдтэй хамт), `POST /support-tickets/:ticketId/messages`,
+      `PATCH /support-tickets/:id` (staff-only статус шилжилт).
+      WebSocket `support.message.created` (`OrderEventsGateway`-г дахин
+      ашиглав, шинэ gateway зохиогоогүй — `ticket:${id}` room). Admin-web:
+      "Тусламжийн төв" (`/support`, `/support/:id`) жагсаалт+чат UI.
+      Mobile: Профайл → "Тусламжийн төв" → SupportTicketListScreen/
+      NewTicketScreen/SupportTicketDetailScreen, OrderTrackingScreen-д
+      "Тусламж хүсэх" товч (orderId+category=ORDER_ISSUE урьдчилан
+      бөглөнө). Дэлгэрэнгүй: CLAUDE.md-ийн "Одоогийн Phase" хэсэг.
 - [x] Аудит лог **UI** (админ самбарт хэн юу хийснийг харах хуудас) — §7 модуль #15-ыг эндээс дуусгана
       (2026-08-26, `super.admin@order-system.mn`-ийн DB мөр дутуу байсан
       инцидентээс — CLAUDE.md-ийг үз — үүдэлтэй). ⚠️ **§6.1 матрицын
