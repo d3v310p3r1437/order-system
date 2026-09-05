@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/catalog/domain/availability.dart';
 import 'package:mobile/features/catalog/presentation/catalog_providers.dart';
 
 import '../../../support/fake_catalog_repository.dart';
@@ -80,5 +81,22 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(container.read(catalogSearchProvider).hasError, isTrue);
+  });
+
+  test('setStatus() СҮЛЖЭЭГЭЭР дахин ДУУДАХГҮЙ, сүүлд ирсэн raw үр дүнгээс клиент талд шүүнэ', () async {
+    repository.searchHandler = (q, c) => [
+      buildTestProduct(id: 'in-stock', status: AvailabilityStatus.inStock),
+      buildTestProduct(id: 'pre-order', status: AvailabilityStatus.preOrder),
+    ];
+    await container.read(catalogSearchProvider.future);
+    final notifier = container.read(catalogSearchProvider.notifier);
+    expect(repository.searchCallCount, 1);
+
+    notifier.setStatus(AvailabilityStatus.inStock);
+
+    // Сүлжээгээр дахин ДУУДАГДААГҮЙ — зөвхөн клиент талд шүүгдсэн.
+    expect(repository.searchCallCount, 1);
+    final state = container.read(catalogSearchProvider).requireValue;
+    expect(state.map((p) => p.id), ['in-stock']);
   });
 }

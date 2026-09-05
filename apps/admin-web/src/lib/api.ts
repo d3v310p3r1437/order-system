@@ -88,6 +88,9 @@ export interface ProductVariant {
   isActive: boolean;
   defaultPreOrderEnabled: boolean;
   defaultPreOrderLeadDays: number | null;
+  color: string | null;
+  size: string | null;
+  attributes: Record<string, string> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +106,9 @@ export interface ProductVariantInput {
   isActive?: boolean;
   defaultPreOrderEnabled?: boolean;
   defaultPreOrderLeadDays?: number;
+  color?: string;
+  size?: string;
+  attributes?: Record<string, string>;
 }
 
 export type ProductVariantUpdateInput = Partial<

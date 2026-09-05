@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/providers.dart';
 import '../data/catalog_repository.dart';
+import '../domain/availability.dart';
 import '../domain/category.dart';
 import '../domain/product.dart';
 
@@ -19,38 +20,48 @@ final categoriesProvider = FutureProvider<List<Category>>((ref) {
 
 const _searchDebounce = Duration(milliseconds: 300);
 
-/// Хайлтын query + сонгосон ангилал — `CatalogSearchNotifier`-ийн дотоод
-/// filter төлөв, тестэд шууд харьцуулж болохын тулд тусдаа immutable класс
-/// болгосон.
+/// Хайлтын query + сонгосон ангилал/availability — `CatalogSearchNotifier`-ийн
+/// дотоод filter төлөв, тестэд шууд харьцуулж болохын тулд тусдаа immutable
+/// класс болгосон. `status` (availability pill) нь backend-ийн Meilisearch
+/// индекс дэх ЯМАР Ч талбар БИШ (branchId-аас хамааралтай ДИНАМИК утга тул
+/// индекслэгддэггүй) — иймд ЗӨВХӨН клиент талд, сүлжээгээр ирсэн үр дүнг
+/// дараа нь шүүхэд ашиглагдана (`CatalogSearchNotifier._applyStatusFilter`).
 class CatalogFilter {
-  const CatalogFilter({this.query = '', this.categoryId});
+  const CatalogFilter({this.query = '', this.categoryId, this.status});
 
   final String query;
   final String? categoryId;
+  final AvailabilityStatus? status;
 
   CatalogFilter copyWithQuery(String query) =>
-      CatalogFilter(query: query, categoryId: categoryId);
+      CatalogFilter(query: query, categoryId: categoryId, status: status);
 
   CatalogFilter copyWithCategory(String? categoryId) =>
-      CatalogFilter(query: query, categoryId: categoryId);
+      CatalogFilter(query: query, categoryId: categoryId, status: status);
+
+  CatalogFilter copyWithStatus(AvailabilityStatus? status) =>
+      CatalogFilter(query: query, categoryId: categoryId, status: status);
 
   @override
   bool operator ==(Object other) =>
       other is CatalogFilter &&
       other.query == query &&
-      other.categoryId == categoryId;
+      other.categoryId == categoryId &&
+      other.status == status;
 
   @override
-  int get hashCode => Object.hash(query, categoryId);
+  int get hashCode => Object.hash(query, categoryId, status);
 }
 
 /// Каталогийн жагсаалт/хайлтын үр дүн — query өөрчлөгдөхөд `_searchDebounce`
-/// хугацаагаар хүлээгээд л (300мс) дуудна, ангилал сонгоход ШУУД (debounce-
-/// гүй) дуудна — хэрэглэгч ангилал дарахад "хариу удаашрах" мэдрэмж
-/// өгөхгүйн тулд.
+/// хугацаагаар хүлээгээд л (300мс) дуудна, ангилал сонгоход ШУУД
+/// (debounce-гүй) дуудна — хэрэглэгч chip дарахад "хариу удаашрах"
+/// мэдрэмж өгөхгүйн тулд. availability (status) chip нь СҮЛЖЭЭГЭЭР дахин
+/// ДУУДАХГҮЙ, сүүлд ирсэн raw үр дүнгээс л клиент талд дахин шүүнэ.
 class CatalogSearchNotifier extends AsyncNotifier<List<Product>> {
   Timer? _debounceTimer;
   CatalogFilter _filter = const CatalogFilter();
+  List<Product>? _lastRawResult;
 
   CatalogFilter get filter => _filter;
 
@@ -59,7 +70,7 @@ class CatalogSearchNotifier extends AsyncNotifier<List<Product>> {
     ref.onDispose(() {
       _debounceTimer?.cancel();
     });
-    return _fetch(_filter);
+    return _fetchAndApply(_filter);
   }
 
   void setQuery(String query) {
@@ -74,17 +85,42 @@ class CatalogSearchNotifier extends AsyncNotifier<List<Product>> {
     _reload(_filter);
   }
 
+  void setStatus(AvailabilityStatus? status) {
+    _debounceTimer?.cancel();
+    _filter = _filter.copyWithStatus(status);
+    final raw = _lastRawResult;
+    if (raw == null) {
+      // Сүлжээний анхны үр дүн хараахан ирээгүй (жиш: build() хараахан
+      // дуусаагүй) бол дахин дуудна — эс бөгөөс "хоосон" төлөвт зогсоно.
+      _reload(_filter);
+      return;
+    }
+    state = AsyncData(_applyStatusFilter(raw, status));
+  }
+
   Future<void> refresh() => _reload(_filter);
 
   Future<void> _reload(CatalogFilter filter) async {
     state = const AsyncLoading<List<Product>>();
-    state = await AsyncValue.guard(() => _fetch(filter));
+    state = await AsyncValue.guard(() => _fetchAndApply(filter));
   }
 
-  Future<List<Product>> _fetch(CatalogFilter filter) {
-    return ref
+  Future<List<Product>> _fetchAndApply(CatalogFilter filter) async {
+    final result = await ref
         .read(catalogRepositoryProvider)
         .search(q: filter.query, categoryId: filter.categoryId);
+    _lastRawResult = result;
+    return _applyStatusFilter(result, filter.status);
+  }
+
+  List<Product> _applyStatusFilter(
+    List<Product> result,
+    AvailabilityStatus? status,
+  ) {
+    if (status == null) return result;
+    return result
+        .where((p) => p.aggregateAvailability.status == status)
+        .toList();
   }
 }
 

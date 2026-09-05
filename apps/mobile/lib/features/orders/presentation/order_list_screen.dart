@@ -68,13 +68,35 @@ class _OrderListScreenState extends ConsumerState<OrderListScreen>
     final ordersAsync = ref.watch(orderListProvider);
     final notifier = ref.read(orderListProvider.notifier);
 
+    // Идэвхтэй/Түүх tab-ийн тоог AppBar.bottom (build()-ийн эхэнд, `orders`
+    // ирэхээс өмнө) тодорхойлох ёстой тул `ordersAsync.maybeWhen(data:...)`-аас
+    // тооцно — ачаалж байгаа/алдаатай үед тоогүй ("Идэвхтэй"/"Түүх" гэсэн
+    // хуучин энгийн шошго хэвээр).
+    final orders = ordersAsync.maybeWhen(
+      data: (orders) => orders,
+      orElse: () => null,
+    );
+    final activeCount = orders
+        ?.where((o) => _activeStatuses.contains(o.status))
+        .length;
+    final historyCount = orders
+        ?.where((o) => !_activeStatuses.contains(o.status))
+        .length;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Захиалгууд'),
         actions: const [CartAppBarAction()],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [Tab(text: 'Идэвхтэй'), Tab(text: 'Түүх')],
+          tabs: [
+            Tab(
+              text: activeCount == null ? 'Идэвхтэй' : 'Идэвхтэй ($activeCount)',
+            ),
+            Tab(
+              text: historyCount == null ? 'Түүх' : 'Түүх ($historyCount)',
+            ),
+          ],
         ),
       ),
       body: ordersAsync.when(
