@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { ApiError, staffLogin } from "@/lib/api";
+import { useBranding } from "@/lib/use-branding";
+import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +14,8 @@ interface LoginScreenProps {
 export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const { data: branding } = useBranding();
+  const storeName = branding?.storeName ?? "Захиалгын систем";
 
   const loginMutation = useMutation({
     mutationFn: () => staffLogin(email, password),
@@ -45,10 +49,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
           }}
         />
         <div className="relative flex items-center gap-2 text-lg font-semibold tracking-tight">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-white/15 text-sm font-bold">
-            ЗС
-          </span>
-          Захиалгын систем
+          <BrandMark className="size-8" fallbackVariant="white" />
+          {storeName}
         </div>
         <div className="relative space-y-3">
           <h1 className="text-3xl font-semibold tracking-tight text-balance">
@@ -69,10 +71,8 @@ export function LoginScreen({ onLoginSuccess }: LoginScreenProps) {
         <div className="w-full max-w-sm space-y-8">
           <div className="space-y-1.5 lg:hidden">
             <div className="flex items-center gap-2 text-base font-semibold tracking-tight">
-              <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-                ЗС
-              </span>
-              Захиалгын систем
+              <BrandMark />
+              {storeName}
             </div>
           </div>
 

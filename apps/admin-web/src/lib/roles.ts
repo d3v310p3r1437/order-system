@@ -60,6 +60,12 @@ export const RETURN_REVIEW_ROLES = [
 // — system_settings_update RLS (app_has_global_scope())-тэй тохирно.
 export const RETURN_FEE_WRITE_ROLES = ["SUPER_ADMIN", "OWNER", "ALL_BRANCH_MANAGER"];
 
+// ↔ apps/api/src/settings/branding.controller.ts (BRANDING_WRITE_ROLES) —
+// system_settings_update RLS-ийн app_has_global_scope()-оос ЗОРИУДАА
+// нарийсгасан (ALL_BRANCH_MANAGER ороогүй), §7 "Дэлгүүрийн нэр/лого"
+// даалгаврын шууд заавар.
+export const BRANDING_WRITE_ROLES = ["SUPER_ADMIN", "OWNER"];
+
 // ↔ apps/api/src/reports/report.controller.ts (REPORT_VIEW_ROLES) — §6.1
 // матрицын "Тайлан/аналитик" мөр: SALESPERSON/CUSTOMER-д "—" тул ороогүй.
 export const REPORT_VIEW_ROLES = [

@@ -100,6 +100,30 @@ dev_dependencies:
   # Mock backend/dio-д зориулж unit тестэд
   mocktail: ^1.0.4
 
+  # Гар утасны апп icon (СТАТИК, build-ийн үед л үүсдэг — динамик
+  # branding (§7 "Дэлгүүрийн нэр/лого")-аас ЯЛГААТАЙ, өөрчлөхөд дахин
+  # build+App Store/Google Play дахин илгээх шаардлагатай).
+  flutter_launcher_icons: ^0.14.4
+
+# flutter_launcher_icons тохиргоо — `flutter pub run flutter_launcher_icons`
+# ажиллуулахад android/ios-ийн бодит icon файлуудыг үүсгэнэ.
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "../../docs/assets/store_logo_square_1024.png"
+  # Android adaptive icon (Android 8.0+): foreground нь тунгалаг дэвсгэртэй,
+  # лого дүрсийг ~70%-иар жижигрүүлж (ирмэгээс ~15% зай) төвд нь тавьсан
+  # (assets/icon/logo_foreground.png, PowerShell/System.Drawing-ээр
+  # source лого зургаас үүсгэсэн). background_color нь лого зургийн
+  # дэвсгэр өнгөтэй (#F7F7ED) яг таарна — foreground-ийн тунгалаг
+  # ирмэг background-той шугамгүй нийлнэ.
+  adaptive_icon_background: "#F7F7ED"
+  adaptive_icon_foreground: "assets/icon/logo_foreground.png"
+  # iOS icon альфа/тунгалагтай байж болохгүй тул — эх лого зураг аль
+  # хэдийн alpha channel-гүй (opaque RGB, `file` командаар баталгаажуулсан)
+  # тул шууд ашиглаж болно, хөрвүүлэлт шаардлагагүй.
+  remove_alpha_ios: true
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
