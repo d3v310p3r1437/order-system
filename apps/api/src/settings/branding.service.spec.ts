@@ -1,9 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 import { BrandingService } from './branding.service.js';
 
+interface UpsertArgs {
+  where: { key: string };
+  create: { key: string; value: string; updatedByUserId: string };
+  update: { value: string; updatedByUserId: string };
+}
+
 function buildPrismaMock() {
   const queryRaw = jest.fn();
-  const upsert = jest.fn();
+  const upsert = jest.fn<
+    Promise<{ key: string; value: string }>,
+    [UpsertArgs]
+  >();
   const tx = { $queryRaw: queryRaw, systemSetting: { upsert } };
   const prisma = {
     get tx() {
@@ -16,7 +25,9 @@ function buildPrismaMock() {
 function buildMinioMock() {
   return {
     upload: jest.fn().mockResolvedValue(undefined),
-    getPublicUrl: jest.fn((key: string) => `http://minio.local/product-images/${key}`),
+    getPublicUrl: jest.fn(
+      (key: string) => `http://minio.local/product-images/${key}`,
+    ),
   };
 }
 
@@ -30,7 +41,9 @@ function newService(prisma: unknown, minio = buildMinioMock()) {
   };
 }
 
-function buildFile(overrides: Partial<{ mimetype: string; size: number }> = {}) {
+function buildFile(
+  overrides: Partial<{ mimetype: string; size: number }> = {},
+) {
   return {
     buffer: Buffer.from('fake-logo-bytes'),
     mimetype: overrides.mimetype ?? 'image/png',
@@ -103,16 +116,26 @@ describe('BrandingService.updateBranding()', () => {
 
   it('зөвхөн storeName өгвөл MinIO-руу upload хийхгүй, STORE_NAME-г л upsert хийнэ', async () => {
     const { prisma, mocks } = buildPrismaMock();
-    mocks.queryRaw.mockResolvedValue([{ key: 'STORE_NAME', value: 'Шинэ нэр' }]);
+    mocks.queryRaw.mockResolvedValue([
+      { key: 'STORE_NAME', value: 'Шинэ нэр' },
+    ]);
     const { service, minio } = newService(prisma);
 
-    const result = await service.updateBranding('Шинэ нэр', undefined, 'user-1');
+    const result = await service.updateBranding(
+      'Шинэ нэр',
+      undefined,
+      'user-1',
+    );
 
     expect(minio.upload).not.toHaveBeenCalled();
     expect(mocks.upsert).toHaveBeenCalledTimes(1);
     expect(mocks.upsert).toHaveBeenCalledWith({
       where: { key: 'STORE_NAME' },
-      create: { key: 'STORE_NAME', value: 'Шинэ нэр', updatedByUserId: 'user-1' },
+      create: {
+        key: 'STORE_NAME',
+        value: 'Шинэ нэр',
+        updatedByUserId: 'user-1',
+      },
       update: { value: 'Шинэ нэр', updatedByUserId: 'user-1' },
     });
     expect(result.storeName).toBe('Шинэ нэр');
@@ -121,20 +144,28 @@ describe('BrandingService.updateBranding()', () => {
   it('файл өгвөл MinIO-руу upload хийж, STORE_LOGO_URL-г public URL-ээр upsert хийнэ', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.queryRaw.mockResolvedValue([
-      { key: 'STORE_LOGO_URL', value: 'http://minio.local/product-images/branding/x.png' },
+      {
+        key: 'STORE_LOGO_URL',
+        value: 'http://minio.local/product-images/branding/x.png',
+      },
     ]);
     const { service, minio } = newService(prisma);
 
-    const result = await service.updateBranding(undefined, buildFile(), 'user-1');
+    const result = await service.updateBranding(
+      undefined,
+      buildFile(),
+      'user-1',
+    );
 
     expect(minio.upload).toHaveBeenCalledTimes(1);
     const [objectKey] = minio.upload.mock.calls[0] as [string, Buffer, string];
     expect(objectKey).toMatch(/^branding\/.+\.png$/);
-    expect(mocks.upsert).toHaveBeenCalledWith({
-      where: { key: 'STORE_LOGO_URL' },
-      create: expect.objectContaining({ key: 'STORE_LOGO_URL' }),
-      update: expect.any(Object),
-    });
+    expect(mocks.upsert).toHaveBeenCalledTimes(1);
+    const [upsertArgs] = mocks.upsert.mock.calls[0];
+    expect(upsertArgs.where).toEqual({ key: 'STORE_LOGO_URL' });
+    expect(upsertArgs.create.key).toBe('STORE_LOGO_URL');
+    expect(upsertArgs.create.value).toContain('branding/');
+    expect(upsertArgs.update.value).toContain('branding/');
     expect(result.logoUrl).toContain('branding/');
   });
 

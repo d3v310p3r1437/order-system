@@ -130,7 +130,11 @@ describe('Branding (e2e)', () => {
       },
     });
     await superuserPrisma.userBranchRole.create({
-      data: { userId: branchAdminId, branchId: branch.id, role: 'BRANCH_ADMIN' },
+      data: {
+        userId: branchAdminId,
+        branchId: branch.id,
+        role: 'BRANCH_ADMIN',
+      },
     });
     branchAdminToken = await mintAccessToken(branchAdminId);
 

@@ -84,7 +84,11 @@ export class BrandingService {
       }
       const objectKey = `branding/${randomUUID()}.${EXTENSION_BY_MIME[file.mimetype]}`;
       await this.minio.upload(objectKey, file.buffer, file.mimetype);
-      await this.upsertSetting(STORE_LOGO_URL_KEY, this.minio.getPublicUrl(objectKey), updatedByUserId);
+      await this.upsertSetting(
+        STORE_LOGO_URL_KEY,
+        this.minio.getPublicUrl(objectKey),
+        updatedByUserId,
+      );
     }
 
     if (storeName) {
