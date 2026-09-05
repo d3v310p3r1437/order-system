@@ -730,16 +730,7 @@ export function updateReturnFeePercent(
 // apps/api/src/catalog/search/search.controller.ts-ийн GET /catalog/search —
 // @Roles()-гүй (нэвтэрсэн ямар ч дүр дуудна), Meilisearch-аар нэрээр хайж,
 // availability-тэй хамт буцаана (ProductDetail-тэй ижил хэлбэр).
-// (2026-09-05) Backend-ийн хариу `{products, facets}` болж өргөтгөв —
-// admin-web одоогоор facets ашигладаггүй (зөвхөн Mobile-ийн chip UI-д
-// зориулагдсан, §7 модуль #3) тул энд `.products`-ыг л задлаад,
-// дуудагч талын (ProductsPage.tsx) гарын үсэг ӨӨРЧЛӨГДӨХГҮЙ байлгав.
-interface SearchProductsResponse {
-  products: ProductDetail[];
-  facets: { colors: string[]; sizes: string[] };
-}
-
-export async function searchProducts(
+export function searchProducts(
   accessToken: string,
   filter: { q?: string; categoryId?: string; branchId?: string },
 ): Promise<ProductDetail[]> {
@@ -748,11 +739,7 @@ export async function searchProducts(
   if (filter.categoryId) params.set("categoryId", filter.categoryId);
   if (filter.branchId) params.set("branchId", filter.branchId);
   const qs = params.toString() ? `?${params.toString()}` : "";
-  const res = await apiFetch<SearchProductsResponse>(
-    `/catalog/search${qs}`,
-    accessToken,
-  );
-  return res.products;
+  return apiFetch<ProductDetail[]>(`/catalog/search${qs}`, accessToken);
 }
 
 // apps/api/src/reports/report.controller.ts-ийн REPORT_VIEW_ROLES/

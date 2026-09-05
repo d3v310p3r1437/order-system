@@ -21,10 +21,7 @@ void main() {
     await container.read(catalogSearchProvider.future);
 
     expect(repository.searchCallCount, 1);
-    expect(
-      repository.searchCalls.single,
-      (q: '', categoryId: null, color: null, size: null),
-    );
+    expect(repository.searchCalls.single, (q: '', categoryId: null));
   });
 
   test('дараалсан setQuery() debounce хугацаанд зөвхөн СҮҮЛИЙН query-гээр нэг л удаа хайна', () async {
@@ -40,10 +37,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 400));
 
     expect(repository.searchCallCount, 2);
-    expect(
-      repository.searchCalls.last,
-      (q: 'апп', categoryId: null, color: null, size: null),
-    );
+    expect(repository.searchCalls.last, (q: 'апп', categoryId: null));
   });
 
   test('setCategory() debounce-гүйгээр ШУУД дахин хайна', () async {
@@ -56,7 +50,7 @@ void main() {
     expect(repository.searchCallCount, 2);
     expect(
       repository.searchCalls.last,
-      (q: '', categoryId: 'category-1', color: null, size: null),
+      (q: '', categoryId: 'category-1'),
     );
     expect(container.read(catalogSearchProvider).hasError, isFalse);
   });
@@ -74,7 +68,7 @@ void main() {
     expect(repository.searchCallCount, 2);
     expect(
       repository.searchCalls.last,
-      (q: 'гутал', categoryId: 'category-2', color: null, size: null),
+      (q: 'гутал', categoryId: 'category-2'),
     );
   });
 
@@ -87,27 +81,6 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(container.read(catalogSearchProvider).hasError, isTrue);
-  });
-
-  test('setColor()/setSize() debounce-гүйгээр ШУУД дахин хайж, query параметрт дамжуулна', () async {
-    await container.read(catalogSearchProvider.future);
-    final notifier = container.read(catalogSearchProvider.notifier);
-
-    notifier.setColor('улаан');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(repository.searchCallCount, 2);
-    expect(
-      repository.searchCalls.last,
-      (q: '', categoryId: null, color: 'улаан', size: null),
-    );
-
-    notifier.setSize('M');
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    expect(repository.searchCallCount, 3);
-    expect(
-      repository.searchCalls.last,
-      (q: '', categoryId: null, color: 'улаан', size: 'M'),
-    );
   });
 
   test('setStatus() СҮЛЖЭЭГЭЭР дахин ДУУДАХГҮЙ, сүүлд ирсэн raw үр дүнгээс клиент талд шүүнэ', () async {
@@ -124,6 +97,6 @@ void main() {
     // Сүлжээгээр дахин ДУУДАГДААГҮЙ — зөвхөн клиент талд шүүгдсэн.
     expect(repository.searchCallCount, 1);
     final state = container.read(catalogSearchProvider).requireValue;
-    expect(state.products.map((p) => p.id), ['in-stock']);
+    expect(state.map((p) => p.id), ['in-stock']);
   });
 }

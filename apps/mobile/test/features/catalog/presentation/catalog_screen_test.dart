@@ -6,7 +6,6 @@ import 'package:mobile/features/cart/presentation/cart_providers.dart';
 import 'package:mobile/features/catalog/domain/availability.dart';
 import 'package:mobile/features/catalog/domain/product.dart';
 import 'package:mobile/features/catalog/domain/product_variant.dart';
-import 'package:mobile/features/catalog/domain/search_facets.dart';
 import 'package:mobile/features/catalog/presentation/catalog_providers.dart';
 import 'package:mobile/features/catalog/presentation/catalog_screen.dart';
 import 'package:mobile/features/catalog/presentation/widgets/product_card.dart';
@@ -125,36 +124,6 @@ void main() {
     expect(find.text('Зөгийн бал'), findsOneWidget);
   });
 
-  testWidgets('facets-тэй бол өнгө/хэмжээний chip мөр харагдаж, дарахад шүүлттэй дахин хайна', (
-    tester,
-  ) async {
-    repository.searchHandler = (q, c) => [buildTestProduct(id: '1')];
-    repository.facets = const SearchFacets(colors: ['улаан', 'хөх'], sizes: ['M', 'L']);
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('color_chip_row')), findsOneWidget);
-    expect(find.byKey(const Key('size_chip_row')), findsOneWidget);
-    expect(find.text('улаан'), findsOneWidget);
-    expect(find.text('M'), findsOneWidget);
-
-    await tester.tap(find.text('улаан'));
-    await tester.pumpAndSettle();
-
-    expect(repository.searchCalls.last.color, 'улаан');
-  });
-
-  testWidgets('facets хоосон бол өнгө/хэмжээний chip мөр ОГТ харагдахгүй', (
-    tester,
-  ) async {
-    repository.searchHandler = (q, c) => [buildTestProduct(id: '1')];
-    await tester.pumpWidget(wrap());
-    await tester.pumpAndSettle();
-
-    expect(find.byKey(const Key('color_chip_row')), findsNothing);
-    expect(find.byKey(const Key('size_chip_row')), findsNothing);
-  });
-
   testWidgets('availability pill "Бэлэн" дарахад сүлжээгээр дахин ДУУДАХГҮЙ, клиент талд шүүнэ', (
     tester,
   ) async {
@@ -228,10 +197,10 @@ void main() {
     await tester.tap(find.byKey(const Key('add_to_cart_fab_p1')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('add_to_cart_variant_chip_v-red')), findsOneWidget);
-    expect(find.byKey(const Key('add_to_cart_variant_chip_v-blue')), findsOneWidget);
+    expect(find.byKey(const Key('add_to_cart_color_chip_улаан')), findsOneWidget);
+    expect(find.byKey(const Key('add_to_cart_color_chip_хөх')), findsOneWidget);
 
-    await tester.tap(find.byKey(const Key('add_to_cart_variant_chip_v-blue')));
+    await tester.tap(find.byKey(const Key('add_to_cart_color_chip_хөх')));
     await tester.pump();
     await tester.tap(find.byKey(const Key('add_to_cart_increment')));
     await tester.pump();

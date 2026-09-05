@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { ProductVariant } from '@prisma/client';
+import type { Product, ProductVariant } from '@prisma/client';
 import {
   isForeignKeyViolation,
   isRecordNotFoundError,
@@ -170,7 +170,7 @@ export class ProductService {
           isActive: dto.isActive,
         },
       });
-      await this.reindexProduct(product.id);
+      await this.indexProduct(product);
       return product;
     } catch (error) {
       if (isUniqueConstraintViolation(error)) {
@@ -199,7 +199,7 @@ export class ProductService {
           isActive: dto.isActive,
         },
       });
-      await this.reindexProduct(product.id);
+      await this.indexProduct(product);
       return product;
     } catch (error) {
       if (isRecordNotFoundError(error)) {
@@ -237,24 +237,15 @@ export class ProductService {
     }
   }
 
-  // create()/update() болон ProductVariantService-ийн variant CRUD
-  // (color/size facet-д нөлөөлдөг тул) хоёуланд нь ашиглагдана —
-  // categoryName-г денормалчлахын тулд, БОЛОН colors/sizes-ийг
-  // денормалчлахын тулд Product мөрийг category+variants-тай хамт
-  // дахин уншина (Product.create/update-ийн буцаах утга categoryId-г л
-  // агуулдаг, category.name/variants биш). Product мөр давхар (жиш:
-  // variant бичих зэрэгцээ Product устгагдсан) байхгүй болсон бол
-  // алгасна (`reindexAll`-ийн "0-мөр" зарчимтай ижил — алдаа шидэхгүй).
-  async reindexProduct(productId: string): Promise<void> {
-    const product = await this.prisma.tx.product.findUnique({
-      where: { id: productId },
-      include: { category: true, variants: true },
+  // create()/update() хоёуланд нь ашиглагдана — categoryName-г
+  // денормалчлахын тулд category мөрийг тусад нь уншина (Product.create/
+  // update-ийн буцаах утга categoryId-г л агуулдаг, category.name биш).
+  private async indexProduct(product: Product): Promise<void> {
+    const category = await this.prisma.tx.category.findUnique({
+      where: { id: product.categoryId },
     });
-    if (!product) {
-      return;
-    }
     this.searchIndexer.indexProduct(
-      toProductSearchDocument(product, product.category.name, product.variants),
+      toProductSearchDocument(product, category?.name ?? ''),
     );
   }
 
@@ -262,10 +253,10 @@ export class ProductService {
   // Meilisearch рүү дахин бичнэ (жиш: индекс алдагдсан/анх удаа бэлдэх үед).
   async reindexAll(): Promise<number> {
     const products = await this.prisma.tx.product.findMany({
-      include: { category: true, variants: true },
+      include: { category: true },
     });
     const docs = products.map((product) =>
-      toProductSearchDocument(product, product.category.name, product.variants),
+      toProductSearchDocument(product, product.category.name),
     );
     await this.searchIndexer.reindexAll(docs);
     return docs.length;

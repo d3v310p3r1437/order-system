@@ -24,25 +24,14 @@ function buildPrismaMock() {
   return { prisma, mocks: { create, update, remove } };
 }
 
-function buildProductServiceMock() {
-  return { reindexProduct: jest.fn() };
-}
-
-function newService(
-  prisma: unknown,
-  productService = buildProductServiceMock(),
-) {
-  return {
-    service: new ProductVariantService(
-      prisma as ConstructorParameters<typeof ProductVariantService>[0],
-      productService as ConstructorParameters<typeof ProductVariantService>[1],
-    ),
-    productService,
-  };
+function newService(prisma: unknown) {
+  return new ProductVariantService(
+    prisma as ConstructorParameters<typeof ProductVariantService>[0],
+  );
 }
 
 describe('ProductVariantService — бүтэцтэй шинж чанар (2026-09-05)', () => {
-  it('create() color/size/attributes-ийг DB рүү дамжуулж, эцэг Product-ийг дахин индекслэнэ', async () => {
+  it('create() color/size/attributes-ийг DB рүү дамжуулна', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.create.mockResolvedValue({
       id: 'v-1',
@@ -51,7 +40,7 @@ describe('ProductVariantService — бүтэцтэй шинж чанар (2026-0
       size: 'M',
       attributes: { марк: 'Ariel' },
     });
-    const { service, productService } = newService(prisma);
+    const service = newService(prisma);
 
     const result = await service.create({
       productId: 'p-1',
@@ -63,30 +52,27 @@ describe('ProductVariantService — бүтэцтэй шинж чанар (2026-0
       attributes: { марк: 'Ariel' },
     });
 
-    expect(mocks.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: {
-          productId: 'p-1',
-          name: 'Улаан, M',
-          sku: 'SKU-1',
-          unit: undefined,
-          basePrice: 1000,
-          costPrice: undefined,
-          barcode: undefined,
-          isActive: undefined,
-          defaultPreOrderEnabled: undefined,
-          defaultPreOrderLeadDays: undefined,
-          color: 'улаан',
-          size: 'M',
-          attributes: { марк: 'Ariel' },
-        },
-      }),
-    );
-    expect(productService.reindexProduct).toHaveBeenCalledWith('p-1');
+    expect(mocks.create).toHaveBeenCalledWith({
+      data: {
+        productId: 'p-1',
+        name: 'Улаан, M',
+        sku: 'SKU-1',
+        unit: undefined,
+        basePrice: 1000,
+        costPrice: undefined,
+        barcode: undefined,
+        isActive: undefined,
+        defaultPreOrderEnabled: undefined,
+        defaultPreOrderLeadDays: undefined,
+        color: 'улаан',
+        size: 'M',
+        attributes: { марк: 'Ariel' },
+      },
+    });
     expect(result.color).toBe('улаан');
   });
 
-  it('update() color/size өөрчлөгдвөл эцэг Product-ийг дахин индекслэнэ', async () => {
+  it('update() color/size-ийг DB рүү дамжуулна', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.update.mockResolvedValue({
       id: 'v-1',
@@ -94,7 +80,7 @@ describe('ProductVariantService — бүтэцтэй шинж чанар (2026-0
       color: 'хөх',
       size: 'L',
     });
-    const { service, productService } = newService(prisma);
+    const service = newService(prisma);
 
     await service.update('v-1', { color: 'хөх', size: 'L' });
 
@@ -115,16 +101,16 @@ describe('ProductVariantService — бүтэцтэй шинж чанар (2026-0
         attributes: undefined,
       },
     });
-    expect(productService.reindexProduct).toHaveBeenCalledWith('p-1');
   });
 
-  it('remove() амжилттай бол эцэг Product-ийг дахин индекслэнэ (устсан variant-ийн color/size facet-аас алга болно)', async () => {
+  it('remove() variant-ийг устгана', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.remove.mockResolvedValue({ id: 'v-1', productId: 'p-1' });
-    const { service, productService } = newService(prisma);
+    const service = newService(prisma);
 
-    await service.remove('v-1');
+    const result = await service.remove('v-1');
 
-    expect(productService.reindexProduct).toHaveBeenCalledWith('p-1');
+    expect(mocks.remove).toHaveBeenCalledWith({ where: { id: 'v-1' } });
+    expect(result.id).toBe('v-1');
   });
 });

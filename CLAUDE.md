@@ -2324,6 +2324,81 @@ admin-web + Mobile — доор "(2026-09-05) ProductVariant бүтэцтэй ш
     --show-current`-ээр одоогийн branch зөв эсэхийг (өмнөх ажлаас
     үлдсэн feature branch дээр биш, `main`-аас шинэ branch эсэхийг)
     шалгах ёстой.
+- **(2026-09-05, дараах өдөр) ЗАСВАР — Өнгө/Хэмжээ КАТАЛОГИЙН ЕРӨНХИЙ
+  ШҮҮЛТҮҮР БИШ гэдгийг тодруулж, буруу ойлголт дээр суурилсан нэмэлтийг
+  бүхэлд нь буцаав:** дээрх бичлэгийн "каталогийн UX сайжруулалт" гэсэн
+  анхны ойлголт буруу байсан — Өнгө/Хэмжээ бол зөвхөн НЭГ бүтээгдэхүүний
+  ДОТООД variant сонголт (яг тоо ширхэг +/- сонгодогтой адил түвшин),
+  жагсаалт даяар хайх/шүүх ерөнхий chip шүүлтүүр БИШ.
+  - **Хассан зүйлс:** `CatalogScreen`-ээс өнгө/хэмжээний chip мөр (`ColorChipRow`/
+    `SizeChipRow` widget-үүд, `color_chip_row.dart`/`size_chip_row.dart`
+    файлууд) БҮРЭН устгав — каталог дэлгэц одоо ЗӨВХӨН 3 элементтэй:
+    хайлт, ангиллын chip, availability pill (Бүгд/Бэлэн/Захиалгын).
+    `GET /catalog/search`-ийн `color`/`size` query параметр, `facets`
+    хариу (`{products, facets}` → буцаад зөвхөн `products[]`) БОЛОН
+    `MeilisearchService.search()`-ийн 2-дуудлагат (hits+facets тусад нь)
+    логикийг бүхэлд нь хассан (`git diff`-ээр тухайн үеийн ганц commit
+    (`8ee230b`)-ийн өөрчлөлтийг яг тодорхойлж, эдгээр файлыг шууд
+    `628b15d` (тухайн commit-ийн эцэг)-ийн хувилбар руу `git checkout`-оор
+    буцаасан: `search-products.dto.ts`, `search.controller.ts`,
+    `meilisearch.service.ts`, `product-search-document.ts` (`colors`/
+    `sizes` денормалчилсан талбар устсан), `search-indexer.service.spec.ts`,
+    `product.service.ts`/`.spec.ts` (`reindexProduct`-ыг дахин private
+    `indexProduct(product)` болгож, variant-ээс хамааралгүй болгов),
+    `search.e2e-spec.ts`). `ProductVariantService`-ийн `ProductService`
+    inject хийж variant CRUD бүрд эцэг Product-ийг дахин индексжүүлдэг
+    байсныг ХАСАВ (colors/sizes индекст байхгүй болсон тул ямар ч
+    зорилгогүй болсон) — гэхдээ `create()`/`update()`-ийн
+    `color`/`size`/`attributes` DB бичилт (schema багана) БҮРЭН
+    ХЭВЭЭР үлдсэн, зөвхөн Meilisearch-тэй холбоо тасарсан.
+  - **Хэвээр үлдсэн зүйлс:** `ProductVariant.color`/`size`/`attributes`
+    Prisma схем, admin-web `VariantDialog`-ийн Өнгө/Хэмжээ/чөлөөт
+    key-value input бүгд ХЭВЭЭР (schema өөрөө зөв, зөвхөн үүнийг
+    ашигласан search-facet UX буруу байсан).
+  - **Нэмсэн зүйл (Хэсэг 3-ийн зорилго — `AddToCartBottomSheet`-ийг
+    жинхэнэ variant тодорхойлогч болгосон):** 1-ээс олон variant-тай
+    бүтээгдэхүүнд Өнгийг дугуй swatch chip (`_ColorOptionChip`,
+    `add_to_cart_bottom_sheet.dart` дотор private widget — хуучин
+    устгасан `ColorChipRow`-ийн өнгөний dictionary-г энд дахин
+    ашигласан, өөр зорилготой тул тусад нь хуулбарласан), Хэмжээг текст
+    `ChoiceChip`-ээр тус тусад нь сонгуулж, сонгосон (color, size) хослолд
+    тохирох ГАНЦ variant-ийг `_selectedVariant` getter-ээр тодорхойлно;
+    боломжгүй хослолын chip `onSelected`/`onTap`-ыг `null` дамжуулж
+    disabled (Flutter-ийн стандарт grey-out) болгодог. Color/size огт
+    бүртгэгдээгүй (хуучин чөлөөт нэртэй) олон variant-той бүтээгдэхүүнд
+    ХУУЧИН "variant бүрийг ChoiceChip-ээр жагсаах" fallback загвар хэвээр
+    ажилладаг (`_hasStructuredAttributes == false` замаар). 1 variant-тай
+    бүтээгдэхүүнд ямар ч chip харагдахгүй, шууд тоо+"Сагсанд нэмэх" л
+    байна. Widget тест: `add_to_cart_bottom_sheet_test.dart` (шинэ) — 2
+    өнгө × 2 хэмжээгээс НЭГ хослол (хөх/M) ЗОРИУДАА дутуу бүтээгдэхүүнд
+    "хөх" сонгоход variant/үнэ зөв шинэчлэгдэж, "M" хэмжээ disabled
+    (`ChoiceChip.onSelected == null`) болохыг, мөн disabled chip дээр
+    дарахад ямар ч өөрчлөлт орохгүйг баталгаажуулав + 1 variant-тай
+    бүтээгдэхүүнд chip огт харагдахгүйг шалгасан тест.
+  - **Тест шинэчлэлт:** `catalog_screen_test.dart`/`catalog_search_notifier_test.dart`-ийн
+    facet-тэй холбоотой тестүүдийг хассан, олон-variant FAB тестийг шинэ
+    `add_to_cart_color_chip_$color` key рүү шилжүүлэв (variant chip key
+    биш, учир нь тухайн тестийн 2 variant аль аль нь `color` талбартай
+    байсан тул шинэ дизайнаар шууд color-chip зам руу ордог).
+    `product-variant.service.spec.ts` (`reindexProduct` mock-гүй болгож
+    хялбарчилсан), `product.service.spec.ts`/`search.e2e-spec.ts`
+    (`628b15d`-ийн хувилбар руу бүрэн буцаасан). admin-web:
+    `src/lib/api.ts`-ийн `searchProducts()`-ийг `{products,facets}`
+    задлахаас өмнөх энгийн (`ProductDetail[]` шууд) хувилбар руу
+    буцаав.
+  - Backend: `pnpm test` 47/47 suite (326/326), `pnpm run build` цэвэр,
+    `test:e2e` 19/20 suite ногоон (зөвхөн `delivery-routing.e2e-spec.ts`
+    локал `ROUTING_PROVIDER=osrm` орчны тохиргооноос, өмнөх Phase-үүдийн
+    тэмдэглэлтэй нийцнэ — энэ засвартай ХОЛБООГҮЙ). admin-web:
+    `vitest` 18/18 suite (46/46), `tsc -b`/`oxlint`/`vite build` цэвэр.
+    Mobile: `flutter analyze` 0 алдаа, `flutter test` 123/123 (шинэ
+    `add_to_cart_bottom_sheet_test.dart` нэмэгдэв, `search_facets.dart`/
+    `color_chip_row.dart`/`size_chip_row.dart` файлууд устгагдав).
+  - **Сургамж:** UX-ийн зорилго (энд: "хэрэглэгч өнгө/хэмжээгээр
+    бүтээгдэхүүн олох") болон түүнийг хэрэгжүүлэх ТҮВШИН (жагсаалт
+    даяарх хайлтын facet vs. нэг барааны дотоод variant сонголт) хоёрыг
+    андуурч болзошгүйг харуулав — даалгаврыг хэрэгжүүлэхээс өмнө "хаана,
+    ямар нөхцөлд ашиглагдах вэ" гэдгийг тодорхой асуух нь илүү зөв байсан.
 
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай

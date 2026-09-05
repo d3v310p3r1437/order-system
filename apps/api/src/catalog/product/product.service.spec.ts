@@ -85,7 +85,7 @@ function newService(
 }
 
 describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэсэг B)', () => {
-  it('create() амжилттай бол category+variants-тай хамт дахин уншиж searchIndexer.indexProduct()-г дуудна', async () => {
+  it('create() амжилттай бол category нэрийг уншиж searchIndexer.indexProduct()-г дуудна', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.productCreate.mockResolvedValue({
       id: 'p-1',
@@ -95,22 +95,7 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
       categoryId: 'c-1',
       isActive: true,
     });
-    mocks.productFindUnique.mockResolvedValue({
-      id: 'p-1',
-      name: 'Ноолуур цамц',
-      description: null,
-      brand: 'Gobi',
-      categoryId: 'c-1',
-      isActive: true,
-      category: { id: 'c-1', name: 'Цамц' },
-      // Давхардсан/null-той variant-уудаар colors/sizes-ийн ДАВХАРДААГҮЙ,
-      // эрэмбэлэгдсэн денормалчлалыг шалгана.
-      variants: [
-        { color: 'хөх', size: 'M' },
-        { color: 'улаан', size: 'M' },
-        { color: 'улаан', size: null },
-      ],
-    });
+    mocks.categoryFindUnique.mockResolvedValue({ id: 'c-1', name: 'Цамц' });
     const { service, searchIndexer } = newService(prisma);
 
     await service.create({
@@ -127,13 +112,11 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
         categoryId: 'c-1',
         categoryName: 'Цамц',
         isActive: true,
-        colors: ['улаан', 'хөх'],
-        sizes: ['M'],
       }),
     );
   });
 
-  it('update() амжилттай бол шинэчлэгдсэн categoryId+variants-аар searchIndexer.indexProduct()-г дуудна', async () => {
+  it('update() амжилттай бол шинэчлэгдсэн categoryId-аар searchIndexer.indexProduct()-г дуудна', async () => {
     const { prisma, mocks } = buildPrismaMock();
     mocks.productUpdate.mockResolvedValue({
       id: 'p-1',
@@ -143,15 +126,9 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
       categoryId: 'c-2',
       isActive: true,
     });
-    mocks.productFindUnique.mockResolvedValue({
-      id: 'p-1',
-      name: 'Ноолуур цамц',
-      description: null,
-      brand: 'Gobi',
-      categoryId: 'c-2',
-      isActive: true,
-      category: { id: 'c-2', name: 'Гадуур хувцас' },
-      variants: [],
+    mocks.categoryFindUnique.mockResolvedValue({
+      id: 'c-2',
+      name: 'Гадуур хувцас',
     });
     const { service, searchIndexer } = newService(prisma);
 
@@ -161,20 +138,8 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
       expect.objectContaining({
         categoryId: 'c-2',
         categoryName: 'Гадуур хувцас',
-        colors: [],
-        sizes: [],
       }),
     );
-  });
-
-  it('reindexProduct() Product мөр байхгүй бол searchIndexer-г дуудахгүй чимээгүй буцна', async () => {
-    const { prisma, mocks } = buildPrismaMock();
-    mocks.productFindUnique.mockResolvedValue(null);
-    const { service, searchIndexer } = newService(prisma);
-
-    await service.reindexProduct('p-missing');
-
-    expect(searchIndexer.indexProduct).not.toHaveBeenCalled();
   });
 
   it('remove() амжилттай бол searchIndexer.deleteProduct()-г дуудна', async () => {
@@ -198,7 +163,6 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
         categoryId: 'c-1',
         isActive: true,
         category: { id: 'c-1', name: 'Цамц' },
-        variants: [],
       },
       {
         id: 'p-2',
@@ -208,7 +172,6 @@ describe('ProductService — Meilisearch индексжилт (§8 Phase 2 Хэ�
         categoryId: 'c-2',
         isActive: false,
         category: { id: 'c-2', name: 'Өмд' },
-        variants: [],
       },
     ]);
     const { service, searchIndexer } = newService(prisma);
