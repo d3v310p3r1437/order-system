@@ -21,6 +21,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json --runInBand",
     "posttest:e2e": "ts-node prisma/cleanup-debris.ts",
     "seed:mobile-demo": "ts-node prisma/seed-catalog-demo.ts",
+    "seed:branding": "ts-node prisma/seed-store-branding.ts",
     "cleanup:branch-debris": "ts-node prisma/cleanup-debris.ts"
   },
   "dependencies": {

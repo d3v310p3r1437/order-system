@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app/providers.dart';
 import 'package:mobile/features/auth/presentation/login_screen.dart';
+import 'package:mobile/features/branding/domain/branding_info.dart';
+import 'package:mobile/features/branding/presentation/branding_providers.dart';
 
 import '../../../support/fake_secure_token_storage.dart';
 
@@ -11,6 +13,10 @@ void main() {
     return ProviderScope(
       overrides: [
         secureTokenStorageProvider.overrideWithValue(FakeSecureTokenStorage()),
+        brandingProvider.overrideWith(
+          (ref) async =>
+              const BrandingInfo(storeName: 'ЧАНАР', logoUrl: null),
+        ),
       ],
       child: MaterialApp(home: child),
     );

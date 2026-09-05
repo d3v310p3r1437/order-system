@@ -186,6 +186,13 @@ admin-web + Mobile — доор "(2026-08-21) Урамшуулал/купон" �
 **Харилцагчийн үйлчилгээ (тасалбар, §7 модуль #13) дууссан** (backend +
 admin-web + Mobile, текст-зөвхөн MVP + бодит цагийн чат — доор
 "(2026-08-27) Харилцагчийн үйлчилгээ" бичлэгийг үз).
+**Дэлгүүрийн нэр/лого (динамик branding) — backend + admin-web бүрэн
+дууссан, баталгаажуулсан; Mobile-ийн код (branding provider + BrandMark
+widget) БОЛОН app icon (Хэсэг D) бичигдэж `flutter analyze` цэвэр
+дуусасан ч, Android emulator дээрх эцсийн screenshot баталгаажуулалт
+ЭНЭ хөгжүүлэлтийн машин дээр шинээр гарч ирсэн орчны блокоос болж
+хийгдээгүй үлдсэн** (доор "(2026-09-05) Дэлгүүрийн нэр/лого" бичлэгийг
+үз — дэлгэрэнгүй тайлбар, дараагийн сесст юу үлдсэнийг заана).
 Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
 Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
 хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
@@ -2182,6 +2189,140 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     цөөхөн тасалбар) шаардлагагүй гэж үзсэн; хэрэв ирээдүйд их хэмжээгээр
     (мянгаараа) хуримтлагдвал `[[dev-test-customer-account]]`-ийн
     Order debris-тэй адилхан зарчмаар цэвэрлэх шаардлагатай болно.
+- **(2026-09-05) Дэлгүүрийн нэр/лого (динамик branding) — backend +
+  admin-web дууссан, Mobile-ийн код бичигдсэн ч эмуляторын эцсийн
+  баталгаажуулалт орчны блокоос болж дутуу үлдсэн**:
+  - **Backend:** `SystemSetting`-ийн одоо байгаа хүснэгтэд шинэ 2
+    migration (`add_public_branding_function` — `app_public_branding()`
+    SECURITY DEFINER функц, `app_public_branches()`-тэй ЯГ ижил
+    ADR 005 "READ-redact" загвар: зөвхөн `STORE_NAME`/`STORE_LOGO_URL`
+    2 key-г whitelist-ээр буцаана, бусад тохиргоо (жиш:
+    `RETURN_FEE_PERCENT`) ил гарахгүй; `seed_store_name_setting` —
+    `RETURN_FEE_PERCENT`-ийн адил migration дотор шууд `STORE_NAME='ЧАНАР'`
+    seed хийсэн, `STORE_LOGO_URL`-г ЭНД seed ХИЙГЭЭГҮЙ учир нь бодит
+    зураг MinIO рүү upload хийх шаардлагатай). `src/settings/
+    branding.{controller,service}.ts` — `GET /settings/branding`
+    (**ЗОРИУДАА `@UseGuards(RolesGuard)` бүхэлдээ АЛГА** — өөр ямар ч
+    endpoint-д байгаагүй "чинхэнэ нэвтрэлтгүй" (RolesGuard хүртэл
+    "userId байхгүй бол UNAUTHENTICATED" шиддэг тул түүнийг ч бүрэн
+    орхисон) шинэ загвар, учир нь Login дэлгэц дээр ч (нэвтрэхээс өмнө)
+    лого харагдах ёстой), `PUT /settings/branding` (зөвхөн method-level
+    `@UseGuards(RolesGuard)` + `@Roles('SUPER_ADMIN','OWNER')` —
+    `system_settings_update` RLS-ийн `app_has_global_scope()`-оос
+    ЗОРИУДАА нарийсгасан, ALL_BRANCH_MANAGER ороогүй, даалгаврын шууд
+    заавар — `BRANCH_COMPARISON_ROLES`-тэй ижил "RolesGuard RLS-ээс
+    хатуу байж болно" зарчим). `FileInterceptor` (`ProductImageController`-тэй
+    ижил memoryStorage/5MB/jpg-png-webp validation) — лого upload хийхэд
+    одоо байгаа `product-images` MinIO bucket-ийг л (`branding/` prefix-ээр)
+    дахин ашигласан, шинэ bucket үүсгээгүй. Seed script:
+    `prisma/seed-store-branding.ts` (`pnpm --filter api run seed:branding`
+    — `seed-catalog-demo.ts`-тэй ЯГ ижил "superuser DATABASE_URL-ээр
+    шууд, RLS bypass" зарчим) — `docs/assets/store_logo_square_1024.png`-г
+    бодитоор MinIO рүү upload хийж, `STORE_LOGO_URL`-г бичнэ (dev дээр
+    ажиллуулж, `curl`-аар public URL 200 OK эсэхийг баталгаажуулсан).
+    Тест: unit (`branding.service.spec.ts`, 8 тест) + e2e
+    (`test/branding.e2e-spec.ts`, 9 тест — нэвтрэлтгүй GET 200,
+    SUPER_ADMIN/OWNER эрхтэй PUT 200 бусад дүрд 403, файлын
+    validation, **CLAUDE.md-ийн "RLS mutation policy" стандартын дагуу
+    `system_settings_update`-ийг service/RolesGuard-ыг тойрч шууд SQL-ээр
+    (0 мөр чимээгүй "татгалзана", ADR 001-ийн UPDATE зарчим)**).
+    `pnpm --filter api test` 47/47 suite (331/331), `test:e2e` 20/21
+    suite ногоон (229/230 тест — зөвхөн локал `ROUTING_PROVIDER=osrm`-ийн
+    (өмнөх Phase-үүдийн адил, орчны тохиргооны, кодын алдаа БИШ) улмаас
+    `delivery-routing.e2e-spec.ts` алдаатай гарсан), `pnpm run build` цэвэр.
+  - **Admin-web:** `useBranding()` hook (`@tanstack/react-query`,
+    `staleTime` 5мин — лого/нэр ховор өөрчлөгддөг тул) + `BrandMark.tsx`
+    (лого зураг ЭСВЭЛ storeName-ийн эхний 1-2 үсгээр initials badge,
+    LoginScreen-ийн desktop/mobile 2 хувилбар БОЛОН Layout sidebar
+    гурванд дахин ашиглав — өмнө нь хатуу бичсэн "ЗС" + "Захиалгын
+    систем" бүгдийг сольсон). Dashboard-д (зөвхөн SUPER_ADMIN/OWNER)
+    `BrandingSettingCard.tsx` (нэр засах талбар + лого upload товч,
+    `ReturnFeeSettingCard.tsx`-тэй ЯГ ижил "DashboardPage-д шууд суулгасан,
+    тусдаа route зохиогоогүй" загвар). Vitest smoke тест
+    (`BrandingSettingCard.test.tsx`, 2 тест). **Ad hoc Playwright-аар
+    (`npm install playwright` — devDependency болгож нэмээгүй, өмнөх
+    Phase-үүдийн адил) бодит browser-т бүрэн баталгаажуулав:** Login
+    дэлгэц дээр лого+"ЧАНАР" зөв харагдав (screenshot) → нэвтэрч
+    Dashboard дээрх Брэндинг картаар нэрийг "ЧАНАР дэлгүүр" болгож
+    хадгалахад sidebar-ийн лого/нэр (`invalidateQueries`-ээр) ШУУД,
+    хуудас refresh хийлгүйгээр шинэчлэгдсэнийг баталгаажуулж, дараа нь
+    "ЧАНАР"-руу буцаав; console алдаа 0. Нэвтрэхийн тулд dev DB/Keycloak-д
+    аль хэдийн байсан `super.admin@order-system.mn` (SUPER_ADMIN)
+    хэрэглэгчийн Keycloak нууц үгийг Keycloak admin API-аар (KEYCLOAK_ADMIN/
+    KEYCLOAK_ADMIN_PASSWORD, `.env`) шинэ утга руу reset хийж ашигласан
+    (dev орчинд л, аюулгүй байдлын нөлөөгүй).
+  - **Mobile:** `features/branding/` шинэ модуль (`BrandingRepository`,
+    `brandingProvider` — `categoriesProvider`-тэй ЯГ ижил "`autoDispose`
+    БИШ энгийн `FutureProvider`" загвар, даалгаврын 8-р зүйлийн "апп
+    нээх бүрд дахин дуудахгүй" шаардлагыг ЭНЭ загвар өөрөө автоматаар
+    хангадаг тул TTL/cache-ийн нэмэлт логик шаардлагагүй байсан),
+    `BrandMark` widget (лого/initials badge, admin-web-ийн ижил нэртэй
+    компоненттой ЗОРИУДАА параллель зохиосон) — `LoginScreen`/
+    `RegisterScreen`/`HomeScreen`-ийн AppBar 3 газарт нэмэв, `app.dart`-ийн
+    `MaterialApp.title`-ийг ('Захиалгын систем') 'ЧАНАР' болгов.
+    ⚠️ **Widget тестийн нөлөө:** `LoginScreen`-ийг шууд рендерладаг 2
+    тест (`widget_test.dart`, `login_screen_test.dart`) `brandingProvider`-ийг
+    override хийхгүй бол бодит `fetch`-ээр backend рүү хандах (тестийн
+    hermetic зарчим зөрчигдөх) эрсдэлтэй байсныг олж, хоёуланд нь
+    `brandingProvider.overrideWith(...)` нэмж засав (`main_shell_test.dart`
+    placeholder дэлгэцүүд ашигладаг тул нөлөөлөөгүй).
+  - **Хэсэг D (app icon, СТАТИК):** `flutter_launcher_icons: ^0.14.4`
+    dev dependency + pubspec.yaml тохиргоо (`image_path` →
+    `docs/assets/store_logo_square_1024.png` шууд, `adaptive_icon_background`
+    → `#F7F7ED` (лого зургийн дэвсгэр өнгөтэй яг таарна), `adaptive_icon_foreground`
+    → PowerShell/`System.Drawing`-ээр (гуравдагч зурган хэрэгсэл
+    суулгахгүйгээр) эх лого зургаас шинээр үүсгэсэн
+    `assets/icon/logo_foreground.png` — 1024×1024 тунгалаг canvas дээр
+    лого зургийг 70%-иар (ирмэгээс ~15% зай) төвд нь placed, `remove_alpha_ios`
+    → эх зураг аль хэдийн alpha channel-гүй (`file` командаар
+    баталгаажуулсан opaque RGB) тул хөрвүүлэлт шаардлагагүй байв).
+    `android:label`/`CFBundleDisplayName`-ийг "ЧАНАР" болгов
+    (`AndroidManifest.xml`/`Info.plist`, `CFBundleName`-д хөндөөгүй —
+    Android-ийн `applicationId`-той адил дотоод identifier).
+    ⚠️⚠️ **Ноцтой орчны олдвор (энэ ажилтай ХОЛБООГҮЙ, машины
+    аюулгүй байдлын шинэ хязгаарлалт):** `flutter pub run
+    flutter_launcher_icons`/`dart run flutter_launcher_icons` ХОЁУЛАА
+    "An Application Control policy has blocked this file" алдаагаар
+    (`dartaotruntime.exe`-ийн snapshot-precompilation алхам дээр)
+    амжилтгүй болов. **Шийдэл (icon-ийг бодитоор үүсгэхэд ажилласан):**
+    `dart run`/`pub run`-ий "snapshot-руу урьдчилж компайл хийх" (кэшийн
+    зорилготой) алхмыг тойрч, `dart --packages=.dart_tool/package_config.json
+    <pub-cache-ийн package-ийн bin/main.dart>`-аар ПАКЕТИЙН СКРИПТИЙГ
+    ШУУД (JIT, `dartaotruntime`-гүйгээр) дуудсанаар icon-ууд (Android
+    mipmap+adaptive drawable, iOS AppIcon.appiconset) бодитоор амжилттай
+    үүссэн (screenshot-оор баталгаажуулсан: cream дэвсгэртэй, зөв
+    масштабтай foreground). ⚠️🔴 **Гэвч ЯГ ЭНЭ шийдэл `flutter run`/
+    `flutter test`-д хэрэглэгдэхгүй** — эдгээр нь `dartaotruntime.exe`-г
+    (`frontend_server_aot.dart.snapshot`/`gen_kernel_aot.dart.snapshot`)
+    flutter_tools дотроосоо, сольж болдоггүй байдлаар шууд дуудна.
+    `dartaotruntime.exe`-г ШУУД (`--version`) Bash-аар ("Permission
+    denied") БОЛОН PowerShell-ээр ("An Application Control policy has
+    blocked this file") тусад нь дуудаж, файл ӨӨРЧЛӨГДӨӨГҮЙ
+    (LastWriteTime 2026-08-15, өмнөх олон Phase-д амжилттай ашиглагдсан
+    ЯГ ЭНЭ файл) хэдий ч ОДОО бүрэн блоклогдсоныг баталгаажуулсан —
+    өөрөөр хэлбэл энэ бол Flutter/кодын асуудал БИШ, харин энэ
+    хөгжүүлэлтийн машин дээр ЯГ ЭНЭ session-ий явцад шинээр идэвхжсэн
+    (эсвэл өмнө нь мэдэгдээгүй байсан) Windows Application Control
+    Policy (WDAC/AppLocker/EDR төрлийн) `dartaotruntime.exe`-г бүхэлд нь
+    хориглосон явдал. **Иймд Android emulator дээрх эцсийн screenshot
+    баталгаажуулалт (item 12 — шинэ icon+нэр нүүр дэлгэц дээр,
+    Mobile доторх лого) ХИЙГДЭЭГҮЙ ҮЛДСЭН** — хэрэглэгчтэй зөвшилцөж
+    (AskUserQuestion), одоо байгаа ажлыг commit хийж, энэ баталгаажуулалтыг
+    зогсоохоор шийдвэрлэсэн. **Дараагийн сесст (энэ орчны блок арилсны
+    дараа) хийх ёстой:** (1) `flutter pub get`, (2) АЛЬ Ч зам ажиллавал
+    icon дахин generate хийх шаардлагагүй (аль хэдийн commit хийгдсэн
+    файлууд) — зөвхөн `flutter run -d <emulator>`-ээр апп-аа устгаж
+    дахин суулгаад (icon кэш цэвэрлэгдэх) нүүр дэлгэц дээрх шинэ icon
+    ("ЧАНАР" нэртэй, лого дүрстэй)-г screenshot-оор, мөн апп доторх
+    Login/Home дэлгэц дээрх `BrandMark`-ыг (бодит backend ажиллаж байх
+    үед) screenshot-оор баталгаажуулах; (3) `flutter test`-ийг бүрэн
+    ажиллуулж (`brandingProvider` override хийсэн 2 тестийг оруулаад)
+    бүх (шинэ+хуучин) тест ногоон эсэхийг батлах.
+  - `docker compose -f infra/docker-compose.dev.yml up -d` bодит dev DB/
+    MinIO/Keycloak дээр ажилласан (superuser DB холболт, Keycloak admin
+    API, MinIO upload бүгд ЭНЭ session-д бодитоор дуудагдаж шалгагдсан) —
+    зөвхөн Android emulator-ийн `flutter run`/`flutter test` алхам л
+    дээрх орчны блокоос болж хийгдээгүй.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

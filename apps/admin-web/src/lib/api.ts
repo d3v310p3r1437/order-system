@@ -271,6 +271,13 @@ export interface ReturnFeeSetting {
   updatedAt: string | null;
 }
 
+// GET/PUT /settings/branding — GET нэвтрэлтгүй нээлттэй (Login дэлгэц дээр
+// ч харагдана), тул тусад нь accessToken шаардаагүй plain fetch хэрэглэнэ.
+export interface BrandingInfo {
+  storeName: string;
+  logoUrl: string | null;
+}
+
 // apps/api/src/reports/report.service.ts-ийн буцаах хэлбэртэй тохирно —
 // мөнгөн дүн бүхий талбарууд Prisma Decimal-тай адил зарчмаар (жиш:
 // Order.totalAmount) string болж сериалайзлагддаг.
@@ -408,9 +415,10 @@ async function apiUpload<T>(
   path: string,
   accessToken: string,
   formData: FormData,
+  method: "POST" | "PUT" = "POST",
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
+    method,
     headers: { Authorization: `Bearer ${accessToken}` },
     body: formData,
   });
@@ -719,6 +727,36 @@ export function updateReturnFeePercent(
     method: "PUT",
     body: JSON.stringify({ value }),
   });
+}
+
+// GET нэвтрэлтгүй нээлттэй тул apiFetch()-ийг (Authorization header-ийг
+// ЗААВАЛ нэмдэг) ашиглахгүй, шууд fetch() дуудна — LoginScreen дээр ч
+// (accessToken байхгүй үед) дуудагдана.
+export async function getBranding(): Promise<BrandingInfo> {
+  const res = await fetch(`${API_URL}/settings/branding`);
+  if (!res.ok) {
+    await parseErrorOrThrow(res);
+  }
+  return (await res.json()) as BrandingInfo;
+}
+
+export function updateBranding(
+  accessToken: string,
+  input: { storeName?: string; logoFile?: File },
+): Promise<BrandingInfo> {
+  const formData = new FormData();
+  if (input.storeName) {
+    formData.append("storeName", input.storeName);
+  }
+  if (input.logoFile) {
+    formData.append("file", input.logoFile);
+  }
+  return apiUpload<BrandingInfo>(
+    "/settings/branding",
+    accessToken,
+    formData,
+    "PUT",
+  );
 }
 
 // apps/api/src/catalog/search/search.controller.ts-ийн GET /catalog/search —

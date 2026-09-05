@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../branding/presentation/widgets/brand_mark.dart';
 import 'auth_provider.dart';
 import 'phone_validator.dart';
 
@@ -65,6 +66,8 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Center(child: BrandMark(size: 48)),
+                  const SizedBox(height: 24),
                   TextFormField(
                     key: const Key('register_phone_field'),
                     controller: _phoneController,

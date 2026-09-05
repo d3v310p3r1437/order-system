@@ -1,5 +1,10 @@
 import { useAuth } from "@/lib/auth-context";
-import { REPORT_VIEW_ROLES, RETURN_FEE_WRITE_ROLES, ROLE_LABELS } from "@/lib/roles";
+import {
+  BRANDING_WRITE_ROLES,
+  REPORT_VIEW_ROLES,
+  RETURN_FEE_WRITE_ROLES,
+  ROLE_LABELS,
+} from "@/lib/roles";
 import {
   Card,
   CardContent,
@@ -8,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ReturnFeeSettingCard } from "@/components/ReturnFeeSettingCard";
+import { BrandingSettingCard } from "@/components/BrandingSettingCard";
 import { DashboardKpiCards } from "@/components/DashboardKpiCards";
 
 export function DashboardPage() {
@@ -56,6 +62,8 @@ export function DashboardPage() {
       {!isLoadingRoles && hasRole(RETURN_FEE_WRITE_ROLES) && (
         <ReturnFeeSettingCard />
       )}
+
+      {!isLoadingRoles && hasRole(BRANDING_WRITE_ROLES) && <BrandingSettingCard />}
     </div>
   );
 }

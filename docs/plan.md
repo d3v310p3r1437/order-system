@@ -808,6 +808,18 @@ SET LOCAL app.accessible_branches = $3;
       (SUPER_ADMIN/OWNER/ALL_BRANCH_MANAGER) л ажилладаг UI/endpoint
       хийсэн, BRANCH_ADMIN-ий "R (өөрийн)" хэсэг backlog хэвээр (доор
       "Дараагийн ажил"-д нэмэв).
+- [x] Дэлгүүрийн нэр/лого (динамик branding, §6.1 матрицад тусгайлан мөр
+      байхгүй) — backend (`GET/PUT /settings/branding`, `SystemSetting`
+      хүснэгтийг дахин ашигласан, ADR 005 READ-redact
+      `app_public_branding()` функц) + admin-web (Login/Layout лого,
+      Dashboard-ийн Брэндинг карт) БҮРЭН дууссан, баталгаажуулсан.
+      Mobile-ийн код (branding provider, BrandMark widget) + гар утасны
+      апп icon (flutter_launcher_icons, статик, build-ийн үед л
+      үүсдэг — динамик branding-аас ЯЛГААТАЙ, өөрчлөхөд дахин
+      build+дэлгүүрт дахин илгээх шаардлагатай) бичигдсэн ч Android
+      emulator дээрх эцсийн screenshot баталгаажуулалт (2026-09-05)
+      орчны блокоос (доор тайлбарласан) болж дутуу үлдсэн. Дэлгэрэнгүй:
+      CLAUDE.md-ийн "(2026-09-05) Дэлгүүрийн нэр/лого" бичлэг.
 - [ ] **(шинэ) Нууцлалын бодлого, Үйлчилгээний нөхцөл** бичих (§11.1-ийн эрх зүйн зөвлөхтэй хамт)
 
 ### Phase 7 — Аюулгүй байдал, OTP өргөтгөл, ачаалалын тест (2-3 долоо хоног)

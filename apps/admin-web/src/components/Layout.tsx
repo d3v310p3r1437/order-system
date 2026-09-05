@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/lib/auth-context";
 import { useOrderEvents } from "@/lib/realtime";
+import { useBranding } from "@/lib/use-branding";
 import {
   AUDIT_LOG_VIEW_ROLES,
   REPORT_VIEW_ROLES,
@@ -8,6 +9,7 @@ import {
   ROLE_LABELS,
   STAFF_MANAGE_ROLES,
 } from "@/lib/roles";
+import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +44,7 @@ export function Layout() {
   const { accessToken, email, roleNames, isLoadingRoles, hasRole, logout } =
     useAuth();
   useOrderEvents(accessToken);
+  const { data: branding } = useBranding();
 
   const roleLabel = isLoadingRoles
     ? "Ачааллаж байна…"
@@ -57,10 +60,8 @@ export function Layout() {
     <div className="flex min-h-svh bg-background">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-border bg-card sm:flex">
         <div className="flex items-center gap-2 border-b border-border px-4 py-4 text-sm font-semibold tracking-tight">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-xs font-bold text-primary-foreground">
-            ЗС
-          </span>
-          Админ самбар
+          <BrandMark />
+          {branding?.storeName ?? "Админ самбар"}
         </div>
         <nav className="flex flex-1 flex-col gap-1 p-3">
           {visibleNavItems.map((item) => (
