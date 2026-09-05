@@ -9,10 +9,18 @@ const _orderStatusLabels = {
   'CANCELLED': 'Цуцалсан',
 };
 
-/// `apps/admin-web/src/components/OrderStatusBadge.tsx`-тэй ЯГ ижил
-/// Tailwind slate/blue/amber/violet/emerald/red өнгөний кодчилол —
-/// `ReturnStatusBadge`-ийн адилхан brightness-ээр хос хатуу утгатай загвар
-/// (эдгээр семантик өнгө `Theme.colorScheme`-д байхгүй тул).
+/// (2026-09-05, §7 модуль #3-ийн UX сайжруулалт) Захиалгын түүхийн
+/// жагсаалтыг НЭГ харцаар хялбар уншихын тулд 6 тусдаа өнгийг 4 бүлэг рүү
+/// НЭГТГЭВ: CREATED+CONFIRMED → цэнхэр (эхлэл), PREPARING+READY → шар
+/// (явцад байгаа), COMPLETED → ногоон, CANCELLED → улаан. ⚠️ Энэ нь
+/// `apps/admin-web/src/components/OrderStatusBadge.tsx`-ийн (6 тусдаа
+/// Tailwind slate/blue/amber/violet/emerald/red) хуучин зарчмаас ЗОРИУДАА
+/// ХАЗАЙВ — admin-web-д staff бүх статус шилжилтийг НАРИЙВЧЛАН ялгах
+/// шаардлагатай (жиш: "PREPARING эсвэл READY аль нь" гэдэг нь тэдэнд
+/// ажлын урсгалын хувьд чухал), харин харилцагчийн Mobile талд "миний
+/// захиалга ямар үе шатанд байна" гэдгийг ерөнхий 4 бүлгээр л мэдэх
+/// хангалттай тул admin-web-ийг ХӨНДӨӨГҮЙ (тусад нь платформ тус бүрийн
+/// UX-д тохирсон шийдвэр).
 class OrderStatusBadge extends StatelessWidget {
   const OrderStatusBadge({super.key, required this.status, this.dense = false});
 
@@ -24,21 +32,13 @@ class OrderStatusBadge extends StatelessWidget {
     final brightness = Theme.of(context).brightness;
     final dark = brightness == Brightness.dark;
     final (background, foreground) = switch (status) {
-      'CREATED' => (
-        dark ? const Color(0x2664748B) : const Color(0xFFF1F5F9),
-        dark ? const Color(0xFFCBD5E1) : const Color(0xFF1E293B),
-      ),
-      'CONFIRMED' => (
+      'CREATED' || 'CONFIRMED' => (
         dark ? const Color(0x263B82F6) : const Color(0xFFDBEAFE),
         dark ? const Color(0xFF93C5FD) : const Color(0xFF1E40AF),
       ),
-      'PREPARING' => (
+      'PREPARING' || 'READY' => (
         dark ? const Color(0x26F59E0B) : const Color(0xFFFEF3C7),
         dark ? const Color(0xFFFCD34D) : const Color(0xFF92400E),
-      ),
-      'READY' => (
-        dark ? const Color(0x268B5CF6) : const Color(0xFFEDE9FE),
-        dark ? const Color(0xFFC4B5FD) : const Color(0xFF5B21B6),
       ),
       'COMPLETED' => (
         dark ? const Color(0x2610B981) : const Color(0xFFD1FAE5),

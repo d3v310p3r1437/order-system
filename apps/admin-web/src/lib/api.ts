@@ -88,6 +88,9 @@ export interface ProductVariant {
   isActive: boolean;
   defaultPreOrderEnabled: boolean;
   defaultPreOrderLeadDays: number | null;
+  color: string | null;
+  size: string | null;
+  attributes: Record<string, string> | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +106,9 @@ export interface ProductVariantInput {
   isActive?: boolean;
   defaultPreOrderEnabled?: boolean;
   defaultPreOrderLeadDays?: number;
+  color?: string;
+  size?: string;
+  attributes?: Record<string, string>;
 }
 
 export type ProductVariantUpdateInput = Partial<
@@ -724,7 +730,16 @@ export function updateReturnFeePercent(
 // apps/api/src/catalog/search/search.controller.ts-ийн GET /catalog/search —
 // @Roles()-гүй (нэвтэрсэн ямар ч дүр дуудна), Meilisearch-аар нэрээр хайж,
 // availability-тэй хамт буцаана (ProductDetail-тэй ижил хэлбэр).
-export function searchProducts(
+// (2026-09-05) Backend-ийн хариу `{products, facets}` болж өргөтгөв —
+// admin-web одоогоор facets ашигладаггүй (зөвхөн Mobile-ийн chip UI-д
+// зориулагдсан, §7 модуль #3) тул энд `.products`-ыг л задлаад,
+// дуудагч талын (ProductsPage.tsx) гарын үсэг ӨӨРЧЛӨГДӨХГҮЙ байлгав.
+interface SearchProductsResponse {
+  products: ProductDetail[];
+  facets: { colors: string[]; sizes: string[] };
+}
+
+export async function searchProducts(
   accessToken: string,
   filter: { q?: string; categoryId?: string; branchId?: string },
 ): Promise<ProductDetail[]> {
@@ -733,7 +748,11 @@ export function searchProducts(
   if (filter.categoryId) params.set("categoryId", filter.categoryId);
   if (filter.branchId) params.set("branchId", filter.branchId);
   const qs = params.toString() ? `?${params.toString()}` : "";
-  return apiFetch<ProductDetail[]>(`/catalog/search${qs}`, accessToken);
+  const res = await apiFetch<SearchProductsResponse>(
+    `/catalog/search${qs}`,
+    accessToken,
+  );
+  return res.products;
 }
 
 // apps/api/src/reports/report.controller.ts-ийн REPORT_VIEW_ROLES/

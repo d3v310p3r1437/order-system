@@ -4,6 +4,7 @@ import 'package:mobile/features/catalog/domain/category.dart';
 import 'package:mobile/features/catalog/domain/product.dart';
 import 'package:mobile/features/catalog/domain/product_image.dart';
 import 'package:mobile/features/catalog/domain/product_variant.dart';
+import 'package:mobile/features/catalog/domain/search_facets.dart';
 import 'package:mobile/features/reviews/domain/review.dart';
 
 /// `Dio`/HTTP давхарга огт хөндөхгүй fake — `CatalogSearchNotifier`/
@@ -17,28 +18,42 @@ class FakeCatalogRepository implements CatalogRepository {
   Object? searchError;
   Product Function(String id)? getProductHandler;
 
+  /// Хайлт бүрд буцаах facets — `color`/`size` query параметрээс
+  /// ХАМААРАЛГҮЙ (бодит backend-ийн `MeilisearchService.search()`-тэй ижил
+  /// зарчим), тест бүрд шаардлагатай бол шууд тохируулна.
+  SearchFacets facets = SearchFacets.empty;
+
   /// Тестэд "ачаалж байгаа" төлөвийг (нэг frame-ийн турш ч) баримтжуулах
   /// боломж олгодог — жинхэнэ HTTP хүсэлт шиг микротаск дунд шууд
   /// биелэхгүй, `await tester.pump()`-ийн дараа ажиглагдахуйц зайтай болно.
   Duration delay = Duration.zero;
 
   int searchCallCount = 0;
-  final List<({String q, String? categoryId})> searchCalls = [];
+  final List<({String q, String? categoryId, String? color, String? size})>
+  searchCalls = [];
 
   @override
   Future<List<Category>> getCategories() async => categories;
 
   @override
-  Future<List<Product>> search({String? q, String? categoryId}) async {
+  Future<CatalogSearchResult> search({
+    String? q,
+    String? categoryId,
+    String? color,
+    String? size,
+  }) async {
     searchCallCount++;
-    searchCalls.add((q: q ?? '', categoryId: categoryId));
+    searchCalls.add((q: q ?? '', categoryId: categoryId, color: color, size: size));
     if (delay > Duration.zero) {
       await Future<void>.delayed(delay);
     }
     if (searchError != null) {
       throw searchError!;
     }
-    return searchHandler?.call(q ?? '', categoryId) ?? [];
+    return CatalogSearchResult(
+      products: searchHandler?.call(q ?? '', categoryId) ?? [],
+      facets: facets,
+    );
   }
 
   @override

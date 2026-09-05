@@ -10,6 +10,8 @@ function buildDoc(): ProductSearchDocument {
     categoryId: 'c-1',
     categoryName: 'Цамц',
     isActive: true,
+    colors: [],
+    sizes: [],
   };
 }
 

@@ -4,10 +4,13 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/cart_app_bar_action.dart';
 import 'catalog_providers.dart';
+import 'widgets/availability_status_pill.dart';
 import 'widgets/catalog_empty_state.dart';
 import 'widgets/category_chip_row.dart';
+import 'widgets/color_chip_row.dart';
 import 'widgets/product_card.dart';
 import 'widgets/product_card_skeleton.dart';
+import 'widgets/size_chip_row.dart';
 
 /// Каталог үзэх/хайх дэлгэц (docs/plan.md §7 модуль #3) — хайлт (debounce
 /// 300мс), ангиллын chip шүүлт, 2 баганатай grid, pull-to-refresh, 3
@@ -74,6 +77,40 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
             error: (_, _) => const SizedBox.shrink(),
           ),
           const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: AvailabilityStatusPill(
+              selected: notifier.filter.status,
+              onSelect: notifier.setStatus,
+            ),
+          ),
+          searchState.maybeWhen(
+            data: (result) => result.facets.colors.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: ColorChipRow(
+                      colors: result.facets.colors,
+                      selectedColor: notifier.filter.color,
+                      onSelect: notifier.setColor,
+                    ),
+                  ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          searchState.maybeWhen(
+            data: (result) => result.facets.sizes.isEmpty
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: SizeChipRow(
+                      sizes: result.facets.sizes,
+                      selectedSize: notifier.filter.size,
+                      onSelect: notifier.setSize,
+                    ),
+                  ),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 8),
           Expanded(
             child: RefreshIndicator(
               onRefresh: notifier.refresh,
@@ -82,7 +119,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                 error: (error, _) => _CatalogErrorState(
                   onRetry: notifier.refresh,
                 ),
-                data: (products) => products.isEmpty
+                data: (result) => result.products.isEmpty
                     ? SingleChildScrollView(
                         physics: const AlwaysScrollableScrollPhysics(),
                         child: SizedBox(
@@ -104,9 +141,9 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                               crossAxisSpacing: 16,
                               childAspectRatio: 0.62,
                             ),
-                        itemCount: products.length,
+                        itemCount: result.products.length,
                         itemBuilder: (context, index) {
-                          final product = products[index];
+                          final product = result.products[index];
                           return ProductCard(
                             product: product,
                             onTap: () =>

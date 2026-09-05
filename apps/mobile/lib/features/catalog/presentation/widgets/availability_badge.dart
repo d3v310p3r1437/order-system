@@ -30,8 +30,8 @@ class AvailabilityBadge extends StatelessWidget {
       ),
       AvailabilityStatus.preOrder => (
         result.leadDays != null
-            ? 'Захиалгаар · ${result.leadDays} хоног'
-            : 'Захиалгаар',
+            ? 'Захиалгын (${result.leadDays} хоног)'
+            : 'Захиалгын',
         brightness == Brightness.dark
             ? const Color(0x26F59E0B)
             : const Color(0xFFFEF3C7),

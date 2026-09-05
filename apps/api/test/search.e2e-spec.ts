@@ -21,8 +21,20 @@ interface SearchResultProduct {
   isActive: boolean;
   variants: {
     id: string;
+    color?: string | null;
+    size?: string | null;
     availability: { status: string; leadDays: number | null };
   }[];
+}
+
+interface SearchFacets {
+  colors: string[];
+  sizes: string[];
+}
+
+interface SearchResponse {
+  products: SearchResultProduct[];
+  facets: SearchFacets;
 }
 
 function getJwtSecret(): Uint8Array {
@@ -163,16 +175,46 @@ describe('Catalog search (e2e)', () => {
     return (res.body as { id: string }).id;
   }
 
-  async function searchFor(
+  async function searchWithFacets(
     token: string,
     query: Record<string, string>,
-  ): Promise<SearchResultProduct[]> {
+  ): Promise<SearchResponse> {
     const res = await request(app.getHttpServer())
       .get('/catalog/search')
       .query(query)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    return res.body as SearchResultProduct[];
+    return res.body as SearchResponse;
+  }
+
+  async function searchFor(
+    token: string,
+    query: Record<string, string>,
+  ): Promise<SearchResultProduct[]> {
+    const body = await searchWithFacets(token, query);
+    return body.products;
+  }
+
+  async function createVariant(data: {
+    productId: string;
+    name: string;
+    sku: string;
+    color?: string;
+    size?: string;
+  }): Promise<string> {
+    const res = await request(app.getHttpServer())
+      .post('/product-variants')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        productId: data.productId,
+        name: data.name,
+        sku: data.sku,
+        basePrice: 10000,
+        color: data.color,
+        size: data.size,
+      })
+      .expect(201);
+    return (res.body as { id: string }).id;
   }
 
   it('token-гүй хүсэлт 401 (нэвтрээгүй) — ProductController-тэй ижил зарчим', async () => {
@@ -380,6 +422,164 @@ describe('Catalog search (e2e)', () => {
         q: `${tag} Устгагдах бараа`,
       });
       return hits.length === 0 ? hits : null;
+    });
+  });
+
+  // §7 модуль #3-ийн UX сайжруулалт (2026-09-05): ProductVariant.color/
+  // size-ийг Meilisearch-д денормалчилж, color/size query параметр +
+  // facets хариу нэмсэн (Хэсэг A, даалгавар #2, #3).
+  describe('color/size шүүлт + facets (2026-09-05)', () => {
+    it('color query параметр зөвхөн тухайн өнгөтэй variant-той Product-ыг буцаана', async () => {
+      const tag = freshTag();
+      const redProductId = await createProduct({
+        name: `${tag} Цамц А`,
+        categoryId: categoryA.id,
+      });
+      await createVariant({
+        productId: redProductId,
+        name: 'Улаан',
+        sku: `${tag}-red`,
+        color: 'улаан',
+        size: 'M',
+      });
+      const blueProductId = await createProduct({
+        name: `${tag} Цамц Б`,
+        categoryId: categoryA.id,
+      });
+      await createVariant({
+        productId: blueProductId,
+        name: 'Хөх',
+        sku: `${tag}-blue`,
+        color: 'хөх',
+        size: 'L',
+      });
+
+      const results = await waitFor(async () => {
+        const hits = await searchFor(superAdminToken, {
+          q: `${tag} Цамц`,
+          color: 'улаан',
+        });
+        return hits.length >= 1 ? hits : null;
+      });
+
+      const ids = results.map((p) => p.id);
+      expect(ids).toContain(redProductId);
+      expect(ids).not.toContain(blueProductId);
+    });
+
+    it('size query параметр зөвхөн тухайн хэмжээтэй variant-той Product-ыг буцаана', async () => {
+      const tag = freshTag();
+      const sProductId = await createProduct({
+        name: `${tag} Өмд А`,
+        categoryId: categoryA.id,
+      });
+      await createVariant({
+        productId: sProductId,
+        name: 'S',
+        sku: `${tag}-s`,
+        size: 'S',
+      });
+      const lProductId = await createProduct({
+        name: `${tag} Өмд Б`,
+        categoryId: categoryA.id,
+      });
+      await createVariant({
+        productId: lProductId,
+        name: 'L',
+        sku: `${tag}-l`,
+        size: 'L',
+      });
+
+      const results = await waitFor(async () => {
+        const hits = await searchFor(superAdminToken, {
+          q: `${tag} Өмд`,
+          size: 'S',
+        });
+        return hits.length >= 1 ? hits : null;
+      });
+
+      const ids = results.map((p) => p.id);
+      expect(ids).toContain(sProductId);
+      expect(ids).not.toContain(lProductId);
+    });
+
+    it('facets нь color/size-ийн сонголтоос ХАМААРАЛГҮЙ (сонгосны дараа ч бусад боломжит утга хэвээр харагдана)', async () => {
+      const tag = freshTag();
+      const productId = await createProduct({
+        name: `${tag} Малгай`,
+        categoryId: categoryA.id,
+      });
+      await createVariant({
+        productId,
+        name: 'Улаан S',
+        sku: `${tag}-1`,
+        color: 'улаан',
+        size: 'S',
+      });
+      await createVariant({
+        productId,
+        name: 'Хөх L',
+        sku: `${tag}-2`,
+        color: 'хөх',
+        size: 'L',
+      });
+
+      const body = await waitFor(async () => {
+        const res = await searchWithFacets(superAdminToken, {
+          q: `${tag} Малгай`,
+          color: 'улаан',
+        });
+        return res.products.length >= 1 ? res : null;
+      });
+
+      // Hits: зөвхөн улаан (color шүүлтээр шүүгдсэн).
+      expect(body.products.map((p) => p.id)).toEqual([productId]);
+      // Facets: улаан СОНГОСОН ч хөх-ийг ч сонголтод санал болгоно (q+
+      // category-аар л шүүгдсэн, color-оор ШҮҮГДЭЭГҮЙ тул).
+      expect(body.facets.colors).toEqual(
+        expect.arrayContaining(['улаан', 'хөх']),
+      );
+      expect(body.facets.sizes).toEqual(expect.arrayContaining(['S', 'L']));
+    });
+
+    it('PATCH /product-variants/:id-ээр color өөрчлөгдвөл эцэг Product-ийн индекс шинэчлэгдэж, шинэ өнгөөр олддог болно', async () => {
+      const tag = freshTag();
+      const productId = await createProduct({
+        name: `${tag} Куртка`,
+        categoryId: categoryA.id,
+      });
+      const variantId = await createVariant({
+        productId,
+        name: 'Ногоон',
+        sku: `${tag}-green`,
+        color: 'ногоон',
+      });
+      await waitFor(async () => {
+        const hits = await searchFor(superAdminToken, {
+          q: `${tag} Куртка`,
+          color: 'ногоон',
+        });
+        return hits.length >= 1 ? hits : null;
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/product-variants/${variantId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ color: 'шар' })
+        .expect(200);
+
+      await waitFor(async () => {
+        const hits = await searchFor(superAdminToken, {
+          q: `${tag} Куртка`,
+          color: 'шар',
+        });
+        return hits.length >= 1 ? hits : null;
+      });
+      const oldColorHits = await searchFor(superAdminToken, {
+        q: `${tag} Куртка`,
+        color: 'ногоон',
+      });
+      expect(oldColorHits.map((p) => p.id)).not.toContain(productId);
     });
   });
 

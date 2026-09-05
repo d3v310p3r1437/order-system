@@ -188,7 +188,10 @@ admin-web + Mobile, текст-зөвхөн MVP + бодит цагийн чат
 "(2026-08-27) Харилцагчийн үйлчилгээ" бичлэгийг үз).
 Geolocation auto-routing (автоматаар хамгийн ойрхон салбар сонгох —
 Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР зүйл) хараахан backlog
-хэвээр. Дэлгэрэнгүй: `docs/plan.md` §8.
+хэвээр. **ProductVariant бүтэцтэй шинж чанар (color/size/attributes) +
+каталогийн UX сайжруулалт (§7 модуль #3-ийн үргэлжлэл) дууссан** (backend +
+admin-web + Mobile — доор "(2026-09-05) ProductVariant бүтэцтэй шинж
+чанар..." бичлэгийг үз). Дэлгэрэнгүй: `docs/plan.md` §8.
 
 - **RLS/transaction spike (§6.3) дууссан** — `docs/adr/001-rls-transaction-pattern.md`
 - **Custom customer-auth + Keycloak staff-auth дууссан** (`docs/adr/002-jwt-identity-only-authorization-from-db.md`):
@@ -2182,6 +2185,146 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     цөөхөн тасалбар) шаардлагагүй гэж үзсэн; хэрэв ирээдүйд их хэмжээгээр
     (мянгаараа) хуримтлагдвал `[[dev-test-customer-account]]`-ийн
     Order debris-тэй адилхан зарчмаар цэвэрлэх шаардлагатай болно.
+- **(2026-09-05) ProductVariant бүтэцтэй шинж чанар + каталогийн UX
+  сайжруулалт (§7 модуль #3-ийн үргэлжлэл) дууссан** (backend + admin-web
+  + Mobile), `feature/catalog-variant-attributes` branch (`origin/main`-аас).
+  - **Хэсэг A (backend):** `ProductVariant`-д `color`/`size` (`String?`)
+    + `attributes` (`Json?`, чөлөөт key-value) нэмэв — migration
+    `20260905100000_add_variant_structured_attributes`. RLS/SECURITY
+    DEFINER функц ШААРДААГҮЙ (`add_branch_geo_and_catalog_fields`-тэй адил
+    урьдал жишээ, зөвхөн багана нэмэлт). ⚠️ **Migration-ийг `prisma migrate
+    dev`-ээр ҮҮСГЭЖ ЧАДААГҮЙ:** орон нутгийн dev DB-ийн `_prisma_migrations`
+    хүснэгт дэх `20260826101755_add_reviews`-ийн checksum файлтай зөрж,
+    Prisma "reset хийх шаардлагатай" гэж татгалзсан (шалтгаан тодорхойгүй
+    үлдсэн — CRLF/line-ending зөрүү гэж таамагласан, dev DB-д хуримтлагдсан
+    өгөгдлийг алдахгүйн тулд шалтгааныг гүнзгий шүүрдээгүй). **Шийдэл:**
+    `prisma migrate diff --from-schema-datasource ... --to-schema-datamodel ...
+    --script`-ээр SQL-ийг гараар гаргаж, `prisma db execute --file`-ээр
+    шууд ажиллуулаад, `prisma migrate resolve --applied`-аар бүртгэсэн
+    (`prisma migrate reset`-ийг ОГТ ашиглаагүй) — ирээдүйд ижил checksum
+    зөрчил гарвал энэ 3-алхамт аргыг дахин ашиглаж болно.
+    `GET /catalog/search`-д `color`/`size` query параметр (`"` тэмдэгт
+    хориглосон `@Matches`, Meilisearch filter injection-аас сэргийлэх,
+    categoryId-ийн UUID validation-тай ижил зарчим) нэмэгдэв. Хариу
+    `{products, facets}` болж өргөтгөв (өмнө нь зөвхөн `products[]`) —
+    **admin-web/Mobile хоёулаа шинэчлэгдэв** (доор). `ProductSearchDocument`-д
+    `colors`/`sizes` (Product-ийн бүх variant-аас денормалчилсан,
+    давхардаагүй, эрэмбэлэгдсэн массив) нэмэгдэв,
+    `MeilisearchService.search()`-д **2 тусдаа Meilisearch дуудлага**
+    (нэг нь hits-д зориулж color/size-аар шүүсэн filter, нөгөө нь
+    facets-д зориулж q+categoryId-аар л шүүсэн filter) — учир нь
+    хэрэглэгч "улаан" сонгосны дараа ч "хөх" chip-ийг сонголтоор
+    хэвээр харах ёстой (Meilisearch native disjunctive facet
+    дэмждэггүй). `ProductService.reindexProduct(productId)` (өмнөх
+    private `indexProduct()`-ийг public болгож нэрийг нь өөрчилсөн,
+    product+category+variants-тай хамт дахин уншдаг) шинээр нэмэгдэж
+    **`ProductVariantService.create/update/remove()` бүрд дуудагдана** —
+    учир нь variant-ийн color/size өөрчлөгдөх бүрд эцэг Product-ийн
+    Meilisearch баримт (colors/sizes) хуучирна, өмнө нь variant CRUD
+    Meilisearch-тэй ОГТ холбогдоогүй байсан цоорхойг санамсаргүй бус
+    нээж олов.
+  - **Хэсэг B (admin-web):** `VariantDialog.tsx`-д Өнгө/Хэмжээ текст
+    input + "Бусад шинж чанар" (attributes) dynamic key-value мөр
+    (энэ codebase-д ижил зорилготой загвар өмнө нь БАЙГААГҮЙ тул шинээр
+    зохиов, `useState<{key,value}[]>` + мөр нэмэх/устгах товч, бусад
+    Dialog-уудын "plain useState, react-hook-form-гүй" зарчимд нийцүүлсэн).
+    `searchProducts()`-ийн буцаах хэлбэрийг (`{products,facets}` →
+    `.products`) `api.ts` дотор л задалсан — `ProductsPage.tsx`-ийн гарын
+    үсэг (`Promise<ProductDetail[]>`) ӨӨРЧЛӨГДӨӨГҮЙ.
+  - **Хэсэг C (Mobile, каталог дэлгэц):** `AvailabilityStatusPill`
+    (`SegmentedButton<String>`, Бүгд/Бэлэн/Захиалгын) — ⚠️ **энэ шүүлт
+    ЗӨВХӨН клиент талд** (backend Meilisearch индекс branchId-аас
+    хамааралтай ДИНАМИК availability-г хадгалдаггүй тул), `CatalogSearchNotifier.setStatus()`
+    сүлжээгээр дахин ДУУДАХГҮЙ, сүүлд ирсэн raw үр дүнгээс дахин шүүнэ.
+    `ColorChipRow` (дугуй өнгөт swatch + label, Монгол өнгөний нэрийг
+    бодит `Color`-т буулгах жижиг dictionary, танигдаагүй нэрд label-аар
+    л ялгана) / `SizeChipRow` (`CategoryChipRow`-тэй ижил pill загвар) —
+    эх сурвалж `GET /catalog/search`-ийн `facets`. `CatalogFilter`/
+    `CatalogSearchNotifier` өргөтгөгдөж (`color`/`size`/`status`),
+    `CatalogSearchState{products,facets}` шинэ wrapper. `ProductCard`:
+    үнэ зурган ЗҮҮН ДООД буланд тод (`Colors.black@0.65`) дэвсгэртэй
+    badge болж шилжив (өмнө нь текст хэсэгт байсан), зурган БАРУУН ДООД
+    буланд бяцхан дугуй "Сагслах" FAB (`_AddToCartFab`, `Material`+`InkWell`+`CircleBorder`)
+    давхарлагдав — картын ерөнхий `GestureDetector`-тай (дэлгэрэнгүй рүү
+    шилжих) nested tap зөрчилгүй ажиллана (`OrderListCard`-ийн
+    `InkWell`-ийн доторх `_ItemReviewRow`-ийн `InkWell`-тэй ЯГ ижил,
+    аль хэдийн батлагдсан загвар). FAB дарахад `AddToCartBottomSheet`
+    (шинэ, `QuickReviewBottomSheet`-ийн "sheet өөрөө дуудагч талын state
+    мэдэхгүй" загвар) нээгдэж variant chip (`ProductVariant.variantLabel`
+    getter — "улаан / M" гэх мэт, color/size аль аль нь байхгүй бол хуучин
+    `name`-руу буцна) + тоо +/- + "Сагсанд нэмэх" харуулна.
+    `CartNotifier.addOne()`-г `addQuantity(variantId, delta)`-аар
+    дахин бичиж (delta=1) ерөнхийлсөн — logic давхардуулаагүй.
+    `AvailabilityBadge`-ийн PRE_ORDER текстийг "Захиалгаар · N хоног" →
+    "Захиалгын (N хоног)" болгож даалгаврын шууд заасан форматад нийцүүлэв.
+  - **Хэсэг D (Mobile, захиалгын түүх):** `OrderListScreen`-ийн Tab
+    шошиг тоотой боллоо ("Идэвхтэй (2)"/"Түүх (1)", `ordersAsync.maybeWhen(data:...)`-аар
+    build()-ийн эхэнд тооцно). `OrderStatusBadge`-ийн 6 тусдаа өнгийг
+    (CREATED slate, CONFIRMED blue, PREPARING amber, READY violet,
+    COMPLETED emerald, CANCELLED red) 4 бүлэг рүү нэгтгэв: CREATED+CONFIRMED
+    → цэнхэр, PREPARING+READY → шар, COMPLETED → ногоон (өөрчлөгдөөгүй),
+    CANCELLED → улаан (өөрчлөгдөөгүй). ⚠️ **`apps/admin-web/src/components/OrderStatusBadge.tsx`-ийг
+    ЗОРИУДАА ХӨНДӨӨГҮЙ** (6 тусдаа өнгөө хэвээр үлдсэн) — staff-д ажлын
+    урсгалын хувьд PREPARING/READY ялгаа чухал, харилцагчид (Mobile)
+    зөвхөн ерөнхий 4 үе шат хангалттай гэсэн тусдаа платформ шийдвэр
+    (өмнөх "admin-web-тэй ЯГ ижил" зарчмаас зөвшөөрөгдсөн хазайлт).
+  - **Хэсэг E (сагсны бүлэглэлт) ЗОРИУДАА АЛГАССАН:** `CartService`/`cart_repository.dart`-ийг
+    судалсны дараа одоогийн checkout загвар **НЭГ САЛБАРААС Л** сагслах
+    зарчимтай (`CartItem`-д branchId огт байхгүй, `POST /cart/validate-branch`
+    ГАНЦ `branchId` авдаг, `BranchSelectionScreen`-ээр checkout-ийн ӨМНӨ
+    ганц удаа сонгодог) болохыг баталгаажуулсан тул "олон салбар холилдоогүй
+    бол алгас" гэсэн даалгаврын нөхцөлт зааврыг хэрэгжүүлж алгассан.
+  - **Тест:** backend `pnpm --filter api test` 47/47 suite (327/327,
+    шинэ `product-variant.service.spec.ts` + `product.service.spec.ts`-д
+    нэмэлт), `test:e2e` 20/21 suite ногоон (`search.e2e-spec.ts`-д 4
+    шинэ тест — color/size filter, facets-ийн status-аас хамааралгүй
+    байдал, variant PATCH-ийн дараах реиндекс; ганц алдаа зөвхөн
+    `delivery-routing.e2e-spec.ts`-ийн локал `ROUTING_PROVIDER=osrm`
+    орчны тохиргооноос, өмнөх Phase-үүдийн тэмдэглэлтэй нийцнэ). admin-web
+    `vitest`/`tsc -b`/`oxlint`/`vite build` бүгд цэвэр. Mobile
+    `flutter analyze` 0 алдаа, `flutter test` 124/124 (шинэ chip/FAB/bottom
+    sheet/tab count widget тестүүд + `CatalogSearchNotifier`-ийн
+    `setColor/setSize/setStatus` unit тест нэмэгдсэн).
+  - ⚠️🔴 **Android emulator дээр бодитоор турших үед олдсон, e2e тестийн
+    debris каталогийн facet-д гарч ирдэг зан төлөв:** `search.e2e-spec.ts`-ийн
+    шинэ color/size тестүүд (болон өмнөх session-үүдийн бусад ad hoc
+    турших ажил) dev Meilisearch индекст `color='улаан'/'хөх'` бүхий
+    "srch..." угтвартай debris Product үлдээдэг тул "улаан" chip дарахад
+    ЖИНХЭНЭ демо өгөгдлийн хажууд эдгээр debris Product-ууд (нэр нь
+    "srch1788610933..." гэх мэт санамсаргүй) ч хамт харагдана —
+    **функциональ алдаа БИШ** (chip filter-ийн логик бүрэн зөв ажиллаж
+    байгааг батална), зөвхөн dev DB-ийн харагдах байдлыг бохирдуулдаг.
+    Branch/Order debris-ийн адил зарчмаар (`cleanup-branch-debris.ts`,
+    `[[dev-test-customer-account]]`) энэ ч мөн "debris хуримтлагдана,
+    тогтмол давтамжтай цэвэрлэж болно" гэсэн батлагдсан зарчимд багтана —
+    Category/Product debris-ийг ерөнхийд нь "устгах шаардлагагүй" гэж
+    үзсэн өмнөх Phase-үүдийн шийдвэртэй нийцүүлж, шинэ cleanup script
+    ЗОХИОГООГҮЙ (цаашид их хэмжээгээр (мянгаараа) хуримтлагдвал
+    анхаарах).
+  - ⚠️ **UI баталгаажуулалтын явцад дахин батлагдсан сургамж
+    (`uiautomator dump`):** энэ session-д `uiautomator dump` Material
+    widget-үүдийн (`ChoiceChip`, `SegmentedButton`, `IconButton` доторх
+    `content-desc`) bounds-ыг БҮРЭН, тодорхой буцаасан (өмнөх Phase-үүдийн
+    зөрчилтэй ажиглалтуудтай (заримдаа хоосон буцдаг) нийцэхгүй ч, "эхлээд
+    dump-ыг турш" гэсэн зөвлөмж дахин батлагдав) — ГАГЦ л ЗОРИУДАА
+    `Semantics`/tooltip аваагүй `_AddToCartFab` шиг эсрэг тохиолдолд
+    (bare `InkWell`, семантик label-гүй) dump-д ил ГАРААГҮЙ тул
+    screenshot crop (`System.Drawing`, PowerShell)-оор нарийвчилж олох
+    шаардлагатай байсан — цаашид ижил "coordinate тааруулж олдохгүй"
+    тохиолдолд эхлээд dump, дараа нь crop гэсэн 2 шатлалт зарчмыг
+    баримтал.
+  - ⚠️ **Процессын алдаа, засварласан:** энэ ажлыг ЭХЛЭЭД буруу
+    `feature/store-branding` branch (PR #26-ийн нээлттэй, өөр
+    зорилготой branch) дээр эхлүүлсэн байсныг ажлын дундуур (commit
+    хийхээс өмнө) олж, `git stash` → `main`-руу шилжиж → шинэ
+    `feature/catalog-variant-attributes` branch үүсгэж → stash pop
+    (1 файлд `apps/admin-web/src/lib/api.ts`, зөрчилгүй auto-merge)
+    хийж засварласан — commit хийгээгүй байсан тул алдаагүй нүүлгэсэн.
+    **Сургамж:** шинэ ажил эхлэхийн өмнө ЗААВАЛ `git branch
+    --show-current`-ээр одоогийн branch зөв эсэхийг (өмнөх ажлаас
+    үлдсэн feature branch дээр биш, `main`-аас шинэ branch эсэхийг)
+    шалгах ёстой.
+
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн

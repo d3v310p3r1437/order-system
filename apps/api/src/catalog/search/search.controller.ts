@@ -29,12 +29,22 @@ export class SearchController {
     private readonly productService: ProductService,
   ) {}
 
+  // (2026-09-05) Хариу бүтэц `{products, facets}` болж өргөтгөв (өмнө нь
+  // зөвхөн products[] буцаадаг байсан) — facets.colors/sizes нь мобайл/
+  // admin-web талд боломжит chip-үүдийг ДИНАМИКААР үүсгэхэд ашиглагдана
+  // (docs/plan.md §7 модуль #3-ийн UX сайжруулалт).
   @Get('search')
   async search(@Query() query: SearchProductsQueryDto) {
-    const ids = await this.meilisearch.search(query.q ?? '', {
+    const { ids, facets } = await this.meilisearch.search(query.q ?? '', {
       categoryId: query.categoryId,
+      color: query.color,
+      size: query.size,
     });
-    return this.productService.findManyWithAvailability(ids, query.branchId);
+    const products = await this.productService.findManyWithAvailability(
+      ids,
+      query.branchId,
+    );
+    return { products, facets };
   }
 
   // §8 Phase 2, даалгавар #10: нэг удаагийн bulk-reindex, SUPER_ADMIN-д

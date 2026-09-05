@@ -2,16 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mobile/features/cart/presentation/cart_providers.dart';
+import 'package:mobile/features/catalog/domain/availability.dart';
+import 'package:mobile/features/catalog/domain/product.dart';
+import 'package:mobile/features/catalog/domain/product_variant.dart';
+import 'package:mobile/features/catalog/domain/search_facets.dart';
 import 'package:mobile/features/catalog/presentation/catalog_providers.dart';
 import 'package:mobile/features/catalog/presentation/catalog_screen.dart';
+import 'package:mobile/features/catalog/presentation/widgets/product_card.dart';
 
+import '../../../support/fake_cart_repository.dart';
 import '../../../support/fake_catalog_repository.dart';
 
 void main() {
   late FakeCatalogRepository repository;
+  late FakeCartRepository cartRepository;
 
   setUp(() {
     repository = FakeCatalogRepository();
+    cartRepository = FakeCartRepository();
   });
 
   Widget wrap() {
@@ -27,7 +36,10 @@ void main() {
       ],
     );
     return ProviderScope(
-      overrides: [catalogRepositoryProvider.overrideWithValue(repository)],
+      overrides: [
+        catalogRepositoryProvider.overrideWithValue(repository),
+        cartRepositoryProvider.overrideWithValue(cartRepository),
+      ],
       child: MaterialApp.router(routerConfig: router),
     );
   }
@@ -61,7 +73,15 @@ void main() {
     expect(find.byKey(const Key('catalog_grid')), findsOneWidget);
     expect(find.text('Ноутбүүк'), findsOneWidget);
     expect(find.text('1,250,000₮'), findsOneWidget);
-    expect(find.text('Бэлэн'), findsOneWidget);
+    // "Бэлэн" текст availability pill-ийн segment label-тэй ХОЁУЛАА
+    // харагдана тул ProductCard-ийн доторх мөрөнд л хязгаарлан шалгана.
+    expect(
+      find.descendant(
+        of: find.byType(ProductCard),
+        matching: find.text('Бэлэн'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('карт дарахад дэлгэрэнгүй route руу шилжинэ', (tester) async {
@@ -103,5 +123,122 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Зөгийн бал'), findsOneWidget);
+  });
+
+  testWidgets('facets-тэй бол өнгө/хэмжээний chip мөр харагдаж, дарахад шүүлттэй дахин хайна', (
+    tester,
+  ) async {
+    repository.searchHandler = (q, c) => [buildTestProduct(id: '1')];
+    repository.facets = const SearchFacets(colors: ['улаан', 'хөх'], sizes: ['M', 'L']);
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('color_chip_row')), findsOneWidget);
+    expect(find.byKey(const Key('size_chip_row')), findsOneWidget);
+    expect(find.text('улаан'), findsOneWidget);
+    expect(find.text('M'), findsOneWidget);
+
+    await tester.tap(find.text('улаан'));
+    await tester.pumpAndSettle();
+
+    expect(repository.searchCalls.last.color, 'улаан');
+  });
+
+  testWidgets('facets хоосон бол өнгө/хэмжээний chip мөр ОГТ харагдахгүй', (
+    tester,
+  ) async {
+    repository.searchHandler = (q, c) => [buildTestProduct(id: '1')];
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('color_chip_row')), findsNothing);
+    expect(find.byKey(const Key('size_chip_row')), findsNothing);
+  });
+
+  testWidgets('availability pill "Бэлэн" дарахад сүлжээгээр дахин ДУУДАХГҮЙ, клиент талд шүүнэ', (
+    tester,
+  ) async {
+    repository.searchHandler = (q, c) => [
+      buildTestProduct(id: 'in-stock', name: 'Бэлэн бараа'),
+      buildTestProduct(
+        id: 'pre-order',
+        name: 'Захиалгын бараа',
+        status: AvailabilityStatus.preOrder,
+      ),
+    ];
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+    expect(find.text('Бэлэн бараа'), findsOneWidget);
+    expect(find.text('Захиалгын бараа'), findsOneWidget);
+    final callsBefore = repository.searchCallCount;
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const Key('availability_status_pill')),
+        matching: find.text('Бэлэн'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(repository.searchCallCount, callsBefore);
+    expect(find.text('Бэлэн бараа'), findsOneWidget);
+    expect(find.text('Захиалгын бараа'), findsNothing);
+  });
+
+  testWidgets('олон variant-той бүтээгдэхүүний "Сагслах" FAB дарахад bottom sheet нээгдэж, variant/тоо сонгож сагсанд нэмнэ', (
+    tester,
+  ) async {
+    final product = Product(
+      id: 'p1',
+      name: 'Куртка',
+      slug: 'kurtka',
+      isActive: true,
+      images: const [],
+      variants: const [
+        ProductVariant(
+          id: 'v-red',
+          productId: 'p1',
+          name: 'Улаан',
+          sku: 'sku-red',
+          unit: 'ширхэг',
+          basePrice: '50000',
+          isActive: true,
+          defaultPreOrderEnabled: false,
+          availability: AvailabilityResult(status: AvailabilityStatus.inStock),
+          color: 'улаан',
+        ),
+        ProductVariant(
+          id: 'v-blue',
+          productId: 'p1',
+          name: 'Хөх',
+          sku: 'sku-blue',
+          unit: 'ширхэг',
+          basePrice: '55000',
+          isActive: true,
+          defaultPreOrderEnabled: false,
+          availability: AvailabilityResult(status: AvailabilityStatus.inStock),
+          color: 'хөх',
+        ),
+      ],
+    );
+    repository.searchHandler = (q, c) => [product];
+    await tester.pumpWidget(wrap());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('add_to_cart_fab_p1')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('add_to_cart_variant_chip_v-red')), findsOneWidget);
+    expect(find.byKey(const Key('add_to_cart_variant_chip_v-blue')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('add_to_cart_variant_chip_v-blue')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('add_to_cart_increment')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('add_to_cart_bottom_sheet_submit')));
+    await tester.pumpAndSettle();
+
+    expect(cartRepository.addOrUpdateCalls.single, (variantId: 'v-blue', quantity: 2));
+    expect(find.text('Сагсанд нэмэгдлээ'), findsOneWidget);
   });
 }

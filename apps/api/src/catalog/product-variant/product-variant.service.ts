@@ -10,6 +10,7 @@ import {
   isUniqueConstraintViolation,
 } from '../../common/prisma-errors.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ProductService } from '../product/product.service.js';
 import type { CreateProductVariantDto } from './dto/create-product-variant.dto.js';
 import type { UpdateProductVariantDto } from './dto/update-product-variant.dto.js';
 
@@ -20,7 +21,10 @@ const SKU_TAKEN = {
 
 @Injectable()
 export class ProductVariantService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly productService: ProductService,
+  ) {}
 
   findAll(productId?: string) {
     return this.prisma.tx.productVariant.findMany({
@@ -44,7 +48,7 @@ export class ProductVariantService {
 
   async create(dto: CreateProductVariantDto) {
     try {
-      return await this.prisma.tx.productVariant.create({
+      const variant = await this.prisma.tx.productVariant.create({
         data: {
           productId: dto.productId,
           name: dto.name,
@@ -56,8 +60,17 @@ export class ProductVariantService {
           isActive: dto.isActive,
           defaultPreOrderEnabled: dto.defaultPreOrderEnabled,
           defaultPreOrderLeadDays: dto.defaultPreOrderLeadDays,
+          color: dto.color,
+          size: dto.size,
+          attributes: dto.attributes,
         },
       });
+      // color/size Meilisearch facet-д денормалчлагдсан тул variant
+      // үүсэх бүрд эцэг Product-ийн индексийг дахин бичих ёстой (ADR 005
+      // шаардахгүй — RLS/SECURITY DEFINER хамааралгүй, зөвхөн одоо
+      // байгаа ProductService.reindexProduct()-г дахин ашиглав).
+      await this.productService.reindexProduct(variant.productId);
+      return variant;
     } catch (error) {
       if (isUniqueConstraintViolation(error)) {
         throw new ConflictException(SKU_TAKEN);
@@ -74,7 +87,7 @@ export class ProductVariantService {
 
   async update(id: string, dto: UpdateProductVariantDto) {
     try {
-      return await this.prisma.tx.productVariant.update({
+      const variant = await this.prisma.tx.productVariant.update({
         where: { id },
         data: {
           name: dto.name,
@@ -86,8 +99,13 @@ export class ProductVariantService {
           isActive: dto.isActive,
           defaultPreOrderEnabled: dto.defaultPreOrderEnabled,
           defaultPreOrderLeadDays: dto.defaultPreOrderLeadDays,
+          color: dto.color,
+          size: dto.size,
+          attributes: dto.attributes,
         },
       });
+      await this.productService.reindexProduct(variant.productId);
+      return variant;
     } catch (error) {
       if (isRecordNotFoundError(error)) {
         throw new NotFoundException({
@@ -104,7 +122,11 @@ export class ProductVariantService {
 
   async remove(id: string) {
     try {
-      return await this.prisma.tx.productVariant.delete({ where: { id } });
+      const variant = await this.prisma.tx.productVariant.delete({
+        where: { id },
+      });
+      await this.productService.reindexProduct(variant.productId);
+      return variant;
     } catch (error) {
       if (isRecordNotFoundError(error)) {
         throw new NotFoundException({

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mobile/features/catalog/domain/availability.dart';
 import 'package:mobile/features/catalog/presentation/catalog_providers.dart';
 
 import '../../../support/fake_catalog_repository.dart';
@@ -20,7 +21,10 @@ void main() {
     await container.read(catalogSearchProvider.future);
 
     expect(repository.searchCallCount, 1);
-    expect(repository.searchCalls.single, (q: '', categoryId: null));
+    expect(
+      repository.searchCalls.single,
+      (q: '', categoryId: null, color: null, size: null),
+    );
   });
 
   test('дараалсан setQuery() debounce хугацаанд зөвхөн СҮҮЛИЙН query-гээр нэг л удаа хайна', () async {
@@ -36,7 +40,10 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 400));
 
     expect(repository.searchCallCount, 2);
-    expect(repository.searchCalls.last, (q: 'апп', categoryId: null));
+    expect(
+      repository.searchCalls.last,
+      (q: 'апп', categoryId: null, color: null, size: null),
+    );
   });
 
   test('setCategory() debounce-гүйгээр ШУУД дахин хайна', () async {
@@ -49,7 +56,7 @@ void main() {
     expect(repository.searchCallCount, 2);
     expect(
       repository.searchCalls.last,
-      (q: '', categoryId: 'category-1'),
+      (q: '', categoryId: 'category-1', color: null, size: null),
     );
     expect(container.read(catalogSearchProvider).hasError, isFalse);
   });
@@ -67,7 +74,7 @@ void main() {
     expect(repository.searchCallCount, 2);
     expect(
       repository.searchCalls.last,
-      (q: 'гутал', categoryId: 'category-2'),
+      (q: 'гутал', categoryId: 'category-2', color: null, size: null),
     );
   });
 
@@ -80,5 +87,43 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(container.read(catalogSearchProvider).hasError, isTrue);
+  });
+
+  test('setColor()/setSize() debounce-гүйгээр ШУУД дахин хайж, query параметрт дамжуулна', () async {
+    await container.read(catalogSearchProvider.future);
+    final notifier = container.read(catalogSearchProvider.notifier);
+
+    notifier.setColor('улаан');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(repository.searchCallCount, 2);
+    expect(
+      repository.searchCalls.last,
+      (q: '', categoryId: null, color: 'улаан', size: null),
+    );
+
+    notifier.setSize('M');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(repository.searchCallCount, 3);
+    expect(
+      repository.searchCalls.last,
+      (q: '', categoryId: null, color: 'улаан', size: 'M'),
+    );
+  });
+
+  test('setStatus() СҮЛЖЭЭГЭЭР дахин ДУУДАХГҮЙ, сүүлд ирсэн raw үр дүнгээс клиент талд шүүнэ', () async {
+    repository.searchHandler = (q, c) => [
+      buildTestProduct(id: 'in-stock', status: AvailabilityStatus.inStock),
+      buildTestProduct(id: 'pre-order', status: AvailabilityStatus.preOrder),
+    ];
+    await container.read(catalogSearchProvider.future);
+    final notifier = container.read(catalogSearchProvider.notifier);
+    expect(repository.searchCallCount, 1);
+
+    notifier.setStatus(AvailabilityStatus.inStock);
+
+    // Сүлжээгээр дахин ДУУДАГДААГҮЙ — зөвхөн клиент талд шүүгдсэн.
+    expect(repository.searchCallCount, 1);
+    final state = container.read(catalogSearchProvider).requireValue;
+    expect(state.products.map((p) => p.id), ['in-stock']);
   });
 }
