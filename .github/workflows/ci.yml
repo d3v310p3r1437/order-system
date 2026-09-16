@@ -115,12 +115,21 @@ jobs:
       # шаардлагатай) job-level `services:`-ээр асаах боломжгүй тул
       # (тэдгээр нь `command:` дэмждэггүй) Keycloak-той ижил "docker run"
       # аргаар асаана.
+      # ⚠️ (2026-09-16) `minio/minio` Docker Hub image БҮРЭН арилсан
+      # ("pull access denied ... repository does not exist") — MinIO Inc.
+      # Docker Hub-аас гарч зөвхөн `quay.io/minio/minio`-руу шилжсэн (яг
+      # Keycloak-ийн адил шалтгаанаар дээрх алхам аль хэдийн quay.io
+      # ашигладаг байсан). CI дээр push (main) event-ээр бодитоор
+      # reproduce хийж баталгаажуулсан (`docker: Error response from
+      # daemon: pull access denied for minio/minio`), локал дээр ч
+      # `docker pull minio/minio` ижил алдаа өгсөн — GitHub runner-ийн
+      # тусгай асуудал БИШ, Docker Hub-ийн бодит өөрчлөлт.
       - name: MinIO container асаах (background-д boot хийнэ)
         run: |
           docker run -d --name minio-ci -p 9000:9000 -p 9001:9001 \
             -e MINIO_ROOT_USER="$MINIO_ROOT_USER" \
             -e MINIO_ROOT_PASSWORD="$MINIO_ROOT_PASSWORD" \
-            minio/minio server /data --console-address ":9001"
+            quay.io/minio/minio server /data --console-address ":9001"
 
       - name: psql суулгах (app_runtime role үүсгэхэд хэрэгтэй)
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
