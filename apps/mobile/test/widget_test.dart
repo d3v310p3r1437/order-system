@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/app/app.dart';
 import 'package:mobile/app/providers.dart';
+import 'package:mobile/features/branding/domain/branding_info.dart';
+import 'package:mobile/features/branding/presentation/branding_providers.dart';
 
 import 'support/fake_secure_token_storage.dart';
 
@@ -15,6 +17,12 @@ void main() {
         overrides: [
           secureTokenStorageProvider.overrideWithValue(
             FakeSecureTokenStorage(),
+          ),
+          // GET /settings/branding нэвтрэлтгүй нээлттэй ч гэсэн widget
+          // тест бодит сүлжээнд ХАМААРАЛТАЙ болохоос сэргийлж override хийв.
+          brandingProvider.overrideWith(
+            (ref) async =>
+                const BrandingInfo(storeName: 'ЧАНАР', logoUrl: null),
           ),
         ],
         child: const OrderSystemApp(),

@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/network/api_exception.dart';
+import '../../branding/presentation/branding_providers.dart';
+import '../../branding/presentation/widgets/brand_mark.dart';
 import 'auth_provider.dart';
 import 'phone_validator.dart';
 
@@ -41,6 +43,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
     final isLoading = authState.isLoading;
+    final storeName = ref.watch(brandingProvider).value?.storeName;
 
     ref.listen(authProvider, (previous, next) {
       final error = next.error;
@@ -65,6 +68,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Center(child: BrandMark(size: 56)),
+                  const SizedBox(height: 12),
+                  if (storeName != null)
+                    Text(
+                      storeName,
+                      style: Theme.of(context).textTheme.titleMedium,
+                      textAlign: TextAlign.center,
+                    ),
+                  const SizedBox(height: 8),
                   Text(
                     'Нэвтрэх',
                     style: Theme.of(context).textTheme.headlineMedium,

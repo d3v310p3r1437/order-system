@@ -4,6 +4,8 @@ import 'package:go_router/go_router.dart';
 
 import '../features/auth/presentation/auth_provider.dart';
 import '../features/auth/domain/auth_state.dart';
+import '../features/branding/presentation/branding_providers.dart';
+import '../features/branding/presentation/widgets/brand_mark.dart';
 import 'widgets/cart_app_bar_action.dart';
 
 /// Нүүр tab — мэндчилгээ + каталог руу орох CTA. Тохиргоо/Гарах
@@ -19,10 +21,18 @@ class HomeScreen extends ConsumerWidget {
       _ => '',
     };
     final theme = Theme.of(context);
+    final storeName = ref.watch(brandingProvider).value?.storeName;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Нүүр'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const BrandMark(size: 28),
+            const SizedBox(width: 10),
+            Text(storeName ?? 'Нүүр'),
+          ],
+        ),
         actions: const [CartAppBarAction()],
       ),
       body: Padding(
