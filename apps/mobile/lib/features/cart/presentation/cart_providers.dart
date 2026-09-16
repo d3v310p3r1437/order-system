@@ -37,10 +37,14 @@ class CartNotifier extends AsyncNotifier<List<CartItem>> {
   }
 
   /// `ProductDetailScreen`-ийн "Сагслах" товч дуудна — variantId сагсанд
-  /// аль хэдийн байвал тоог 1-ээр нэмнэ, байхгүй бол 1-ээр шинээр нэмнэ
-  /// (upsert-set семантикийг энд, ганц газар тооцно — дуудагч тал
-  /// одоогийн тоог мэдэх шаардлагагүй).
-  Future<void> addOne(String variantId) async {
+  /// аль хэдийн байвал тоог 1-ээр нэмнэ, байхгүй бол 1-ээр шинээр нэмнэ.
+  Future<void> addOne(String variantId) => addQuantity(variantId, 1);
+
+  /// `AddToCartBottomSheet`-ийн тоо +/- сонголттой "Сагсанд нэмэх" товч
+  /// дуудна — variantId сагсанд аль хэдийн байвал тоог [delta]-аар нэмнэ,
+  /// байхгүй бол [delta]-аар шинээр нэмнэ (upsert-set семантикийг энд,
+  /// ганц газар тооцно — дуудагч тал одоогийн тоог мэдэх шаардлагагүй).
+  Future<void> addQuantity(String variantId, int delta) async {
     final current = state.value ?? await future;
     var existingQuantity = 0;
     for (final item in current) {
@@ -49,7 +53,7 @@ class CartNotifier extends AsyncNotifier<List<CartItem>> {
         break;
       }
     }
-    await setQuantity(variantId, existingQuantity + 1);
+    await setQuantity(variantId, existingQuantity + delta);
   }
 
   Future<void> remove(String variantId) async {

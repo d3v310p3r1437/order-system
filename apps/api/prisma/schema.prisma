@@ -196,6 +196,16 @@ model ProductVariant {
   costPrice               Decimal? @db.Decimal(12, 2)
   barcode                 String?
   isActive                Boolean  @default(true)
+  // Бүтэцтэй шинж чанар (§7 модуль #3-ийн UX сайжруулалт, 2026-09-05):
+  // color/size нь Meilisearch facet+шүүлтэд ашиглагдах ХАМГИЙН ЭЛБЭГ 2
+  // шинж чанар тул тусдаа багана (индекслэх/шүүхэд хялбар), attributes
+  // нь тэдгээрт багтахгүй бусад чөлөөт key-value хос (жиш: {"марк":
+  // "Ariel"}) — Meilisearch-д ОРОХГҮЙ, зөвхөн дэлгэрэнгүй дэлгэцэд
+  // харуулах зорилготой. `name`-ийг ОРЛОХГҮЙ (backward-compatible,
+  // одоо байгаа чөлөөт текст нэр хэвээр үлдэнэ).
+  color                   String?
+  size                    String?
+  attributes              Json?
   // Салбарын InventoryItem дээр override-гүй бол ашиглагдах анхны утга
   // (inventory-effective.util.ts-ийн resolveEffectivePreOrder-г үз).
   defaultPreOrderEnabled  Boolean  @default(false)

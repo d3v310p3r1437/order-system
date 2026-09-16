@@ -120,8 +120,10 @@ void main() {
       await tester.pumpAndSettle();
 
       // Анхдагч таб — "Идэвхтэй" — тул зөвхөн CONFIRMED карт харагдана.
-      expect(find.text('Идэвхтэй'), findsOneWidget);
-      expect(find.text('Түүх'), findsOneWidget);
+      // Tab-ийн шошиг тоотой ("Идэвхтэй (N)") — §7 модуль #3-ийн UX
+      // сайжруулалт.
+      expect(find.text('Идэвхтэй (1)'), findsOneWidget);
+      expect(find.text('Түүх (1)'), findsOneWidget);
       expect(
         find.byKey(const Key('order_list_card_order-active')),
         findsOneWidget,
@@ -144,7 +146,7 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Түүх'));
+      await tester.tap(find.text('Түүх (1)'));
       await tester.pumpAndSettle();
 
       expect(
@@ -171,7 +173,7 @@ void main() {
       await tester.pumpWidget(wrap());
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Түүх'));
+      await tester.tap(find.text('Түүх (1)'));
       await tester.pumpAndSettle();
 
       expect(find.text('Үнэлэх'), findsOneWidget);

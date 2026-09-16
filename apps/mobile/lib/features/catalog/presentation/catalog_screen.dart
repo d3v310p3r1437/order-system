@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/widgets/cart_app_bar_action.dart';
 import 'catalog_providers.dart';
+import 'widgets/availability_status_pill.dart';
 import 'widgets/catalog_empty_state.dart';
 import 'widgets/category_chip_row.dart';
 import 'widgets/product_card.dart';
@@ -72,6 +73,14 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
                   ),
             loading: () => const SizedBox.shrink(),
             error: (_, _) => const SizedBox.shrink(),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: AvailabilityStatusPill(
+              selected: notifier.filter.status,
+              onSelect: notifier.setStatus,
+            ),
           ),
           const SizedBox(height: 8),
           Expanded(

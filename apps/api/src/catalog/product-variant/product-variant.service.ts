@@ -56,6 +56,9 @@ export class ProductVariantService {
           isActive: dto.isActive,
           defaultPreOrderEnabled: dto.defaultPreOrderEnabled,
           defaultPreOrderLeadDays: dto.defaultPreOrderLeadDays,
+          color: dto.color,
+          size: dto.size,
+          attributes: dto.attributes,
         },
       });
     } catch (error) {
@@ -86,6 +89,9 @@ export class ProductVariantService {
           isActive: dto.isActive,
           defaultPreOrderEnabled: dto.defaultPreOrderEnabled,
           defaultPreOrderLeadDays: dto.defaultPreOrderLeadDays,
+          color: dto.color,
+          size: dto.size,
+          attributes: dto.attributes,
         },
       });
     } catch (error) {

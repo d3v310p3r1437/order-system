@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -51,4 +52,18 @@ export class CreateProductVariantDto {
   @IsInt()
   @Min(0)
   defaultPreOrderLeadDays?: number;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  color?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  size?: string;
+
+  @IsOptional()
+  @IsObject()
+  attributes?: Record<string, string>;
 }

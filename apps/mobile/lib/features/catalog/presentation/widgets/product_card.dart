@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 
 import '../../../../core/format/currency.dart';
 import '../../domain/product.dart';
+import 'add_to_cart_bottom_sheet.dart';
 import 'availability_badge.dart';
 import 'product_image_placeholder.dart';
 
@@ -65,7 +66,32 @@ class _ProductCardState extends State<ProductCard> {
                 tag: 'product-image-${product.id}',
                 child: AspectRatio(
                   aspectRatio: 1,
-                  child: _ProductImage(url: product.primaryImageUrl),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _ProductImage(url: product.primaryImageUrl),
+                      if (price != null)
+                        Positioned(
+                          left: 8,
+                          bottom: 8,
+                          child: _PriceBadge(
+                            price: price,
+                            showFromLabel: hasMultiplePrices,
+                          ),
+                        ),
+                      Positioned(
+                        right: 8,
+                        bottom: 8,
+                        child: _AddToCartFab(
+                          key: Key('add_to_cart_fab_${product.id}'),
+                          onTap: () => showAddToCartBottomSheet(
+                            context: context,
+                            product: product,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
               Padding(
@@ -82,15 +108,6 @@ class _ProductCardState extends State<ProductCard> {
                         height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      price == null
-                          ? '—'
-                          : '${hasMultiplePrices ? 'Эхлэх үнэ ' : ''}${formatTugrik(price)}',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
                     const SizedBox(height: 8),
                     AvailabilityBadge(
                       result: product.aggregateAvailability,
@@ -100,6 +117,68 @@ class _ProductCardState extends State<ProductCard> {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Зурган зүүн доод буланд тод дэвсгэртэй үнийн badge (§7 модуль #3-ийн
+/// UX сайжруулалт, 2026-09-05) — өмнө нь зурган ДООД текст хэсэгт байсан
+/// энгийн `Text`-ийг сольсон, ижил "Эхлэх үнэ" угтвар хэвээр.
+class _PriceBadge extends StatelessWidget {
+  const _PriceBadge({required this.price, required this.showFromLabel});
+
+  final String price;
+  final bool showFromLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '${showFromLabel ? 'Эхлэх үнэ ' : ''}${formatTugrik(price)}',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+/// Зурган баруун доод буланд давхарласан бяцхан дугуй "Сагслах" FAB —
+/// дарахад `AddToCartBottomSheet` нээгдэнэ (variant сонголт + тоо + сагсанд
+/// нэмэх). Картын үндсэн `onTap` (дэлгэрэнгүй рүү шилжих)-тэй давхцахгүйн
+/// тулд `GestureDetector`-оор биш зөвхөн `Material`+`InkWell`-ээр
+/// хязгаарлагдмал tap target ашиглав.
+class _AddToCartFab extends StatelessWidget {
+  const _AddToCartFab({super.key, required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.primary,
+      shape: const CircleBorder(),
+      elevation: 2,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(
+            Icons.add_shopping_cart_rounded,
+            size: 18,
+            color: theme.colorScheme.onPrimary,
           ),
         ),
       ),

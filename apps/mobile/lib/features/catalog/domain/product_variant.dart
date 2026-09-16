@@ -16,6 +16,8 @@ class ProductVariant {
     required this.defaultPreOrderEnabled,
     required this.availability,
     this.defaultPreOrderLeadDays,
+    this.color,
+    this.size,
   });
 
   factory ProductVariant.fromJson(Map<String, dynamic> json) {
@@ -29,6 +31,8 @@ class ProductVariant {
       isActive: json['isActive'] as bool,
       defaultPreOrderEnabled: json['defaultPreOrderEnabled'] as bool,
       defaultPreOrderLeadDays: json['defaultPreOrderLeadDays'] as int?,
+      color: json['color'] as String?,
+      size: json['size'] as String?,
       availability: AvailabilityResult.fromJson(
         json['availability'] as Map<String, dynamic>,
       ),
@@ -44,5 +48,16 @@ class ProductVariant {
   final bool isActive;
   final bool defaultPreOrderEnabled;
   final int? defaultPreOrderLeadDays;
+  final String? color;
+  final String? size;
   final AvailabilityResult availability;
+
+  /// Variant сонголтын chip-д харуулах товч шошго — color/size хоёулаа
+  /// байвал "улаан / M", зөвхөн нэг нь байвал ганцаараа нь, аль аль нь
+  /// байхгүй бол `name`-руу буцна (backward-compatible, хуучин чөлөөт
+  /// текст нэртэй variant-уудад).
+  String get variantLabel {
+    final parts = [color, size].whereType<String>().where((s) => s.isNotEmpty);
+    return parts.isEmpty ? name : parts.join(' / ');
+  }
 }

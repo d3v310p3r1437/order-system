@@ -20,6 +20,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// docs/plan.md §7 модуль #3-ийн UX сайжруулалт (2026-09-05): чөлөөт
+// key-value хос — энэ codebase-д ижил зорилготой "dynamic row нэмэх/
+// хасах" загвар өмнө нь байгаагүй тул шинээр зохиов (бусад Dialog-уудын
+// адил plain useState, react-hook-form ашиглаагүй).
+interface AttributeRow {
+  key: string;
+  value: string;
+}
+
 interface VariantDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -46,6 +55,9 @@ export function VariantDialog({
   const [isActive, setIsActive] = useState(true);
   const [preOrderEnabled, setPreOrderEnabled] = useState(false);
   const [preOrderLeadDays, setPreOrderLeadDays] = useState("");
+  const [color, setColor] = useState("");
+  const [size, setSize] = useState("");
+  const [attributeRows, setAttributeRows] = useState<AttributeRow[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,10 +74,37 @@ export function VariantDialog({
         ? String(variant.defaultPreOrderLeadDays)
         : "",
     );
+    setColor(variant?.color ?? "");
+    setSize(variant?.size ?? "");
+    setAttributeRows(
+      variant?.attributes
+        ? Object.entries(variant.attributes).map(([key, value]) => ({
+            key,
+            value,
+          }))
+        : [],
+    );
   }, [open, variant]);
+
+  function updateAttributeRow(index: number, field: "key" | "value", value: string) {
+    setAttributeRows((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  function removeAttributeRow(index: number) {
+    setAttributeRows((rows) => rows.filter((_, i) => i !== index));
+  }
 
   const mutation = useMutation({
     mutationFn: () => {
+      const attributeEntries = attributeRows.filter((row) => row.key.trim());
+      const attributes =
+        attributeEntries.length > 0
+          ? Object.fromEntries(
+              attributeEntries.map((row) => [row.key.trim(), row.value]),
+            )
+          : undefined;
       const dto: ProductVariantInput = {
         productId,
         name,
@@ -79,6 +118,9 @@ export function VariantDialog({
         defaultPreOrderLeadDays: preOrderEnabled
           ? Number(preOrderLeadDays || 0)
           : undefined,
+        color: color || undefined,
+        size: size || undefined,
+        attributes,
       };
       return isEdit
         ? updateProductVariant(accessToken, variant.id, dto)
@@ -179,6 +221,82 @@ export function VariantDialog({
               onChange={(e) => setBarcode(e.target.value)}
               disabled={mutation.isPending}
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="variant-color">Өнгө</Label>
+              <Input
+                id="variant-color"
+                placeholder="жиш: улаан"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                disabled={mutation.isPending}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="variant-size">Хэмжээ</Label>
+              <Input
+                id="variant-size"
+                placeholder="жиш: M, XL, 42"
+                value={size}
+                onChange={(e) => setSize(e.target.value)}
+                disabled={mutation.isPending}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between">
+              <Label>Бусад шинж чанар</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setAttributeRows((rows) => [...rows, { key: "", value: "" }])
+                }
+                disabled={mutation.isPending}
+              >
+                Мөр нэмэх
+              </Button>
+            </div>
+            {attributeRows.map((row, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Input
+                  aria-label="Шинж чанарын нэр"
+                  placeholder="жиш: марк"
+                  value={row.key}
+                  onChange={(e) =>
+                    updateAttributeRow(index, "key", e.target.value)
+                  }
+                  disabled={mutation.isPending}
+                />
+                <Input
+                  aria-label="Шинж чанарын утга"
+                  placeholder="жиш: Ariel"
+                  value={row.value}
+                  onChange={(e) =>
+                    updateAttributeRow(index, "value", e.target.value)
+                  }
+                  disabled={mutation.isPending}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeAttributeRow(index)}
+                  disabled={mutation.isPending}
+                >
+                  Устгах
+                </Button>
+              </div>
+            ))}
+            {attributeRows.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Одоогоор нэмэлт шинж чанар алга.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2 rounded-lg border border-border p-3">
