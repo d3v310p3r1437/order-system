@@ -31,8 +31,11 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme}
     ports: ["8080:8080"]
 
+  # (2026-09-16) `minio/minio` Docker Hub image арилсан ("pull access
+  # denied") тул Keycloak-ийн адил зарчмаар `quay.io/minio/minio`
+  # ашиглана — `.github/workflows/ci.yml`-ийн МinIO алхамтай нийцүүлсэн.
   minio:
-    image: minio/minio
+    image: quay.io/minio/minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

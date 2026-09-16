@@ -2554,6 +2554,45 @@ admin-web + Mobile — доор "(2026-09-05) ProductVariant бүтэцтэй ш
     алдаа авсан — `+97688112233` (бүрэн E.164) бичсэний дараа зөв
     нэвтэрсэн; энэ бол апп/backend-ийн алдаа БИШ, зөвхөн турших явцын
     input алдаа байв.
+- **(2026-09-16) 🔴 CI-ийг бүхэлд нь унагааж байсан ноцтой инфра
+  асуудал олдож засагдсан: `minio/minio` Docker Hub image БҮРЭН
+  арилсан.** PR #26 (branding)-ийг squash-merge хийсний дараа main
+  дээрх push-triggered CI **FAILURE** гарсныг `gh run list --branch
+  main`-ээр илрүүлж, `gh run view --log`-оор яг алхмыг (`MinIO
+  container асаах`) олов — алдаа: `docker: Error response from daemon:
+  pull access denied for minio/minio, repository does not exist or
+  may require 'docker login': denied`. Локал `docker pull minio/minio`
+  ч ЯГ ИЖИЛ алдаа өгснөөр GitHub runner-ийн тусгай асуудал БИШ, Docker
+  Hub-ийн бодит өөрчлөлт (MinIO Inc. Docker Hub-аас гарч зөвхөн
+  `quay.io/minio/minio`-руу шилжсэн — Keycloak-ийг өмнө нь яг ижил
+  шалтгаанаар аль хэдийн `quay.io/keycloak/keycloak`-руу шилжүүлсэн
+  байсан, `.github/workflows/ci.yml`-ийн Keycloak алхмыг үз) болохыг
+  баталгаажуулав. `docker pull quay.io/minio/minio:latest`+бодит
+  container ажиллуулж (`/minio/health/live` → 200 OK) баталгаажуулсны
+  дараа `.github/workflows/ci.yml`-ийн MinIO алхам БОЛОН
+  `infra/docker-compose.dev.yml`-ийн `minio` service (локал dev-д ч
+  ижил асуудал давтагдахаас сэргийлэх) хоёуланг нь `quay.io/minio/minio`
+  болгож засав — локал dev дээр `docker compose up -d minio` дахин
+  ажиллуулж (volume хэвээр, өгөгдөл алдагдаагүй) шалгасан.
+  ⚠️ **Энэ инцидентээс гарсан 2 давхар сургамж:**
+  (1) **squash-merge хийсний дараа CI бодитоор амжилттай эсэхийг ЗААВАЛ
+  `gh run list --branch main`/`gh pr checks`-ээр давхар шалгах ёстой**
+  — өмнөх session-д зөвхөн локал `pnpm test`/`flutter test` ажиллуулж
+  л "баталгаажлаа" гэж дүгнэсэн нь CI-ийн ЖИНХЭНЭ орчны (Docker image
+  татах эрх, network) асуудлыг бүрэн орхигдуулсан; (2) `feature/
+  store-branding`-руу push хийхэд эхэндээ (`gh run list`-ээр
+  ~90 секундын турш) ямар ч check-run харагдаагүй нь "Actions
+  trigger хийгдэхгүй байна" гэсэн буруу дүгнэлт төрүүлсэн байсан ч,
+  жинхэнэ шалтгаан trigger-ийн тохиргоо БИШ (`on: pull_request:
+  branches: [main]` зөв тохируулагдсан хэвээр), харин зөвхөн webhook
+  delivery-ийн саатал (GitHub Actions queue-д ~1-2 минут зарцуулсан)
+  байсан — `gh api repos/.../commits/<sha>/check-runs`-аар яг тэр
+  sha-г дараа нь дахин шалгахад run бодитоор олдсон (мөн MinIO алдаагаар
+  л амжилтгүй болсныг харсан). **Тиймээс "run олдсонгүй" гэдгийг
+  hard failure гэж бүү дүгнэ** — эхлээд `gh api
+  repos/.../commits/<яг зөв SHA>/check-runs`-аар 1-2 минутын дараа
+  дахин шалгаж, зөвхөн тэгэхэд ч олдохгүй бол цаашид `ci.yml`-ийн
+  trigger тохиргоог шалга.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
