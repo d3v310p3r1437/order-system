@@ -2304,25 +2304,41 @@ Phase 4-ийн хүргэлтийн чиглүүлэлттэй ОГТ ӨӨР з�
     хөгжүүлэлтийн машин дээр ЯГ ЭНЭ session-ий явцад шинээр идэвхжсэн
     (эсвэл өмнө нь мэдэгдээгүй байсан) Windows Application Control
     Policy (WDAC/AppLocker/EDR төрлийн) `dartaotruntime.exe`-г бүхэлд нь
-    хориглосон явдал. **Иймд Android emulator дээрх эцсийн screenshot
-    баталгаажуулалт (item 12 — шинэ icon+нэр нүүр дэлгэц дээр,
-    Mobile доторх лого) ХИЙГДЭЭГҮЙ ҮЛДСЭН** — хэрэглэгчтэй зөвшилцөж
-    (AskUserQuestion), одоо байгаа ажлыг commit хийж, энэ баталгаажуулалтыг
-    зогсоохоор шийдвэрлэсэн. **Дараагийн сесст (энэ орчны блок арилсны
-    дараа) хийх ёстой:** (1) `flutter pub get`, (2) АЛЬ Ч зам ажиллавал
-    icon дахин generate хийх шаардлагагүй (аль хэдийн commit хийгдсэн
-    файлууд) — зөвхөн `flutter run -d <emulator>`-ээр апп-аа устгаж
-    дахин суулгаад (icon кэш цэвэрлэгдэх) нүүр дэлгэц дээрх шинэ icon
-    ("ЧАНАР" нэртэй, лого дүрстэй)-г screenshot-оор, мөн апп доторх
-    Login/Home дэлгэц дээрх `BrandMark`-ыг (бодит backend ажиллаж байх
-    үед) screenshot-оор баталгаажуулах; (3) `flutter test`-ийг бүрэн
-    ажиллуулж (`brandingProvider` override хийсэн 2 тестийг оруулаад)
-    бүх (шинэ+хуучин) тест ногоон эсэхийг батлах.
-  - `docker compose -f infra/docker-compose.dev.yml up -d` bодит dev DB/
-    MinIO/Keycloak дээр ажилласан (superuser DB холболт, Keycloak admin
-    API, MinIO upload бүгд ЭНЭ session-д бодитоор дуудагдаж шалгагдсан) —
-    зөвхөн Android emulator-ийн `flutter run`/`flutter test` алхам л
-    дээрх орчны блокоос болж хийгдээгүй.
+    хориглосон явдал. Тухайн үед Android emulator дээрх эцсийн screenshot
+    баталгаажуулалт (item 12 — шинэ icon+нэр нүүр дэлгэц дээр, Mobile
+    доторх лого) хийгдэхгүй үлдэж, хэрэглэгчтэй зөвшилцөж (AskUserQuestion)
+    ажлыг commit хийгээд баталгаажуулалтыг зогсоосон байсан.
+    ✅ **(2026-09-16) ЗАСВАРЛАГДСАН — блок арилж, дутуу үлдсэн бүх
+    баталгаажуулалт дараагийн session-д амжилттай дууссан:** `dartaotruntime.exe --version`-ийг
+    дахин турших үед (шалтгаан тодорхойгүй хэвээр — систем/AppLocker
+    тохиргоо цаг хугацааны явцад өөрчлөгдсөн байж болзошгүй) Bash БОЛОН
+    PowerShell хоёуланд нь ямар ч алдаагүй ажилласныг баталгаажуулав.
+    Үүний дараа: (1) `flutter pub get` + `dart run build_runner build`
+    (codegen) амжилттай; (2) `flutter analyze` — 0 алдаа; (3)
+    `flutter test` — **бүх 118 тест ногоон** (`brandingProvider` override
+    хийсэн 2 тест дундаа); (4) backend-ийг ЭНЭ branch-ийн кодоор
+    (`pnpm run build` + `node dist/src/main`) дахин барьж 3100 порт дээр
+    ажиллуулаад, `GET /settings/branding` бодит `{storeName:"ЧАНАР",
+    logoUrl:"http://localhost:9000/..."}` буцаахыг батлав; (5) emulator-5554
+    дээрх хуучин апп-ыг `adb uninstall`-аар устгаж (icon кэш цэвэрлэх),
+    `flutter run -d emulator-5554 --dart-define=API_BASE_URL=http://10.0.2.2:3100`-аар
+    шинээр суулгаж: **App drawer дээр "ЧАНАР" нэртэй, эх
+    `store_logo_square_1024.png`-тэй ПИКСЕЛЬ ТҮВШИНД яг таарсан
+    (cream дэвсгэр, navy+алтан өнгийн уут+чек+сум) icon** screenshot-оор
+    (PowerShell `System.Drawing`-ээр crop+zoom хийж нарийвчилсан)
+    баталгаажив; **Login дэлгэц дээр бодит MinIO лого зураг + "ЧАНАР"
+    текст** (`BrandMark`/`useBranding`-ийн cachedNetworkImage-ээр,
+    санамсаргүй fallback initials биш, ЖИНХЭНЭ сүлжээний дуудлагаар
+    ирсэн) screenshot-оор; `+97688112233`/`password123`
+    (`[[dev-test-customer-account]]`)-ээр бодитоор нэвтэрч **Home дэлгэцийн
+    AppBar дээр мөн адил `BrandMark`+"ЧАНАР" бодит цагт** харагдахыг
+    screenshot-оор баталгаажуулав. ⚠️ **Тестийн явцад олдсон, кодтой
+    ХОЛБООГҮЙ өөрийн алдаа:** анх `phone_validator.dart`-ийн E.164
+    шаардлагыг (улсын код `+976` заавал) мартаж зөвхөн орон нутгийн 8
+    орон (`88112233`) бичсэнээр "Утасны дугаар эсвэл нууц үг буруу байна"
+    алдаа авсан — `+97688112233` (бүрэн E.164) бичсэний дараа зөв
+    нэвтэрсэн; энэ бол апп/backend-ийн алдаа БИШ, зөвхөн турших явцын
+    input алдаа байв.
 - Дараагийн ажил: geolocation auto-routing (backlog, "should-have" — Phase
   4-ийн хүргэлтийн ЧИГЛҮҮЛЭЛТЭЭС (аль хэдийн сонгогдсон захиалганд зам/зай
   тооцох) ОГТ ӨӨР, "хамгийн ойрхон салбарыг АВТОМАТААР сонгох" гэсэн
